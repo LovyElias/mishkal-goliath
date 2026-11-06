@@ -1,0 +1,21 @@
+Mishkal Goliath Beta - Windows
+==============================
+
+Installing
+1. Double-click "Install Mishkal Goliath Beta Vxx.exe".
+   Windows may show "Windows protected your PC" because the installer isn't signed yet:
+   click "More info", then "Run anyway".
+2. Click through the installer. It puts the plug-in in C:\Program Files\Common Files\VST3.
+3. Restart your DAW and rescan plug-ins (Ableton: Options > Preferences > Plug-ins > Rescan;
+   FL Studio: Options > Manage plugins > Find plugins).
+4. Load "Mishkal Goliath Beta" on a track.
+5. Open the User Manual PDF in this folder for a tour of every section and tips.
+
+Requirements: Windows 10 or 11, 64-bit, a VST3 host.
+
+Uninstalling
+Settings > Apps > "Mishkal Goliath Beta" > Uninstall.
+
+Feedback
+Tell Lovy what you used it on, which presets you liked, and anything that looked or sounded wrong.
+This is a beta: please don't use it on a mix you can't redo.

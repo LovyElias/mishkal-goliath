@@ -1,0 +1,53 @@
+# Builds the Windows tester installer for "Mishkal Goliath Beta" (VST3, 64-bit) on GitHub's Windows machines.
+# Runs on every push to main, or by hand from the repository's Actions tab ("Run workflow").
+# The finished zip (installer + user manual + READ ME) appears under the run's "Artifacts".
+name: Windows beta
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which version is the beta
+        id: ver
+        shell: bash
+        run: echo "v=$(grep -E '^set\(MISHKAL_LATEST_VERSION' CMakeLists.txt | grep -oE '[0-9]+' | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure (downloads JUCE the first time)
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DMISHKAL_BUILD_BETA=ON -DMISHKAL_BUILD_VERSIONS=OFF
+
+      - name: Build the beta (VST3)
+        run: cmake --build build --config Release --target MishkalBeta_VST3 --parallel
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Make the installer
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          $vst3 = "build\MishkalBeta_artefacts\Release\VST3\Mishkal Goliath Beta.vst3"
+          if (!(Test-Path $vst3)) { throw "The VST3 wasn't built" }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DVER=$v" "/DSRC=$((Resolve-Path $vst3).Path)" "/Odist" "installer\windows\MishkalBeta.iss"
+
+      - name: Add the manual and the READ ME
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          $out = "dist\Mishkal Goliath Beta V$v - Windows"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Move-Item "dist\Install Mishkal Goliath Beta V$v.exe" $out
+          if (Test-Path "docs\Mishkal Goliath - User Manual.pdf") { Copy-Item "docs\Mishkal Goliath - User Manual.pdf" $out }
+          Copy-Item "installer\windows\READ ME FIRST.txt" $out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mishkal Goliath Beta V${{ steps.ver.outputs.v }} - Windows
+          path: dist/Mishkal Goliath Beta V${{ steps.ver.outputs.v }} - Windows
