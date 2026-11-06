@@ -8,6 +8,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -51,3 +54,19 @@ jobs:
         with:
           name: Mishkal Goliath Beta V${{ steps.ver.outputs.v }} - Windows
           path: dist/Mishkal Goliath Beta V${{ steps.ver.outputs.v }} - Windows
+
+      - name: Save the zip to the "windows-builds" branch
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          $name = "Mishkal Goliath Beta V$v - Windows"
+          Compress-Archive -Path "dist\$name" -DestinationPath "$env:RUNNER_TEMP\$name.zip" -Force
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git fetch origin windows-builds 2>$null
+          if ($LASTEXITCODE -eq 0) { git checkout -B windows-builds origin/windows-builds } else { git checkout --orphan windows-builds; git rm -rf . -q }
+          Get-ChildItem -Force | Where-Object { $_.Name -ne ".git" } | Remove-Item -Recurse -Force
+          Copy-Item "$env:RUNNER_TEMP\$name.zip" .
+          git add -A
+          git commit -m "$name"
+          git push origin windows-builds --force
