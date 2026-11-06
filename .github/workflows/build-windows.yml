@@ -35,7 +35,7 @@ jobs:
           $v = "${{ steps.ver.outputs.v }}"
           $vst3 = "build\MishkalBeta_artefacts\Release\VST3\Mishkal Goliath Beta.vst3"
           if (!(Test-Path $vst3)) { throw "The VST3 wasn't built" }
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DVER=$v" "/DSRC=$((Resolve-Path $vst3).Path)" "/Odist" "installer\windows\MishkalBeta.iss"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMKVER=$v" "/DSRC=$((Resolve-Path $vst3).Path)" "/Odist" "installer\windows\MishkalBeta.iss"
 
       - name: Add the manual and the READ ME
         shell: pwsh
