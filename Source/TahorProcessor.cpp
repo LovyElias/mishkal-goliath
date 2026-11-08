@@ -162,6 +162,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
         { R r (0.2f, 6.0f, 0.01f); r.setSkewForCentre (1.0f); F (nid (i, "Q"), n + "Width", r, nd[i].q); }
         C (nid (i, "Place"), n + "Side", { "ST", "L", "R" }, 0);                                   // V9
         C (nid (i, "Pair"), n + "Partner", { "-", "1", "2", "3", "4", "5", "6" }, 0);              // V9: its other side
+        B (nid (i, "Byp"), n + "Disabled", false);                                                 // V12: off, settings kept
     }
 
     // TAHOR
@@ -195,6 +196,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
         { R r (5.0f, 2000.0f, 1.0f); r.setSkewForCentre (120.0f); F (bid (b, "Rel"), n + "Release", r, 120.0f, "ms"); }  // V9
         F (bid (b, "Sel"), n + "Selectivity", R (1.0f, 8.0f, 0.1f), 3.0f, "x");                                         // V9: spectral
         C (bid (b, "Pair"), n + "Partner", { "-", "1", "2", "3", "4", "5", "6", "7", "8" }, 0);                         // V9: its other side
+        B (bid (b, "Byp"), n + "Disabled", false);                                                                      // V12: off, settings kept
     }
 
     // CHARACTER
@@ -225,7 +227,7 @@ vox::CleanBands TahorProcessor::tahorBands() const
     for (int b = 0; b < numBands; ++b)
     {
         auto& c = bands[(size_t) b];
-        c.on = param (bid (b, "On")) > 0.5f;
+        c.on = param (bid (b, "On")) > 0.5f && param (bid (b, "Byp")) < 0.5f;   // V12: a disabled band keeps its settings
         c.type = (vox::BandType) (int) param (bid (b, "Type"));
         c.freq = param (bid (b, "Hz")); c.gain = param (bid (b, "Gain")); c.q = param (bid (b, "Q"));
         c.slope = (int) param (bid (b, "Slope"));
@@ -255,7 +257,7 @@ ResoProSettings TahorProcessor::resoSettings (int side) const
     for (int i = 0; i < maxResoNodes; ++i)
     {
         auto& n = s.nodes[(size_t) i];
-        n.on = param (nid (i, "On")) > 0.5f; n.shape = (int) param (nid (i, "Shape"));
+        n.on = param (nid (i, "On")) > 0.5f && param (nid (i, "Byp")) < 0.5f; n.shape = (int) param (nid (i, "Shape"));   // V12: + disabled
         n.hz = param (nid (i, "Hz")); n.amount = param (nid (i, "Amt")); n.q = param (nid (i, "Q"));
         const int pl = (int) param (nid (i, "Place"));   // V9: a split node only works on its own side
         if (side >= 0 && pl != 0 && pl != side + 1) n.on = false;
@@ -263,9 +265,22 @@ ResoProSettings TahorProcessor::resoSettings (int side) const
     return s;
 }
 
-void TahorProcessor::getUnitValues (int unit, float* v, int side) const
+void TahorProcessor::getUnitValues (int unit, float* v, int side, bool applyOff) const
 {
     for (int j = 0; j < unitValues; ++j) v[j] = param (side == 1 ? "u" + juce::String (unit) + "r" + juce::String (j) : uid (unit, j));
+    // V12: a disabled node sounds as if its knob were at rest (its own setting is kept)
+    const int mask = applyOff ? charOff[(size_t) juce::jlimit (0, numUnits - 1, unit)].load() : 0;
+    if (mask != 0)
+    {
+        const auto& nodes = unitNodes (unit);
+        for (int i = 0; i < (int) nodes.size(); ++i)
+            if (mask & (1 << i))
+            {
+                const auto& nd = nodes[(size_t) i];
+                if (nd.gv >= 0) v[nd.gv] = (nd.gmode == 0 || nd.gmode == 3) ? 0.5f : 0.0f;
+                else if (nd.fv >= 0) v[nd.fv] = 0.0f;
+            }
+    }
 }
 
 std::vector<int> TahorProcessor::chain() const
@@ -361,6 +376,7 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         auto key = getBusBuffer (buffer, true, 1);
         keyBuf.setSize (2, n, false, false, true);
         for (int c = 0; c < 2; ++c) keyBuf.copyFrom (c, 0, key, juce::jmin (c, key.getNumChannels() - 1), 0, n);
+        keyTap.push (keyBuf);   // V12: EQ Match listens to the reference here
     }
 
     // the untouched signal, delayed by the latency, for BYPASS
@@ -653,6 +669,7 @@ void TahorProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     state.setProperty ("presetName", presetName, nullptr);
     state.setProperty ("presetDirty", presetDirty, nullptr);
+    { juce::StringArray m; for (auto& o : charOff) m.add (juce::String (o.load())); state.setProperty ("charOff", m.joinIntoString (","), nullptr); }   // V12
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
 
@@ -666,6 +683,8 @@ void TahorProcessor::setStateInformation (const void* data, int sizeInBytes)
             loadingPreset = false;
             presetName = xml->getStringAttribute ("presetName", presetName);
             presetDirty = xml->getBoolAttribute ("presetDirty", false);
+            { const auto m = juce::StringArray::fromTokens (xml->getStringAttribute ("charOff"), ",", "");   // V12
+              for (int u = 0; u < numUnits; ++u) charOff[(size_t) u].store (u < m.size() ? m[u].getIntValue() : 0); }
         }
 }
 

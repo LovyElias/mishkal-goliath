@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Tahor VERSION 1.10.0)   # raise with every version so hosts rescan
+project(Tahor VERSION 1.12.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -85,6 +85,11 @@ endif()
 #   V11 = the dynamic range drawn on screen; Tahor's (and Reso's) bubble shows frequency and gain; Character starts empty
 #        (LE-EP1 previewed); two-unit gear laid out like the originals (EP1 gains its high atten); no tube glow; the
 #        hint sits higher and quieter; 69 factory presets in ten folders; keyboard shortcuts
+#   V12 = modern 80% band panels (arch bump, softened corners, colour line), bigger main knobs, placement dropdowns,
+#        band power buttons, solo on the bubbles, right-click menus, Dynamic stays on in the EQ view, drag the range on
+#        screen, 20 Hz - 20 kHz scale, preset submenus, see-through Reso side panels, Spectrum Grab, multi-select,
+#        piano roll, EQ Match, opens at Small, double-click a Character band to switch it off
+#   V13 = the piano strip has its own on / off button in the bottom bar (off to start); the note stays in the bubble
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -116,7 +121,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(TAHOR_LATEST_VERSION 11)   # raise this by one for every new version
+set(TAHOR_LATEST_VERSION 13)   # raise this by one for every new version
 
 # One plug-in, updated in place (the version shows in its window's About)
 tahor_plugin(Tahor "Mishkal Tahor" Thor com.mishkalaudio.tahor ${TAHOR_LATEST_VERSION} "${TAHOR_FORMATS}")

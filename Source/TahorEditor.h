@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include "TahorProcessor.h"
+#include <set>
 
 namespace tahor
 {
@@ -18,8 +19,10 @@ namespace ui
     inline const R display { 18.0f, 70.0f, PW, 670.0f };
     inline constexpr float dx = 0.0f;
     // frequency <-> x inside the display (20 Hz .. 20 kHz over 1100 px, as the design's curves)
-    inline float fx (float hz) { return PW * std::log10 (juce::jmax (1.0f, hz) / 20.0f) / 3.0f; }
-    inline float xf (float x)  { return 20.0f * std::pow (10.0f, 3.0f * x / PW); }
+    // V12: 20 Hz and 20 kHz both sit inside the screen (room for their labels)
+    inline constexpr float FX0 = 22.0f, FXW = PW - 22.0f - 46.0f;
+    inline float fx (float hz) { return FX0 + FXW * std::log10 (juce::jmax (1.0f, hz) / 20.0f) / 3.0f; }
+    inline float xf (float x)  { return 20.0f * std::pow (10.0f, 3.0f * (x - FX0) / FXW); }
     juce::Colour col (const char* hex, float alpha = 1.0f);
     juce::Colour col (juce::uint32 rgb, float alpha = 1.0f);
 
@@ -38,7 +41,8 @@ enum class Hit
     FocusEdge, ResoNode, ResoShape, ResoNodeKnob, ResoBg,
     TahorNode, TahorType, TahorPlace, TahorKnob, TahorChip, TahorBand, AddBand, TahorBg,
     UnitPrev, UnitNext, UnitAdd, UnitKnob, UnitSwitch, PageDot, ChainChip, ChainRemove, CharMode, PeakDot, Glass, FullScreen, CharNode, Hardware, TabCycle, Size, CharKnob, Thd, AddEq, PresetStep, BandSolo, AddPick, AddClose,
-    History, Browse, BrowseTag, BrowsePick, BrowseClose, AutoGain, CharSide, ResoPlace, TahorMode
+    History, Browse, BrowseTag, BrowsePick, BrowseClose, AutoGain, CharSide, ResoPlace, TahorMode,
+    BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano
 };
 
 class Canvas : public juce::Component, private juce::Timer
@@ -105,6 +109,20 @@ private:
     // V10
     float anaAlpha = 0.0f, hwArrowA = 0.0f;
     float pkHold[2] { -90.0f, -90.0f }, avgDb[2] { -90.0f, -90.0f }; double pkTime[2] { 0, 0 };
+    // V12
+    std::array<bool, 8> dynView {};                 // a band panel showing its dynamic controls (Dynamic stays on either way)
+    std::set<int> selSet;                           // several Tahor bands selected together
+    bool lasso = false; ui::P lassoA, lassoB;
+    std::vector<std::pair<float, float>> groupStart; // each selected band's frequency / gain when a group drag began
+    struct Clip { int kind = -1; std::vector<std::pair<juce::String, float>> v; } clip;   // cut / copy / paste
+    std::vector<ui::P> specPeaks;                   // Spectrum Grab: peaks in the analyzer (display coords)
+    int eqMatch = 0; int eqCount = 0;
+    bool pianoOn = false;   // V13: the piano strip (off until you switch it on)               // EQ Match: 0 idle, 1 learning
+    std::vector<float> keyWin, keyDb, accPre, accKey;
+    void showNodeMenu (Hit kind, int idx, int side, ui::R at);
+    void applyEqMatch();
+    void copyBand (Hit kind, int idx);
+    void pasteBand (Hit kind);
     void paintSoloColumn (juce::Graphics&);
     juce::String cuid (int v) const { return charSide == 1 && proc.unitSplit (preview) ? "u" + juce::String (preview) + "r" + juce::String (v) : uid (preview, v); }
     void splitTahor (int band, int place);
@@ -123,6 +141,7 @@ private:
     std::vector<Zone> zones;
     void zone (ui::R r, Hit k, int a = 0, int b = 0) { zones.push_back ({ r, k, a, b }); }
     const Zone* zoneAt (ui::P p) const;
+    void resetAt (const Zone&);   // V12: what alt-click (and double-click, outside Character) does
     std::vector<ui::R> glassRects;   // translucent panels: solid while the mouse is over them
     float glass (ui::R r) const { return (r.contains (mouse) || (dragging && r.contains (downAt))) ? 1.0f : 0.6f; }
 

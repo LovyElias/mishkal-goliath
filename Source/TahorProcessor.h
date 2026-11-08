@@ -7,13 +7,15 @@
 #include "TahorModel.h"
 
 #ifndef TAHOR_VERSION
- #define TAHOR_VERSION 11
+ #define TAHOR_VERSION 13
 #endif
 #define TAHOR_V1 (TAHOR_VERSION >= 1)   // the first Tahor: RESO > TAHOR > CHARACTER, exactly the Claude Design canvas
 #define TAHOR_V2 (TAHOR_VERSION >= 2)   // input meter left / output right, Pro-Q-style analyzer, flat vintage units, nodes on
                                         // the Character curves, smaller see-through hardware, full screen, a livelier background
 #define TAHOR_V6 (TAHOR_VERSION >= 6)   // Reso's controls slide from the left, ADV from the right, dropdowns in the band panels,
                                         // colour shadows on Character, Reso's shades, centred arches, grain, smoother analyzer
+#define TAHOR_V13 (TAHOR_VERSION >= 13)  // the piano strip has an on / off button (starts off)
+#define TAHOR_V12 (TAHOR_VERSION >= 12)  // modern panels, right-click menus, band power, range drag, grab, multi-select, piano, EQ Match
 #define TAHOR_V11 (TAHOR_VERSION >= 11)  // range on screen, bubbles, Character starts empty, original layouts, presets, shortcuts
 #define TAHOR_V10 (TAHOR_VERSION >= 10)  // no Spectral, Pro-Q-style dynamic curves, 2U gear, meter readouts, quiet analyzer
 #define TAHOR_V9 (TAHOR_VERSION >= 9)   // L / R splits everywhere, dynamic / spectral views, solo column, five new units
@@ -104,14 +106,15 @@ public:
     // settings snapshots (also used by the UI to draw the curves)
     vox::CleanBands tahorBands() const;
     tahor::ResoProSettings resoSettings (int side = -1) const;   // V9: side 0 / 1 = only that side's bands (split)
-    void getUnitValues (int unit, float* v, int side = 0) const;   // V9: side 1 = a split unit's right channel
+    void getUnitValues (int unit, float* v, int side = 0, bool applyOff = true) const;
+    std::array<std::atomic<int>, tahor::numUnits> charOff {};   // V12: per unit, a bit per disabled node   // V9: side 1 = a split unit's right channel
     bool unitSplit (int unit) const { return param ("u" + juce::String (unit) + "split") > 0.5f; }
 
     juce::AudioProcessorValueTreeState apvts;
     double getRate() const { return preparedRate; }
 
     // for the screen
-    tahor::AnalyzerTap preTap, postTap;
+    tahor::AnalyzerTap preTap, postTap, keyTap;   // V12: keyTap = the sidechain (EQ Match's reference)
     std::atomic<float> meterL { 0.0f }, meterR { 0.0f }, inMeterL { 0.0f }, inMeterR { 0.0f }, inRms { 0.0f }, outRms { 0.0f };   // V10: + RMS
     std::array<std::atomic<float>, vox::numCleanBands> dynDb {};
     tahor::ResoPro& activeReso() { const int li = param ("rsLowLat") > 0.5f ? 1 : 0; return resoIsSplit.load() ? resoSplit[(size_t) li][0] : (li ? resoLow : reso); }

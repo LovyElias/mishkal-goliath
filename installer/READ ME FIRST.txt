@@ -13,9 +13,16 @@ Installing
 
 Getting started
 - Flip between RESO, TAHOR and CHARACTER with the arrows at the top.
-- The star on the preset name opens the preset browser: 69 presets in folders
-  (Vocals, Drums, Instruments, Mastering, Mix Bus, Surgical, Reso Clean-up, Character, Effects).
+- TAHOR: double-click the screen to add a band; touch a dot to open its panel; right-click a dot for its menu.
+- CHARACTER starts empty: "+ Add EQ" opens the gear (16 vintage-style units).
+- Click the preset name for 69 presets in folders (Vocals, Drums, Instruments, Mastering, Mix Bus, Surgical,
+  Reso Clean-up, Character, Effects), or the star for the browser.
 - MATCH and AUTO GAIN keep the level fair while you compare.
+
+Things we'd love you to try
+- A dynamic Tahor band on a harsh vocal - drag the little diamond to set its range on the screen.
+- Spectrum Grab: hover a peak in the analyzer and drag it - it becomes a band.
+- EQ MATCH with a reference track in the sidechain.
 
 Requirements: Windows 10 or 11, 64-bit, a VST3 host.
 
