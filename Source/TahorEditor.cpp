@@ -1,0 +1,916 @@
+#include "TahorEditor.h"
+#include "BinaryData.h"
+
+#if JUCE_MAC
+float tahorMacFullScale (void* nsView, float W, float H, float curW, float curH);
+void tahorMacPinTop (void* nsView);
+#endif
+
+using namespace tahor;
+using namespace tahor::ui;
+
+//==============================================================================
+juce::Colour ui::col (const char* hex, float alpha)
+{
+    auto s = juce::String (hex).trimCharactersAtStart ("#");
+    return juce::Colour (0xff000000u | (juce::uint32) s.getHexValue32()).withAlpha (alpha);
+}
+juce::Colour ui::col (juce::uint32 rgb, float alpha) { return juce::Colour (0xff000000u | rgb).withAlpha (alpha); }
+
+static juce::Typeface::Ptr typefaceFor (Face f)
+{
+    static juce::Typeface::Ptr t[6] {
+        juce::Typeface::createSystemTypefaceFor (BinaryData::FiraSansLight_ttf, (size_t) BinaryData::FiraSansLight_ttfSize),
+        juce::Typeface::createSystemTypefaceFor (BinaryData::FiraSansRegular_ttf, (size_t) BinaryData::FiraSansRegular_ttfSize),
+        juce::Typeface::createSystemTypefaceFor (BinaryData::FiraSansMedium_ttf, (size_t) BinaryData::FiraSansMedium_ttfSize),
+        juce::Typeface::createSystemTypefaceFor (BinaryData::FiraSansSemiBold_ttf, (size_t) BinaryData::FiraSansSemiBold_ttfSize),
+        juce::Typeface::createSystemTypefaceFor (BinaryData::BarlowCondensedMedium_ttf, (size_t) BinaryData::BarlowCondensedMedium_ttfSize),
+        juce::Typeface::createSystemTypefaceFor (BinaryData::BarlowCondensedSemiBold_ttf, (size_t) BinaryData::BarlowCondensedSemiBold_ttfSize) };
+    return t[(int) f];
+}
+
+juce::Font ui::font (Face f, float px, float letterSpacing)
+{
+    juce::Font fo (juce::FontOptions (typefaceFor (f)).withPointHeight (px));
+    if (letterSpacing != 0.0f) fo.setExtraKerningFactor (letterSpacing / px);
+    return fo;
+}
+
+float ui::textWidth (const juce::Font& f, const juce::String& s)
+{
+    juce::GlyphArrangement ga;
+    ga.addLineOfText (f, s, 0.0f, 0.0f);
+    return ga.getBoundingBox (0, -1, true).getWidth();
+}
+
+void ui::text (juce::Graphics& g, const juce::String& s, const juce::Font& f, juce::Colour c, R box, juce::Justification j)
+{
+    g.setColour (c);
+    g.setFont (f);
+    g.drawText (s, box, j, false);
+}
+
+//==============================================================================
+Canvas::Canvas (TahorProcessor& p) : proc (p)
+{
+    setOpaque (true);
+    setWantsKeyboardFocus (true);   // V11: shortcuts
+    auto& st = proc.apvts.state;
+    tab = (int) st.getProperty ("uiTab", 0);
+    selBand = (int) st.getProperty ("uiBand", 2);
+    selNode = (int) st.getProperty ("uiNode", 1);
+    preview = (int) st.getProperty ("uiPreview", 0);
+    stripOpen = (bool) st.getProperty ("uiStrip", true);
+    advOpen = (bool) st.getProperty ("uiAdv", false);
+    fft = std::make_unique<juce::dsp::FFT> (13);   // V5: 8192 points, finer in the lows
+    preWin.assign (8192, 0.0f); postWin.assign (8192, 0.0f);
+    fftData.assign (16384, 0.0f);
+    preDb.assign (4097, -120.0f); postDb.assign (4097, -120.0f);
+    hann.resize (8192);
+    for (int i = 0; i < 8192; ++i) hann[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / 8192.0f);
+    resoShown.assign ((size_t) PW + 1, 0.0f);
+    startTimerHz (45);   // V6: smoother movement
+}
+
+Canvas::~Canvas()
+{
+    auto& st = proc.apvts.state;
+    st.setProperty ("uiTab", tab, nullptr); st.setProperty ("uiBand", selBand, nullptr); st.setProperty ("uiNode", selNode, nullptr);
+    st.setProperty ("uiPreview", preview, nullptr); st.setProperty ("uiStrip", stripOpen, nullptr); st.setProperty ("uiAdv", advOpen, nullptr);
+}
+
+void Canvas::analyse (std::vector<float>& win, std::vector<float>& smoothDb)
+{
+    const float norm = 2.0f / (8192.0f * 0.5f);
+    for (int i = 0; i < 8192; ++i) fftData[(size_t) i] = win[(size_t) i] * hann[(size_t) i];
+    std::fill (fftData.begin() + 8192, fftData.end(), 0.0f);
+    fft->performFrequencyOnlyForwardTransform (fftData.data(), true);
+    for (int k = 0; k < 4097; ++k)
+    {
+        const float db = juce::Decibels::gainToDecibels (fftData[(size_t) k] * norm, -140.0f);
+        auto& s = smoothDb[(size_t) k];
+        s = db > s ? 0.5f * s + 0.5f * db : 0.86f * s + 0.14f * db;
+    }
+}
+
+void Canvas::timerCallback()
+{
+    proc.preTap.pull (preWin);
+    proc.postTap.pull (postWin);
+    analyse (preWin, preDb);
+    analyse (postWin, postDb);
+
+    // what Reso removes, per display column (held a little so it reads)
+    auto& r = proc.activeReso();
+    const int nb = r.numBins.load();
+    if (nb > 2)
+    {
+        const float binHz = (float) (r.getSampleRate() / (double) ((nb - 1) * 2));
+        std::vector<float> col ((size_t) PW + 1, 0.0f);
+        for (int k = 1; k < nb; ++k)
+        {
+            const int x = juce::roundToInt (fx ((float) k * binHz));
+            if (x < 0 || x > (int) PW) continue;
+            col[(size_t) x] = juce::jmin (col[(size_t) x], r.reductionDb[(size_t) k].load (std::memory_order_relaxed));
+        }
+        // fill the gaps at the bottom end (few bins per column there)
+        float last = 0.0f; int lastX = 0;
+        for (int x = 0; x <= (int) PW; ++x)
+        {
+            if (col[(size_t) x] < 0.0f || x == (int) PW)
+            {
+                for (int i = lastX + 1; i < x; ++i) col[(size_t) i] = juce::jmin (col[(size_t) i], last + (col[(size_t) x] - last) * (float) (i - lastX) / (float) (x - lastX));
+                last = col[(size_t) x]; lastX = x;
+            }
+        }
+        for (int x = 0; x <= (int) PW; ++x)
+        {
+            auto& s = resoShown[(size_t) x];
+            s = col[(size_t) x] < s ? col[(size_t) x] : 0.8f * s + 0.2f * col[(size_t) x];
+        }
+    }
+    for (int c = 0; c < 4; ++c)
+    {
+        const auto& m = c == 0 ? proc.inMeterL : c == 1 ? proc.inMeterR : c == 2 ? proc.meterL : proc.meterR;
+        const float db = juce::Decibels::gainToDecibels (m.load(), -90.0f);
+        meterDb[c] = db > meterDb[c] ? db : juce::jmax (db, meterDb[c] - 1.2f);
+    }
+    // V10: the readouts - peak (held 1.5 s) and average (RMS, ~300 ms) for input and output
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        for (int s2 = 0; s2 < 2; ++s2)
+        {
+            const float pk = juce::jmax (meterDb[s2 * 2], meterDb[s2 * 2 + 1]);
+            if (pk >= pkHold[s2] || now - pkTime[s2] > 1.5) { pkHold[s2] = pk; pkTime[s2] = now; }
+            const float rms = juce::Decibels::gainToDecibels ((s2 == 0 ? proc.inRms : proc.outRms).load(), -90.0f);
+            avgDb[s2] += (rms - avgDb[s2]) * 0.15f;
+        }
+        // the analyzer only shows while something plays (it sinks away in silence, like Reso's reduction)
+        const float lvl = juce::jmax (meterDb[0], meterDb[1], meterDb[2], meterDb[3]);
+        anaAlpha += ((lvl > -70.0f ? 1.0f : 0.0f) - anaAlpha) * 0.08f;
+    }
+    drift = std::fmod (drift + 1.0f / (30.0f * 60.0f), 1.0f);   // the background's glows: once round a minute
+    // V3: only the dots show; touching one (or the place a panel lives) fades the tab's controls in, leaving fades them out
+    {
+        bool want = dragging && down.kind != Hit::None;
+        if (auto* z = zoneAt (mouse))
+            if (z->kind == Hit::TahorNode || z->kind == Hit::ResoNode || z->kind == Hit::CharNode || z->kind == Hit::PeakDot || z->kind == Hit::FocusEdge)
+                want = true;
+        for (auto& r : revealRects) if (r.contains (mouse)) want = true;
+        // V4: stays up while the mouse is on the band or its panel; half a second after it leaves both, it fades
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (want) lastWant = now;
+        reveal = want ? juce::jmin (1.0f, reveal + 0.34f)
+                      : (now - lastWant < 500.0 ? reveal : juce::jmax (0.0f, reveal - 0.2f));
+    }
+    pulse = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * (juce::Time::getMillisecondCounterHiRes() * 0.001 / 1.6)));
+    repaint();
+}
+
+const Canvas::Zone* Canvas::zoneAt (P p) const
+{
+    for (auto it = zones.rbegin(); it != zones.rend(); ++it)
+        if (it->r.contains (p)) return &*it;
+    return nullptr;
+}
+
+//==============================================================================
+juce::String Canvas::knobPid (const Zone& z, bool outer) const
+{
+    static const char* rk[7] { "rsDepth", "rsDetail", "rsAttack", "rsRelease", "rsMaxCut", "rsMix", "rsTrim" };
+    static const char* tk[3] { "rsDTilt", "rsATilt", "rsRTilt" };
+    switch (z.kind)
+    {
+        case Hit::ResoKnob:     return rk[juce::jlimit (0, 6, z.a)];
+        case Hit::TiltKnob:     return tk[juce::jlimit (0, 2, z.a)];
+        case Hit::LinkKnob:     return "rsLink";
+        case Hit::ResoNodeKnob: return nid (selNode, z.a == 0 ? "Amt" : "Q");
+        case Hit::TahorKnob:
+        {
+            static const char* t[8] { "Hz", "Gain", "Q", "Thr", "Rng", "Att", "Rel", "Sel" };   // V9: + the dynamic / spectral view
+            return bid (selBand, t[juce::jlimit (0, 7, z.a)]);
+        }
+        case Hit::InBox:        return "inGain";
+        case Hit::OutBox:       return "outGain";
+        case Hit::CharKnob: return cuid (z.a);
+        case Hit::UnitKnob:
+        {
+            const auto& k = units()[(size_t) preview].knobs[(size_t) z.a];
+            return cuid (outer && k.v2 >= 0 ? k.v2 : k.v);
+        }
+        default: break;
+    }
+    return {};
+}
+
+void Canvas::startKnobDrag (const juce::String& pid)
+{
+    dragPid = pid;
+    if (auto* p = proc.apvts.getParameter (pid)) { dragStart = p->getValue(); proc.beginGesture (pid); }
+}
+
+void Canvas::mouseMove (const juce::MouseEvent& e)
+{
+    mouse = e.position;
+    int hu = -1;
+    // V4: touching a band selects it, so its panel opens under it
+    if (! dragging)
+        if (auto* z = zoneAt (mouse))
+        {
+            if (z->kind == Hit::TahorNode) selBand = z->a;
+            if (z->kind == Hit::ResoNode)  selNode = z->a;
+            if (z->kind == Hit::CharNode)  selCharNode = z->a;
+        }
+    if (auto* z = zoneAt (mouse)) if (z->kind == Hit::PeakDot || z->kind == Hit::ChainChip) hu = z->kind == Hit::PeakDot ? z->a : proc.chain()[(size_t) z->a];
+    hoverUnit = hu;
+    repaint();
+}
+
+void Canvas::mouseExit (const juce::MouseEvent&) { mouse = { -1, -1 }; hoverUnit = -1; repaint(); }
+
+void Canvas::mouseDown (const juce::MouseEvent& e)
+{
+    grabKeyboardFocus();   // V11: so the shortcuts work
+    if (e.mods.isAltDown())   // V11: alt-click resets (the same as a double-click)
+        if (auto* z0 = zoneAt (e.position))
+            if (z0->kind == Hit::ResoKnob || z0->kind == Hit::TiltKnob || z0->kind == Hit::LinkKnob || z0->kind == Hit::ResoNodeKnob || z0->kind == Hit::TahorKnob
+                || z0->kind == Hit::InBox || z0->kind == Hit::OutBox || z0->kind == Hit::UnitKnob || z0->kind == Hit::CharKnob || z0->kind == Hit::CharNode)
+            { mouseDoubleClick (e); return; }
+    downAt = e.position; mouse = e.position;
+    dragging = true;
+    dragPid = {}; dragPid2 = {};
+    chainDragFrom = -1;
+    auto* z = zoneAt (e.position);
+    down = z != nullptr ? *z : Zone {};
+    switch (down.kind)
+    {
+        case Hit::ResoKnob: case Hit::TiltKnob: case Hit::LinkKnob: case Hit::ResoNodeKnob: case Hit::InBox: case Hit::OutBox: case Hit::CharKnob:
+            startKnobDrag (knobPid (down, false)); break;
+        case Hit::Thd:   // V7: jump to where you press, then drag across
+            dragPid = "charThd"; proc.beginGesture (dragPid);
+            proc.dragParam (dragPid, juce::jlimit (0.0f, 100.0f, (e.position.x - down.r.getX() - 6.0f) / (down.r.getWidth() - 12.0f) * 100.0f));
+            break;
+        case Hit::TahorKnob:
+            startKnobDrag (down.a == 1 && e.mods.isShiftDown() ? bid (selBand, "Rng") : knobPid (down, false)); break;
+        case Hit::UnitKnob:
+        {
+            const auto c = down.r.getCentre();
+            dragOuter = down.b == 1 && e.position.getDistanceFrom (c) > down.r.getWidth() * 0.5f * 0.62f;
+            startKnobDrag (knobPid (down, dragOuter));
+            break;
+        }
+        case Hit::TahorChip:
+            if (down.a == 0 || (down.a == 9 && proc.param (bid (selBand, "Dyn")) > 0.5f)) startKnobDrag (bid (selBand, "Thr"));   // drag up / down = threshold
+            break;
+        case Hit::ResoNode:
+            selNode = down.a;
+            dragPid = nid (selNode, "Hz"); dragPid2 = nid (selNode, "Amt");
+            proc.beginGesture (dragPid); proc.beginGesture (dragPid2);
+            break;
+        case Hit::TahorNode:
+            selBand = down.a;
+            dragPid = bid (selBand, "Hz"); dragPid2 = bid (selBand, "Gain");
+            proc.beginGesture (dragPid); proc.beginGesture (dragPid2);
+            break;
+        case Hit::FocusEdge:
+            dragPid = down.a == 0 ? "rsLow" : "rsHigh"; proc.beginGesture (dragPid);
+            break;
+        case Hit::ChainChip:
+            chainDragFrom = down.a;
+            break;
+        case Hit::CharNode:
+        {
+            selCharNode = down.a;
+            if (proc.unitSplit (preview)) charSide = down.b;   // V9: a split unit: the side you touched
+            const auto& nd = unitNodes (preview)[(size_t) down.a];
+            if (nd.fv >= 0) { dragPid = cuid (nd.fv); proc.beginGesture (dragPid); }
+            if (nd.gv >= 0) { dragPid2 = cuid (nd.gv); proc.beginGesture (dragPid2); }
+            break;
+        }
+        case Hit::Resize:
+            resizeFrom = std::sqrt (std::abs (getTransform().getDeterminant()));
+            break;
+        default: break;
+    }
+    repaint();
+}
+
+void Canvas::mouseDrag (const juce::MouseEvent& e)
+{
+    mouse = e.position;
+    const auto d = e.position - downAt;
+    switch (down.kind)
+    {
+        case Hit::ResoKnob: case Hit::TiltKnob: case Hit::LinkKnob: case Hit::ResoNodeKnob: case Hit::TahorKnob:
+        case Hit::InBox: case Hit::OutBox: case Hit::UnitKnob: case Hit::TahorChip: case Hit::CharKnob:
+            if (dragPid.isNotEmpty())
+                if (auto* p = proc.apvts.getParameter (dragPid))
+                {
+                    const float sens = e.mods.isShiftDown() && down.kind != Hit::TahorKnob ? 1000.0f : 200.0f;
+                    p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart - d.y / sens));
+                }
+            break;
+        case Hit::Thd:
+            proc.dragParam (dragPid, juce::jlimit (0.0f, 100.0f, (e.position.x - down.r.getX() - 6.0f) / (down.r.getWidth() - 12.0f) * 100.0f));
+            break;
+        case Hit::ResoNode:
+        {
+            const float x = juce::jlimit (0.0f, PW, e.position.x - display.getX());
+            const float y = e.position.y - display.getY();
+            proc.dragParam (dragPid, juce::jlimit (20.0f, 20000.0f, xf (x)));
+            proc.dragParam (dragPid2, juce::jlimit (-10.0f, 10.0f, (330.0f - y) / 40.0f));
+            break;
+        }
+        case Hit::TahorNode:
+        {
+            const float x = juce::jlimit (0.0f, PW, e.position.x - display.getX());
+            const float y = e.position.y - display.getY();
+            static const float ranges[4] { 3.0f, 6.0f, 12.0f, 30.0f };
+            const float rng = ranges[juce::jlimit (0, 3, (int) proc.param ("range"))] * 1.5f;
+            proc.dragParam (dragPid, juce::jlimit (10.0f, 30000.0f, xf (x)));
+            const int type = (int) proc.param (bid (selBand, "Type"));
+            if (type <= 2) proc.dragParam (dragPid2, juce::jlimit (-30.0f, 30.0f, (335.0f - y) / 335.0f * rng));
+            break;
+        }
+        case Hit::FocusEdge:
+        {
+            const float x = juce::jlimit (0.0f, PW, e.position.x - display.getX());
+            proc.dragParam (dragPid, juce::jlimit (20.0f, 20000.0f, xf (x)));
+            break;
+        }
+        case Hit::CharNode:
+        {
+            const auto& nd = unitNodes (preview)[(size_t) down.a];
+            const float x = juce::jlimit (0.0f, PW, e.position.x - display.getX() - nodePairOffset (preview, down.a));   // V9: paired dots sit apart
+            const float y = e.position.y - display.getY();
+            static const float ranges[4] { 3.0f, 6.0f, 12.0f, 30.0f };
+            const float rng = ranges[juce::jlimit (0, 3, (int) proc.param ("range"))] * 1.5f;
+            if (nd.fv >= 0) if (auto* p = proc.apvts.getParameter (dragPid)) p->setValueNotifyingHost (freqPos (nd, xf (x)));
+            if (nd.gv >= 0) if (auto* p = proc.apvts.getParameter (dragPid2)) p->setValueNotifyingHost (gainPos (nd, (335.0f - y) / 335.0f * rng));
+            break;
+        }
+        case Hit::ChainChip:
+        {
+            auto c = proc.chain();
+            const int to = juce::jlimit (0, (int) c.size() - 1, chainDragFrom + juce::roundToInt (d.y / 30.0f));   // V4: the chips stack down the left
+            if (to != chainDragFrom && chainDragFrom >= 0)
+            {
+                std::swap (c[(size_t) chainDragFrom], c[(size_t) to]);
+                proc.setChain (c);
+                chainDragFrom = to; downAt.y += (float) (to - down.a) * 30.0f; down.a = to;
+            }
+            break;
+        }
+        case Hit::Resize:
+            if (onResize)
+            {
+                const float s = juce::jlimit (0.6f, 3.0f, resizeFrom * (1.0f + juce::jmax (d.x / W, d.y / H)));
+                onResize (s);
+            }
+            break;
+        default: break;
+    }
+    repaint();
+}
+
+void Canvas::mouseUp (const juce::MouseEvent& e)
+{
+    dragging = false;
+    if (dragPid.isNotEmpty()) proc.endGesture (dragPid);
+    if (dragPid2.isNotEmpty()) proc.endGesture (dragPid2);
+    const bool moved = e.position.getDistanceFrom (downAt) > 3.0f;
+    if (! moved && down.kind != Hit::None) click (down, e);
+    dragPid = {}; dragPid2 = {};
+    auto& st = proc.apvts.state;
+    st.setProperty ("uiTab", tab, nullptr); st.setProperty ("uiPreview", preview, nullptr);
+    repaint();
+}
+
+void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    auto* z = zoneAt (e.position);
+    if (z == nullptr) return;
+    auto reset = [this] (const juce::String& pid) { if (auto* p = proc.apvts.getParameter (pid)) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); } };
+    switch (z->kind)
+    {
+        case Hit::ResoKnob: case Hit::TiltKnob: case Hit::LinkKnob: case Hit::ResoNodeKnob: case Hit::TahorKnob:
+        case Hit::InBox: case Hit::OutBox: case Hit::UnitKnob: case Hit::CharKnob:
+            reset (knobPid (*z, false)); break;
+        case Hit::Thd: proc.setParam ("charThd", 50.0f); break;
+        case Hit::ResoNode: proc.setParam (nid (z->a, "On"), 0.0f); break;
+        case Hit::TahorNode: proc.setParam (bid (z->a, "On"), 0.0f); break;
+        case Hit::ResoBg: addResoNode (e.position); break;
+        case Hit::CharNode:
+        {
+            const auto& nd = unitNodes (preview)[(size_t) z->a];
+            if (nd.gv >= 0) proc.setParam (cuid (nd.gv), nd.gmode == 0 || nd.gmode == 3 ? 0.5f : 0.0f);
+            else if (nd.fv >= 0) proc.setParam (cuid (nd.fv), 0.0f);
+            break;
+        }
+        case Hit::TahorBg: addTahorBand (e.position); break;
+        default: break;
+    }
+    repaint();
+}
+
+void Canvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    auto* z = zoneAt (e.position);
+    if (z == nullptr) return;
+    juce::String pid;
+    switch (z->kind)
+    {
+        case Hit::ResoKnob: case Hit::TiltKnob: case Hit::LinkKnob: case Hit::ResoNodeKnob: case Hit::TahorKnob:
+        case Hit::InBox: case Hit::OutBox: case Hit::UnitKnob: case Hit::CharKnob: pid = knobPid (*z, false); break;
+        case Hit::TahorNode: pid = bid (z->a, "Q"); break;
+        case Hit::ResoNode: pid = nid (z->a, "Q"); break;
+        case Hit::CharNode: { const auto& nd = unitNodes (preview)[(size_t) z->a]; if (nd.qv < 0) return; pid = cuid (nd.qv); break; }
+        default: return;
+    }
+    if (auto* p = proc.apvts.getParameter (pid))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, p->getValue() + w.deltaY * 0.05f));
+        p->endChangeGesture();
+    }
+}
+
+//==============================================================================
+// V9: split a band into left and right partners (each its own dot, its own settings), or join them back
+void Canvas::splitTahor (int b, int place)
+{
+    const int pair = (int) proc.param (bid (b, "Pair")) - 1;
+    const bool hasPair = pair >= 0 && pair != b && proc.param (bid (pair, "On")) > 0.5f;
+    if (place >= 3)
+    {
+        proc.setParam (bid (b, "Place"), (float) place);
+        const float other = place == 3 ? 4.0f : 3.0f;
+        if (hasPair) { proc.setParam (bid (pair, "Place"), other); return; }
+        for (int f = 0; f < numBands; ++f)
+            if (f != b && proc.param (bid (f, "On")) < 0.5f)
+            {
+                for (auto* w : { "Type", "Hz", "Gain", "Q", "Slope", "Dyn", "Thr", "Rng", "Spec", "Sc", "Att", "Rel", "Sel" })
+                    proc.setParam (bid (f, w), proc.param (bid (b, w)));
+                proc.setParam (bid (f, "Place"), other);
+                proc.setParam (bid (f, "Solo"), 0.0f);
+                proc.setParam (bid (f, "Pair"), (float) (b + 1));
+                proc.setParam (bid (b, "Pair"), (float) (f + 1));
+                proc.setParam (bid (f, "On"), 1.0f);
+                return;
+            }
+        return;   // no free band: it just works on one side
+    }
+    proc.setParam (bid (b, "Place"), (float) place);
+    if (hasPair && (int) proc.param (bid (pair, "Pair")) - 1 == b)
+    {
+        proc.setParam (bid (pair, "On"), 0.0f);
+        proc.setParam (bid (pair, "Pair"), 0.0f);
+    }
+    proc.setParam (bid (b, "Pair"), 0.0f);
+}
+
+void Canvas::splitReso (int i, int place)
+{
+    const int pair = (int) proc.param (nid (i, "Pair")) - 1;
+    const bool hasPair = pair >= 0 && pair != i && proc.param (nid (pair, "On")) > 0.5f;
+    if (place >= 1)
+    {
+        proc.setParam (nid (i, "Place"), (float) place);
+        const float other = place == 1 ? 2.0f : 1.0f;
+        if (hasPair) { proc.setParam (nid (pair, "Place"), other); return; }
+        for (int f = 0; f < maxResoNodes; ++f)
+            if (f != i && proc.param (nid (f, "On")) < 0.5f)
+            {
+                for (auto* w : { "Shape", "Hz", "Amt", "Q" }) proc.setParam (nid (f, w), proc.param (nid (i, w)));
+                proc.setParam (nid (f, "Place"), other);
+                proc.setParam (nid (f, "Pair"), (float) (i + 1));
+                proc.setParam (nid (i, "Pair"), (float) (f + 1));
+                proc.setParam (nid (f, "On"), 1.0f);
+                return;
+            }
+        return;
+    }
+    proc.setParam (nid (i, "Place"), 0.0f);
+    if (hasPair && (int) proc.param (nid (pair, "Pair")) - 1 == i)
+    {
+        proc.setParam (nid (pair, "On"), 0.0f);
+        proc.setParam (nid (pair, "Pair"), 0.0f);
+    }
+    proc.setParam (nid (i, "Pair"), 0.0f);
+}
+
+void Canvas::setCharSide (int s)
+{
+    const auto sp = "u" + juce::String (preview) + "split";
+    if (s == 0) { proc.setParam (sp, 0.0f); charSide = 0; return; }
+    if (! proc.unitSplit (preview))   // the right side starts as a copy of the left
+    {
+        for (int j = 0; j < unitValues; ++j) proc.setParam ("u" + juce::String (preview) + "r" + juce::String (j), proc.param (uid (preview, j)));
+        proc.setParam (sp, 1.0f);
+    }
+    charSide = s - 1;
+}
+
+void Canvas::showHistoryMenu (R at)
+{
+    const auto names = proc.historyNames();
+    const int cur = proc.historyIndex();
+    juce::PopupMenu m;
+    m.addSectionHeader ("History (newest first)");
+    for (int i = names.size() - 1; i >= juce::jmax (0, names.size() - 30); --i)
+        m.addItem (1 + i, names[i], i != cur, i == cur);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (at.toNearestInt())),
+                     [this] (int r) { if (r > 0) proc.jumpHistory (r - 1); repaint(); });
+}
+
+// V11: keyboard shortcuts
+//   1 / 2 / 3: RESO / TAHOR / CHARACTER      cmd-Z / shift-cmd-Z: undo / redo
+//   delete / backspace: remove the selected band (Tahor, Reso)   S: solo the selected band
+//   arrows: nudge the selected band (left / right = frequency, up / down = gain; shift = finer)
+//   B: bypass   M: match   escape: close the gallery / browser
+bool Canvas::keyPressed (const juce::KeyPress& k)
+{
+    const auto c = k.getTextCharacter();
+    const bool cmd = k.getModifiers().isCommandDown(), shift = k.getModifiers().isShiftDown();
+    auto toggle = [this] (const juce::String& pid) { proc.setParam (pid, proc.param (pid) > 0.5f ? 0.0f : 1.0f); };
+    bool done = true;
+    if (cmd && (c == 'z' || c == 'Z' || k.getKeyCode() == 'Z')) { if (shift) proc.redo(); else proc.undo(); }
+    else if (cmd) done = false;
+    else if (c == '1' || c == '2' || c == '3') tab = c - '1';
+    else if (k == juce::KeyPress::escapeKey) { addOpen = false; browseOpen = false; }
+    else if (k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey)
+    {
+        if (tab == 1 && proc.param (bid (selBand, "On")) > 0.5f) proc.setParam (bid (selBand, "On"), 0.0f);
+        else if (tab == 0 && proc.param (nid (selNode, "On")) > 0.5f) proc.setParam (nid (selNode, "On"), 0.0f);
+        else done = false;
+    }
+    else if (c == 's' || c == 'S')
+    {
+        if (tab == 1) { const bool was = proc.param (bid (selBand, "Solo")) > 0.5f;
+                        for (int b = 0; b < numBands; ++b) proc.setParam (bid (b, "Solo"), 0.0f);
+                        proc.setParam (bid (selBand, "Solo"), was ? 0.0f : 1.0f); }
+        else if (tab == 0) resoSolo = resoSolo == selNode ? -1 : selNode;
+        else done = false;
+    }
+    else if (c == 'b' || c == 'B') toggle ("bypass");
+    else if (c == 'm' || c == 'M') toggle ("match");
+    else if (k.isKeyCode (juce::KeyPress::leftKey) || k.isKeyCode (juce::KeyPress::rightKey) || k.isKeyCode (juce::KeyPress::upKey) || k.isKeyCode (juce::KeyPress::downKey))
+    {
+        const bool horiz = k.isKeyCode (juce::KeyPress::leftKey) || k.isKeyCode (juce::KeyPress::rightKey);
+        const float dir = (k.isKeyCode (juce::KeyPress::rightKey) || k.isKeyCode (juce::KeyPress::upKey)) ? 1.0f : -1.0f;
+        if (tab == 1 && proc.param (bid (selBand, "On")) > 0.5f)
+        {
+            if (horiz) proc.setParam (bid (selBand, "Hz"), juce::jlimit (10.0f, 30000.0f, proc.param (bid (selBand, "Hz")) * std::pow (2.0f, dir * (shift ? 1.0f / 48 : 1.0f / 12))));
+            else proc.setParam (bid (selBand, "Gain"), juce::jlimit (-30.0f, 30.0f, proc.param (bid (selBand, "Gain")) + dir * (shift ? 0.1f : 0.5f)));
+        }
+        else if (tab == 0 && proc.param (nid (selNode, "On")) > 0.5f)
+        {
+            if (horiz) proc.setParam (nid (selNode, "Hz"), juce::jlimit (20.0f, 20000.0f, proc.param (nid (selNode, "Hz")) * std::pow (2.0f, dir * (shift ? 1.0f / 48 : 1.0f / 12))));
+            else proc.setParam (nid (selNode, "Amt"), juce::jlimit (-6.0f, 6.0f, proc.param (nid (selNode, "Amt")) + dir * (shift ? 0.1f : 0.5f)));
+        }
+        else done = false;
+    }
+    else done = false;
+    if (done) repaint();
+    return done;
+}
+
+void Canvas::addTahorBand (P at)
+{
+    for (int b = 0; b < numBands; ++b)
+        if (proc.param (bid (b, "On")) < 0.5f)
+        {
+            const float x = at.x - display.getX(), y = at.y - display.getY();
+            static const float ranges[4] { 3.0f, 6.0f, 12.0f, 30.0f };
+            const float rng = ranges[juce::jlimit (0, 3, (int) proc.param ("range"))] * 1.5f;
+            proc.setParam (bid (b, "Type"), 0.0f);
+            proc.setParam (bid (b, "Hz"), juce::jlimit (10.0f, 30000.0f, xf (x)));
+            proc.setParam (bid (b, "Gain"), juce::jlimit (-30.0f, 30.0f, (335.0f - y) / 335.0f * rng));
+            proc.setParam (bid (b, "Q"), 1.0f);
+            proc.setParam (bid (b, "On"), 1.0f);
+            selBand = b;
+            return;
+        }
+}
+
+void Canvas::addResoNode (P at)
+{
+    for (int i = 0; i < maxResoNodes; ++i)
+        if (proc.param (nid (i, "On")) < 0.5f)
+        {
+            proc.setParam (nid (i, "Shape"), 0.0f);
+            proc.setParam (nid (i, "Hz"), juce::jlimit (20.0f, 20000.0f, xf (at.x - display.getX())));
+            proc.setParam (nid (i, "Amt"), juce::jlimit (-10.0f, 10.0f, (330.0f - (at.y - display.getY())) / 40.0f));
+            proc.setParam (nid (i, "Q"), 1.0f);
+            proc.setParam (nid (i, "On"), 1.0f);
+            selNode = i;
+            return;
+        }
+}
+
+void Canvas::showPresetMenu()
+{
+    juce::PopupMenu m;
+    // V3: Save and Save As live here
+    bool isUser = false;
+    for (auto& f : proc.userPresets()) if (f.getFileNameWithoutExtension() == proc.presetName) isUser = true;
+    m.addItem (5001, isUser ? "Save" : "Save (as a new preset)");
+    m.addItem (5002, "Save As...");
+    m.addItem (5003, "Browse presets...");   // V9
+    m.addSeparator();
+    const auto& f = factoryPresets();
+    m.addSectionHeader ("Factory");
+    for (int i = 0; i < (int) f.size(); ++i) m.addItem (1 + i, juce::String::fromUTF8 (f[(size_t) i].name));
+    const auto users = proc.userPresets();
+    if (! users.isEmpty())
+    {
+        m.addSectionHeader ("Yours");
+        for (int i = 0; i < users.size(); ++i) m.addItem (1000 + i, users[i].getFileNameWithoutExtension());
+    }
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (presetRect.toNearestInt())),
+        [this, users, isUser] (int r)
+        {
+            if (r == 5001) { if (isUser) proc.saveUserPreset (proc.presetName); else saveAs(); }
+            else if (r == 5002) saveAs();
+            else if (r == 5003) { browseOpen = true; addOpen = false; }
+            else if (r >= 1000) proc.loadUserPreset (users[r - 1000]);
+            else if (r > 0) proc.loadFactoryPreset (r - 1);
+            repaint();
+        });
+}
+
+void Canvas::saveAs()
+{
+    auto* w = new juce::AlertWindow ("Save preset", "Name this preset", juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor ("name", proc.presetName);
+    w->addComboBox ("tag", presetTagNames(), "Tag");   // V9: a tag, for the browser
+    if (auto* cb = w->getComboBoxComponent ("tag")) cb->setSelectedItemIndex (presetTagNames().indexOf ("Mine"));
+    w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w] (int r)
+    {
+        auto* cb = w->getComboBoxComponent ("tag");
+        if (r == 1) proc.saveUserPreset (w->getTextEditorContents ("name"), cb != nullptr ? cb->getText() : juce::String ("Mine"));
+        repaint();
+    }), true);
+}
+
+void Canvas::click (const Zone& z, const juce::MouseEvent& e)
+{
+    auto toggle = [this] (const juce::String& pid) { proc.setParam (pid, proc.param (pid) > 0.5f ? 0.0f : 1.0f); };
+    auto cycle = [this] (const juce::String& pid, int n) { proc.setParam (pid, (float) (((int) proc.param (pid) + 1) % n)); };
+    auto& st = proc.apvts.state;
+    switch (z.kind)
+    {
+        case Hit::Undo: proc.undo(); break;
+        case Hit::Redo: proc.redo(); break;
+        case Hit::Preset: showPresetMenu(); break;
+        case Hit::Save:
+        {
+            bool isUser = false;
+            for (auto& f : proc.userPresets()) if (f.getFileNameWithoutExtension() == proc.presetName) isUser = true;
+            if (isUser) proc.saveUserPreset (proc.presetName); else saveAs();
+            break;
+        }
+        case Hit::SaveAs: saveAs(); break;
+        case Hit::AB: proc.switchAB (1 - proc.abSlot); break;
+        case Hit::Match: toggle ("match"); break;
+        case Hit::Bypass: toggle ("bypass"); break;
+        case Hit::Tab: tab = z.a; break;
+        case Hit::TabPower: toggle (z.a == 0 ? "resoOn" : z.a == 1 ? "tahorOn" : "charOn"); break;
+        case Hit::Phase: cycle ("phase", 3); break;
+        case Hit::Os: cycle ("os", 6); break;
+        case Hit::OsRender: cycle ("osRender", 6); break;
+        case Hit::Analyzer: cycle ("analyzer", 4); break;
+        case Hit::Range: cycle ("range", 4); break;
+        case Hit::Auto: proc.autoLearning.store (true); break;
+        case Hit::ScExt: toggle ("scExt"); break;
+        case Hit::ResoMode: proc.setParam ("rsMode", (float) z.a); break;
+        case Hit::LowLat: toggle ("rsLowLat"); break;
+        case Hit::ResoMs: proc.setParam ("rsMs", (float) z.a); break;
+        case Hit::Delta: toggle ("rsDelta"); break;
+        case Hit::ResoSc: toggle ("rsKey"); break;
+        case Hit::Adv: case Hit::AdvClose: advOpen = ! advOpen; st.setProperty ("uiAdv", advOpen, nullptr); break;
+        case Hit::Strip: stripOpen = ! stripOpen; st.setProperty ("uiStrip", stripOpen, nullptr); break;
+        case Hit::ResoPhase: proc.setParam ("rsPhase", (float) z.a); break;
+        case Hit::ResoNode: selNode = z.a; st.setProperty ("uiNode", selNode, nullptr); break;
+        case Hit::ResoShape:
+        {
+            if (z.a >= 0) { proc.setParam (nid (selNode, "Shape"), (float) z.a); break; }
+            // V6: the shape dropdown
+            juce::PopupMenu m;
+            const char* names[8] { "Bell", "Bandpass", "Low shelf", "High shelf", "Tilt", "Notch", "Low cut", "High cut" };
+            const int cur = (int) proc.param (nid (selNode, "Shape"));
+            for (int i = 0; i < 8; ++i) m.addItem (1 + i, names[i], true, i == cur);
+            const int n = selNode;
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r.toNearestInt())),
+                             [this, n] (int r) { if (r > 0) proc.setParam (nid (n, "Shape"), (float) (r - 1)); repaint(); });
+            break;
+        }
+        case Hit::TahorNode: case Hit::TahorBand: selBand = z.a; st.setProperty ("uiBand", selBand, nullptr); break;
+        case Hit::TahorType:
+        {
+            juce::PopupMenu m;
+            const int type = (int) proc.param (bid (selBand, "Type"));
+            const char* names[6] { "Bell", "Low shelf", "High shelf", "Low cut", "High cut", "Notch" };
+            for (int i = 0; i < 6; ++i) m.addItem (1 + i, names[i], true, i == type);
+            if (type == 3 || type == 4)
+            {
+                m.addSeparator();
+                const char* sl[6] { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct" };
+                for (int i = 0; i < 6; ++i) m.addItem (100 + i, sl[i], true, i == (int) proc.param (bid (selBand, "Slope")));
+            }
+            m.addSeparator();
+            m.addItem (200, "Remove band");
+            const int b = selBand;
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r.toNearestInt())), [this, b] (int r)
+            {
+                if (r >= 1 && r <= 6) proc.setParam (bid (b, "Type"), (float) (r - 1));
+                if (r >= 100 && r < 106) proc.setParam (bid (b, "Slope"), (float) (r - 100));
+                if (r == 200) proc.setParam (bid (b, "On"), 0.0f);
+                repaint();
+            });
+            break;
+        }
+        case Hit::TahorPlace: splitTahor (selBand, z.a); break;   // V9: L or R makes a partner on the other side
+        case Hit::ResoPlace: splitReso (selNode, z.a); break;
+        case Hit::CharSide: setCharSide (z.a); break;
+        case Hit::AutoGain: toggle ("autoGain"); break;
+        case Hit::History: showHistoryMenu (z.r); break;
+        case Hit::Browse: browseOpen = ! browseOpen; addOpen = false; break;
+        case Hit::BrowseClose: browseOpen = false; break;
+        case Hit::BrowseTag: browseTag = z.a == 0 ? juce::String ("All") : juce::String (presetTagNames()[z.a - 1]); break;
+        case Hit::BrowsePick:
+            if (z.a >= 1000) { const auto users = proc.userPresets(); if (z.a - 1000 < users.size()) proc.loadUserPreset (users[z.a - 1000]); }
+            else proc.loadFactoryPreset (z.a);
+            browseOpen = false;
+            break;
+        case Hit::TahorMode:   // V9: EQ / Dynamic / Spectral
+            proc.setParam (bid (selBand, "Dyn"), z.a == 1 ? 1.0f : 0.0f);
+            proc.setParam (bid (selBand, "Spec"), z.a == 2 ? 1.0f : 0.0f);
+            break;
+        case Hit::TahorChip:
+        {
+            static const char* w[4] { "Dyn", "Spec", "Sc", "Solo" };
+            if (z.a != 9) { toggle (bid (selBand, w[juce::jlimit (0, 3, z.a)])); break; }
+            // V9: the band's mode - EQ, Dynamic or Spectral (the panel flips to match) - and Sidechain
+            juce::PopupMenu m;
+            const bool dy = proc.param (bid (selBand, "Dyn")) > 0.5f, sp = proc.param (bid (selBand, "Spec")) > 0.5f;
+            m.addSectionHeader ("Mode");
+            m.addItem (1, "EQ", true, ! dy && ! sp);
+            m.addItem (2, "Dynamic", true, dy || sp);   // V10: no Spectral (Reso does that job)
+            m.addSeparator();
+            m.addItem (4, "Sidechain (the detector hears the key input)", true, proc.param (bid (selBand, "Sc")) > 0.5f);
+            const int b = selBand;
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r.toNearestInt())), [this, b] (int r)
+            {
+                if (r >= 1 && r <= 3) { proc.setParam (bid (b, "Dyn"), r == 2 ? 1.0f : 0.0f); proc.setParam (bid (b, "Spec"), r == 3 ? 1.0f : 0.0f); }
+                if (r == 4) proc.setParam (bid (b, "Sc"), proc.param (bid (b, "Sc")) > 0.5f ? 0.0f : 1.0f);
+                repaint();
+            });
+            break;
+        }
+        case Hit::AddBand: addTahorBand ({ display.getX() + fx (1000.0f), display.getY() + 335.0f }); break;
+        case Hit::UnitPrev: preview = (preview + numUnits - 1) % numUnits; selCharNode = -1; break;
+        case Hit::UnitNext: preview = (preview + 1) % numUnits; selCharNode = -1; break;
+        case Hit::UnitAdd:
+        {
+            auto c = proc.chain();
+            if ((int) c.size() < maxChain && std::find (c.begin(), c.end(), preview) == c.end()) { c.push_back (preview); proc.setChain (c); }
+            break;
+        }
+        case Hit::AddEq: addOpen = ! addOpen; break;   // V8: the gear gallery
+        case Hit::AddClose: addOpen = false; break;
+        case Hit::AddPick:
+        {
+            auto c = proc.chain();
+            if ((int) c.size() < maxChain && std::find (c.begin(), c.end(), z.a) == c.end()) { c.push_back (z.a); proc.setChain (c); }
+            preview = z.a; selCharNode = -1; addOpen = false;
+            break;
+        }
+        case Hit::BandSolo:
+            if (z.a == 0)
+            {
+                const bool was = proc.param (bid (selBand, "Solo")) > 0.5f;
+                for (int b = 0; b < numBands; ++b) if (b != selBand && proc.param (bid (b, "Solo")) > 0.5f) proc.setParam (bid (b, "Solo"), 0.0f);
+                proc.setParam (bid (selBand, "Solo"), was ? 0.0f : 1.0f);
+            }
+            else if (z.a == 2) resoSolo = resoSolo == selNode ? -1 : selNode;   // V9: Reso's solo
+            else
+            {
+                if (charSolo == z.b && charSoloUnit == preview) { charSolo = -1; charSoloUnit = -1; proc.charSoloHz.store (0.0f); }
+                else { charSolo = z.b; charSoloUnit = preview; }
+            }
+            break;
+        case Hit::PresetStep:   // V8: step through the presets (factory, then yours)
+        {
+            const auto& f = factoryPresets();
+            const auto users = proc.userPresets();
+            const int total = (int) f.size() + users.size();
+            int cur = -1;
+            for (int i = 0; i < (int) f.size(); ++i) if (juce::String::fromUTF8 (f[(size_t) i].name) == proc.presetName) cur = i;
+            for (int i = 0; i < users.size(); ++i) if (users[i].getFileNameWithoutExtension() == proc.presetName) cur = (int) f.size() + i;
+            const int nx = cur < 0 ? (z.a > 0 ? 0 : total - 1) : (cur + z.a + total) % total;
+            if (nx < (int) f.size()) proc.loadFactoryPreset (nx); else proc.loadUserPreset (users[nx - (int) f.size()]);
+            break;
+        }
+        case Hit::PageDot: preview = z.a; break;
+        case Hit::UnitSwitch: toggle (uid (5, 8 + z.a)); break;
+        case Hit::ChainChip: { auto c = proc.chain(); if (z.a < (int) c.size()) { preview = c[(size_t) z.a]; selCharNode = -1; } break; }
+        case Hit::ChainRemove: { auto c = proc.chain(); if (z.a < (int) c.size()) { c.erase (c.begin() + z.a); proc.setChain (c); } break; }
+        case Hit::CharMode: proc.setParam ("charMode", (float) z.a); break;
+        case Hit::PeakDot: preview = z.a; selCharNode = -1; break;
+        case Hit::CharNode: selCharNode = z.a; break;
+        case Hit::FullScreen: if (onFullScreen) onFullScreen(); break;
+        case Hit::TabCycle: tab = (tab + z.a) % 3; break;
+        case Hit::Size:
+        {
+            juce::PopupMenu m;
+            static const float sc[5] { 0.7f, 0.85f, 1.0f, 1.2f, 1.4f };
+            static const char* nm[5] { "Mini  (876 x 560)", "Small  (1064 x 680)", "Medium  (1252 x 800)", "Large  (1502 x 960)", "Extra Large  (1753 x 1120)" };
+            for (int i = 0; i < 5; ++i) m.addItem (1 + i, nm[i], true, ! fullScreen && std::abs (currentScale - sc[i]) < 0.01f);
+            m.addSeparator();
+            m.addItem (10, "Full screen", true, fullScreen);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r.toNearestInt())), [this] (int r)
+            {
+                if (r >= 1 && r <= 5) { if (fullScreen) fullScreen = false; if (onSize) onSize (sc[r - 1]); }
+                if (r == 10 && onFullScreen) onFullScreen();
+                repaint();
+            });
+            break;
+        }
+        default: break;
+    }
+    juce::ignoreUnused (e);
+}
+
+//==============================================================================
+TahorEditor::TahorEditor (TahorProcessor& p) : AudioProcessorEditor (p), proc (p), canvas (p)
+{
+    addAndMakeVisible (canvas);
+    canvas.onResize = [this] (float s) { setSize (juce::roundToInt (ui::W * s), juce::roundToInt (ui::H * s)); globalScale (s); };
+    // V2: full screen - as big as the screen the window is on allows (and back again)
+    canvas.onFullScreen = [this]
+    {
+        if (! canvas.fullScreen)
+        {
+            scaleBeforeFull = (float) getWidth() / ui::W;
+            float s = 0.0f;
+           #if JUCE_MAC
+            // V3: measure the host window's own bars and fit inside the screen's visible area, then pin the top
+            if (auto* peer = getPeer()) s = tahorMacFullScale (peer->getNativeHandle(), ui::W, ui::H, (float) getWidth(), (float) getHeight());
+           #endif
+            if (s <= 0.0f)
+            {
+                auto area = getScreenBounds();
+                if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (area)) area = d->userArea;
+                s = juce::jmin ((float) area.getWidth() / ui::W, (float) (area.getHeight() - 80) / ui::H);
+            }
+            canvas.fullScreen = true;
+            setSize (juce::roundToInt (ui::W * s), juce::roundToInt (ui::H * s));
+        }
+        else
+        {
+            canvas.fullScreen = false;
+            setSize (juce::roundToInt (ui::W * scaleBeforeFull), juce::roundToInt (ui::H * scaleBeforeFull));
+        }
+       #if JUCE_MAC
+        juce::Component::SafePointer<TahorEditor> safe (this);
+        for (int ms : { 60, 250 })   // after the host has resized its window
+            juce::Timer::callAfterDelay (ms, [safe] { if (safe != nullptr) if (auto* peer = safe->getPeer()) tahorMacPinTop (peer->getNativeHandle()); });
+       #endif
+    };
+    canvas.onSize = [this] (float s)
+    {
+        setSize (juce::roundToInt (ui::W * s), juce::roundToInt (ui::H * s));
+        globalScale (s);
+    };
+    limits.setFixedAspectRatio (ui::W / ui::H);
+    limits.setSizeLimits (751, 480, 3840, 2454);
+    setConstrainer (&limits);
+    setResizable (true, false);
+    const float s = juce::jlimit (0.6f, 1.6f, (float) proc.apvts.state.getProperty ("uiScale", globalScale (-1.0f)));
+    setSize (juce::roundToInt (ui::W * s), juce::roundToInt (ui::H * s));
+}
+
+TahorEditor::~TahorEditor() {}
+
+// V3: the size you picked last is remembered for every new Tahor (like Pro-Q); pass < 0 to read it
+float TahorEditor::globalScale (float set)
+{
+    juce::PropertiesFile::Options o;
+    o.applicationName = "Tahor"; o.filenameSuffix = "settings"; o.folderName = "Mishkal Audio";
+    o.osxLibrarySubFolder = "Application Support";
+    juce::PropertiesFile f (o);
+    if (set > 0.0f) { f.setValue ("scale", set); f.saveIfNeeded(); return set; }
+    return (float) f.getDoubleValue ("scale", 1.0);
+}
+
+void TahorEditor::resized()
+{
+    const float s = (float) getWidth() / ui::W;
+    canvas.currentScale = s;
+    canvas.setBounds (0, 0, (int) ui::W, (int) ui::H);
+    canvas.setTransform (juce::AffineTransform::scale (s));
+    proc.apvts.state.setProperty ("uiScale", s, nullptr);
+}
