@@ -53,6 +53,7 @@ void ui::text (juce::Graphics& g, const juce::String& s, const juce::Font& f, ju
 //==============================================================================
 Canvas::Canvas (TahorProcessor& p) : proc (p)
 {
+    pressCanvas (this, true);   // PRESSURE: the switches ask this canvas
     setOpaque (true);
     setWantsKeyboardFocus (true);   // V11: shortcuts
     auto& st = proc.apvts.state;
@@ -75,6 +76,7 @@ Canvas::Canvas (TahorProcessor& p) : proc (p)
 
 Canvas::~Canvas()
 {
+    pressCanvas (this, false);   // PRESSURE: never ask a closed window
     auto& st = proc.apvts.state;
     st.setProperty ("uiTab", tab, nullptr); st.setProperty ("uiBand", selBand, nullptr); st.setProperty ("uiNode", selNode, nullptr);
     st.setProperty ("uiPreview", preview, nullptr); st.setProperty ("uiStrip", stripOpen, nullptr); st.setProperty ("uiAdv", advOpen, nullptr);
@@ -96,6 +98,7 @@ void Canvas::analyse (std::vector<float>& win, std::vector<float>& smoothDb)
 
 void Canvas::timerCallback()
 {
+    pressCanvas (this, true);
     proc.preTap.pull (preWin);
     proc.postTap.pull (postWin);
     if (eqMatch == 1)   // V12: EQ MATCH learning - your sound (pre) and the reference (sidechain)

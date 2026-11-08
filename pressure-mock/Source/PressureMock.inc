@@ -11,7 +11,6 @@ const char* tahor::penv (const char* name)
 
 const char* Canvas::flagFor (const char* name)
 {
-    gPressCanvas = this;
     auto is = [name] (const char* k) { return std::strcmp (name, k) == 0; };
     static const char* yes = "1";
     const int eng = (int) proc.param ("cEngine");

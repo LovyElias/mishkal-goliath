@@ -81,8 +81,9 @@ public:
         lookPos = 0;
         tmp.setSize (2, juce::jmax (32, maxBlock));
         sat.prepare (sr);
+        coefsAt = { -1.0f, -1.0f, -1.0f, -1.0f };
+        CleanSettings d; updateFilters (d);   // second-order coefficients in place before the filters size their state
         reset();
-        coefsAt = {};
     }
     void reset()
     {
@@ -145,7 +146,7 @@ public:
         const float relSlowMs = ds1 ? s.dsRelSlowMs : vox ? 600.0f : relMs * 5.0f;
         const float relSlowK = coef (relSlowMs), atkSlowK = coef (400.0f);
         const int holdN = (int) (s.holdMs * 0.001 * sr);
-        const float makeup = juce::Decibels::decibelsToGain (s.makeupDb + autoMakeup (s) + (vox ? s.voxGainDb : 0.0f));
+        const float makeup = juce::Decibels::decibelsToGain ((vox ? s.voxGainDb : s.makeupDb) + autoMakeup (s));   // LE-755C has its own Gain
         const float dryG = pro ? (s.proDryDb <= -60.0f ? 0.0f : juce::Decibels::decibelsToGain (s.proDryDb)) : 1.0f - s.mix;
         const float wetG = pro ? juce::Decibels::decibelsToGain (s.proWetDb) : s.mix;
         const float avgK = std::exp (-1.0f / (float) (1.0 * sr));

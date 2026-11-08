@@ -49,6 +49,8 @@ enum class Hit
 // PRESSURE: the mock's look switches (PRESS_DS1, PRESS_KNEE ...) - in the plug-in they come from the parameters and the
 // UI state; in the snapshot harness (PRESSURE_MOCK) from the environment, as before
 const char* penv (const char* name);
+class Canvas;
+void pressCanvas (Canvas*, bool alive);   // which window's state penv reads (cleared when that window closes)
 
 class Canvas : public juce::Component, private juce::Timer
 {

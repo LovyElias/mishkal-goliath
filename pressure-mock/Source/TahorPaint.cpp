@@ -6,6 +6,7 @@ namespace { juce::Colour engineColour(); }   // Pressure: the CLEAN engine's col
 using namespace tahor;
 using namespace tahor::ui;
 static tahor::Canvas* gPressCanvas = nullptr;   // PRESSURE: the canvas penv asks
+void tahor::pressCanvas (tahor::Canvas* c, bool alive) { if (alive) gPressCanvas = c; else if (gPressCanvas == c) gPressCanvas = nullptr; }
 
 namespace
 {
