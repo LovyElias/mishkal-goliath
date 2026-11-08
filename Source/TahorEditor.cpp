@@ -599,9 +599,10 @@ void Canvas::openTypeIn (const Zone& z)
     addAndMakeVisible (t);
     t.selectAll();
     t.grabKeyboardFocus();
-    t.onReturnKey = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<Canvas> (this)] { if (sp) sp->closeTypeIn (true); }); };
-    t.onEscapeKey = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<Canvas> (this)] { if (sp) sp->closeTypeIn (false); }); };
-    t.onFocusLost = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<Canvas> (this)] { if (sp) sp->closeTypeIn (true); }); };
+    const juce::Component::SafePointer<Canvas> sp (this);
+    t.onReturnKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
+    t.onEscapeKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (false); }); };
+    t.onFocusLost = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
 }
 
 void Canvas::closeTypeIn (bool commit)
