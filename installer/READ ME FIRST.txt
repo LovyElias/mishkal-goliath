@@ -20,7 +20,10 @@ Getting started
 - MATCH and AUTO GAIN keep the level fair while you compare.
 
 Things we'd love you to try
-- A dynamic Tahor band on a harsh vocal - drag the little diamond to set its range on the screen.
+- A dynamic Tahor band on a harsh vocal - grab its dashed range outline anywhere and drag to set the range.
+- The band bubble: click the shape to change it (Bell, shelf, cut...), click the frequency, gain or Q to type
+  a value ("2.5k", "A4", "-3", "0.7"), and hit S to solo. It stays open while you hover it.
+- Hover the empty screen: a readout shows the frequency and note under the mouse.
 - Spectrum Grab: hover a peak in the analyzer and drag it - it becomes a band.
 - EQ MATCH with a reference track in the sidechain.
 

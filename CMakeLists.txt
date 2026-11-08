@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Tahor VERSION 1.12.0)   # raise with every version so hosts rescan
+project(Tahor VERSION 1.13.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -90,6 +90,10 @@ endif()
 #        screen, 20 Hz - 20 kHz scale, preset submenus, see-through Reso side panels, Spectrum Grab, multi-select,
 #        piano roll, EQ Match, opens at Small, double-click a Character band to switch it off
 #   V13 = the piano strip has its own on / off button in the bottom bar (off to start); the note stays in the bubble
+#   V14 = the dynamic range can be grabbed anywhere along its dashed outline (it brightens under the mouse);
+#        the band bubble stays open while you hover it and lingers 4 s (like Pro-Q 4), so Solo is easy to reach;
+#        click the shape for a menu, or click the frequency / gain / Q to type a value ("2.5k", "A4", "-3", "0.7");
+#        over the empty screen a hairline and readout show the frequency, note (and gain on Tahor) under the mouse
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -121,7 +125,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(TAHOR_LATEST_VERSION 13)   # raise this by one for every new version
+set(TAHOR_LATEST_VERSION 14)   # raise this by one for every new version
 
 # One plug-in, updated in place (the version shows in its window's About)
 tahor_plugin(Tahor "Mishkal Tahor" Thor com.mishkalaudio.tahor ${TAHOR_LATEST_VERSION} "${TAHOR_FORMATS}")

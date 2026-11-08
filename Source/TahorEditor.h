@@ -42,7 +42,7 @@ enum class Hit
     TahorNode, TahorType, TahorPlace, TahorKnob, TahorChip, TahorBand, AddBand, TahorBg,
     UnitPrev, UnitNext, UnitAdd, UnitKnob, UnitSwitch, PageDot, ChainChip, ChainRemove, CharMode, PeakDot, Glass, FullScreen, CharNode, Hardware, TabCycle, Size, CharKnob, Thd, AddEq, PresetStep, BandSolo, AddPick, AddClose,
     History, Browse, BrowseTag, BrowsePick, BrowseClose, AutoGain, CharSide, ResoPlace, TahorMode,
-    BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano
+    BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano, BubbleEdit
 };
 
 class Canvas : public juce::Component, private juce::Timer
@@ -117,7 +117,8 @@ private:
     struct Clip { int kind = -1; std::vector<std::pair<juce::String, float>> v; } clip;   // cut / copy / paste
     std::vector<ui::P> specPeaks;                   // Spectrum Grab: peaks in the analyzer (display coords)
     int eqMatch = 0; int eqCount = 0;
-    bool pianoOn = false;   // V13: the piano strip (off until you switch it on)               // EQ Match: 0 idle, 1 learning
+    bool pianoOn = false;
+
     std::vector<float> keyWin, keyDb, accPre, accKey;
     void showNodeMenu (Hit kind, int idx, int side, ui::R at);
     void applyEqMatch();
@@ -138,6 +139,13 @@ private:
 
     // hit zones, rebuilt on every paint
     struct Zone { ui::R r; Hit kind; int a = 0, b = 0; };
+    std::vector<Zone> rangeZones;
+    // V14: type a value straight into a bubble (frequency, gain, Q)
+    std::unique_ptr<juce::TextEditor> typeIn;
+    juce::String typeInPid; int typeInKind = 0;
+    void openTypeIn (const Zone& z);
+    void closeTypeIn (bool commit);
+    void paintCursorReadout (juce::Graphics&);   // V14: the dynamic range's grab spots (added after the background)
     std::vector<Zone> zones;
     void zone (ui::R r, Hit k, int a = 0, int b = 0) { zones.push_back ({ r, k, a, b }); }
     const Zone* zoneAt (ui::P p) const;

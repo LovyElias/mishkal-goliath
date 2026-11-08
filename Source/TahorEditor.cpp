@@ -164,7 +164,7 @@ void Canvas::timerCallback()
     drift = std::fmod (drift + 1.0f / (30.0f * 60.0f), 1.0f);   // the background's glows: once round a minute
     // V3: only the dots show; touching one (or the place a panel lives) fades the tab's controls in, leaving fades them out
     {
-        bool want = dragging && down.kind != Hit::None;
+        bool want = (dragging && down.kind != Hit::None) || typeIn != nullptr;
         if (auto* z = zoneAt (mouse))
             if (z->kind == Hit::TahorNode || z->kind == Hit::ResoNode || z->kind == Hit::CharNode || z->kind == Hit::PeakDot || z->kind == Hit::FocusEdge)
                 want = true;
@@ -173,7 +173,7 @@ void Canvas::timerCallback()
         const double now = juce::Time::getMillisecondCounterHiRes();
         if (want) lastWant = now;
         reveal = want ? juce::jmin (1.0f, reveal + 0.34f)
-                      : (now - lastWant < 500.0 ? reveal : juce::jmax (0.0f, reveal - 0.2f));
+                      : (now - lastWant < 4000.0 ? reveal : juce::jmax (0.0f, reveal - 0.2f));
     }
     pulse = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * (juce::Time::getMillisecondCounterHiRes() * 0.001 / 1.6)));
     repaint();
@@ -258,6 +258,9 @@ void Canvas::mouseDown (const juce::MouseEvent& e)
                 showNodeMenu (z0->kind, z0->a, z0->b, z0->r);
                 return;
             }
+    if (typeIn != nullptr) closeTypeIn (true);
+    if (auto* zt = zoneAt (e.position))
+        if (zt->kind == Hit::BubbleEdit) { openTypeIn (*zt); return; }   // V14: click a value in the bubble to type it
     downAt = e.position; mouse = e.position;
     dragging = true;
     dragPid = {}; dragPid2 = {};
@@ -311,9 +314,10 @@ void Canvas::mouseDown (const juce::MouseEvent& e)
         case Hit::TahorBg:   // V12: drag across the background to select several bands
             lasso = true; lassoA = lassoB = e.position;
             break;
-        case Hit::DynRange:   // V12: pull the dynamic range up or down on the screen
+        case Hit::DynRange:   // V12: pull the dynamic range up or down on the screen; V14: from anywhere on its outline
             selBand = down.a;
             dragPid = bid (selBand, "Rng"); proc.beginGesture (dragPid);
+            dragStart = proc.param (dragPid);
             break;
         case Hit::SpecPeak:   // V12: Spectrum Grab - the peak becomes a band, and you're holding it
             if (down.a < (int) specPeaks.size())
@@ -387,13 +391,9 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
         {
             static const float ranges[4] { 3.0f, 6.0f, 12.0f, 30.0f };
             const float rng = ranges[juce::jlimit (0, 3, (int) proc.param ("range"))] * 1.5f;
-            const float y = e.position.y - display.getY();
-            const float dbY = (335.0f - y) / 335.0f * rng;
-            const auto bands = proc.tahorBands();
-            const float hz = proc.param (bid (down.a, "Hz"));
-            double st = 0.0;
-            for (auto& o : bands) if (o.on) st += vox::tahorAnalogBandDb (o, o.freq, o.gain, o.q, hz);
-            proc.dragParam (dragPid, juce::jlimit (-24.0f, 24.0f, (float) (dbY - st)));
+            const float k = juce::jmax (0.05f, (float) (down.b > 0 ? down.b : 1000) / 1000.0f);   // a spot near the edge moves less per dB
+            const float dDb = -(e.position.y - downAt.y) / 335.0f * rng;
+            proc.dragParam (dragPid, juce::jlimit (-24.0f, 24.0f, dragStart + dDb / k));
             break;
         }
         case Hit::TahorNode:
@@ -519,6 +519,102 @@ void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
         case Hit::TahorBg: addTahorBand (e.position); break;
         default: break;
     }
+    repaint();
+}
+
+// V14: type a value into the bubble - "1k", "2.5 kHz", "440", a note ("A4", "C#3"), "-3", "0.7"
+static bool parseTyped (juce::String s, int kind, float& out)
+{
+    s = s.trim().toLowerCase().replace (",", ".");
+    if (s.isEmpty()) return false;
+    if (kind == 0)
+    {
+        static const char* nm[12] { "c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b" };
+        for (int n = 11; n >= 0; --n)   // a note name first (sharps before naturals)
+            if (s.startsWith (nm[n]) && s.length() > (int) strlen (nm[n]))
+            {
+                auto rest = s.substring ((int) strlen (nm[n])).trim();
+                if (rest.containsOnly ("-0123456789"))
+                {
+                    const int midi = (rest.getIntValue() + 1) * 12 + n;
+                    out = 440.0f * std::pow (2.0f, (float) (midi - 69) / 12.0f);
+                    return true;
+                }
+            }
+        float mult = 1.0f;
+        if (s.containsChar ('k')) { mult = 1000.0f; }
+        auto numPart = s.retainCharacters ("-0123456789.");
+        if (numPart.isEmpty() || ! numPart.containsAnyOf ("0123456789")) return false;
+        out = numPart.getFloatValue() * mult;
+        return out > 0.0f;
+    }
+    auto numPart = s.retainCharacters ("-+0123456789.");
+    if (! numPart.containsAnyOf ("0123456789")) return false;
+    out = numPart.getFloatValue();
+    return true;
+}
+
+void Canvas::openTypeIn (const Zone& z)
+{
+    const bool reso = z.b >= 100;
+    const int idx = reso ? z.b - 100 : z.b;
+    static const char* tn[3] { "Hz", "Gain", "Q" };
+    static const char* rn[3] { "Hz", "Amt", "Q" };
+    if (z.a == 3)   // the shape: a menu, like Pro-Q's
+    {
+        const juce::String pid = reso ? nid (idx, "Shape") : bid (idx, "Type");
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (pid)))
+        {
+            juce::PopupMenu m;
+            for (int i = 0; i < c->choices.size(); ++i) m.addItem (1 + i, c->choices[i], true, i == c->getIndex());
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r).getSmallestIntegerContainer()),
+                [this, pid] (int r) { if (r > 0) proc.setParam (pid, (float) (r - 1)); lastWant = juce::Time::getMillisecondCounterHiRes(); repaint(); });
+        }
+        return;
+    }
+    typeInKind = z.a;
+    typeInPid = reso ? nid (idx, rn[z.a]) : bid (idx, tn[z.a]);
+    typeIn = std::make_unique<juce::TextEditor>();
+    auto& t = *typeIn;
+    t.setFont (ui::font (ui::Face::Regular, 12.0f));
+    t.setJustification (juce::Justification::centred);
+    t.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1c1c22));
+    t.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    t.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xffe9a23b));
+    t.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (0xffe9a23b));
+    t.setColour (juce::TextEditor::highlightColourId, juce::Colour (0x66e9a23b));
+    t.setIndents (4, 3);
+    const float v = proc.param (typeInPid);
+    auto trimZ = [] (juce::String s) { if (s.containsChar ('.')) s = s.trimCharactersAtEnd ("0").trimCharactersAtEnd ("."); return s; };
+    t.setText (z.a == 0 ? (v >= 1000.0f ? trimZ (juce::String (v / 1000.0f, 2)) + "k" : juce::String (juce::roundToInt (v)))
+                        : juce::String (v, z.a == 2 ? 2 : 1), false);
+    const auto r = z.r.withSizeKeepingCentre (juce::jmax (z.r.getWidth() + 16.0f, 58.0f), 20.0f);
+    t.setBounds (r.getSmallestIntegerContainer());
+    addAndMakeVisible (t);
+    t.selectAll();
+    t.grabKeyboardFocus();
+    t.onReturnKey = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<Canvas> (this)] { if (sp) sp->closeTypeIn (true); }); };
+    t.onEscapeKey = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<Canvas> (this)] { if (sp) sp->closeTypeIn (false); }); };
+    t.onFocusLost = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<Canvas> (this)] { if (sp) sp->closeTypeIn (true); }); };
+}
+
+void Canvas::closeTypeIn (bool commit)
+{
+    if (typeIn == nullptr) return;
+    float v = 0.0f;
+    if (commit && parseTyped (typeIn->getText(), typeInKind, v))
+        if (auto* p = proc.apvts.getParameter (typeInPid))
+        {
+            const auto range = proc.apvts.getParameterRange (typeInPid);
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (range.convertTo0to1 (range.snapToLegalValue (v)));
+            p->endChangeGesture();
+        }
+    auto old = std::move (typeIn);   // removed after this call returns
+    removeChildComponent (old.get());
+    juce::MessageManager::callAsync ([o = std::shared_ptr<juce::TextEditor> (old.release())] {});
+    grabKeyboardFocus();
+    lastWant = juce::Time::getMillisecondCounterHiRes();
     repaint();
 }
 
