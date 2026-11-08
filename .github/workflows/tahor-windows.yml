@@ -20,7 +20,7 @@ jobs:
         run: echo "v=$(grep -E '^set\(TAHOR_LATEST_VERSION' CMakeLists.txt | grep -oE '[0-9]+' | head -1)" >> "$GITHUB_OUTPUT"
 
       - name: Configure (downloads JUCE)
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build -A x64
 
       - name: Build (VST3)
         run: cmake --build build --config Release --target Tahor_VST3 --parallel
