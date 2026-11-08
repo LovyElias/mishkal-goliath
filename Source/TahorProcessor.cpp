@@ -599,8 +599,14 @@ void TahorProcessor::loadFactoryPreset (int index)
     for (auto* p : getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
             rp->setValueNotifyingHost (rp->getDefaultValue());
+    bool usesReso = false;
     for (auto& [pid, v] : l[(size_t) index].values)
+    {
+        const juce::String id (pid);
+        if (id == "resoOn" || id.startsWith ("rs") || id.startsWith ("rn")) usesReso = true;
         if (auto* p = apvts.getParameter (pid)) p->setValueNotifyingHost (p->convertTo0to1 (v));
+    }
+    if (! usesReso) if (auto* p = apvts.getParameter ("resoOn")) p->setValueNotifyingHost (0.0f);   // V14: a preset that doesn't use Reso leaves it bypassed
     loadingPreset = false;
     currentProgram = index;
     presetName = juce::String::fromUTF8 (l[(size_t) index].name);

@@ -24,6 +24,7 @@ Things we'd love you to try
 - The band bubble: click the shape to change it (Bell, shelf, cut...), click the frequency, gain or Q to type
   a value ("2.5k", "A4", "-3", "0.7"), and hit S to solo. It stays open while you hover it.
 - Hover the empty screen: a readout shows the frequency and note under the mouse.
+- CHARACTER: use the arrows on the hardware at the bottom to browse, then double-click it to add it.
 - Spectrum Grab: hover a peak in the analyzer and drag it - it becomes a band.
 - EQ MATCH with a reference track in the sidechain.
 

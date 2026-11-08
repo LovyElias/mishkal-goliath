@@ -2294,7 +2294,7 @@ void Canvas::paintFaceplate (juce::Graphics& g, R plate, int unit)
             stext2 (U.desc, fDesc, col (U.sub), R (x0 + 14, top + 27, 150, 12), juce::Justification::centredLeft);
         }
         const juce::String slotText2 = U8 ("slot ") + juce::String (slot + 1);
-        const float lastW2 = slot >= 0 ? 10 + 12 + 4 + textWidth (font (Face::Regular, 11), slotText2) + 10 : 40 + 8 + textWidth (font (Face::SemiBold, 12, 1), "ADD");
+        const float lastW2 = slot >= 0 ? 10 + 12 + 4 + textWidth (font (Face::Regular, 11), slotText2) + 10 : 0.0f;   // V14: no ADD button (double-click the gear)
         const float areaL = x0 + 150, areaR = plate.getX() + 14 + 772 - 18 - lastW2 - 16;
         const float colW = (areaR - areaL) / (maxCol + 1.0f);
         const float rowY[2] { plate.getY() + 6.0f, plate.getY() + plate.getHeight() * 0.5f + 2.0f };
@@ -2316,15 +2316,6 @@ void Canvas::paintFaceplate (juce::Graphics& g, R plate, int unit)
             icon (g, Icon::Check, R (b.getX() + 10, cyN - 6, 12, 12), col (U.ink), 1.5f);
             text (g, slotText2, font (Face::Regular, 11), col (U.ink), R (b.getX() + 26, cyN - 8, 100, 16));
         }
-        else
-        {
-            const R c (xs, cyN - 20, 40, 40);
-            g.setColour (amber.withAlpha (0.2f)); g.fillEllipse (c.expanded (6));
-            g.setColour (amber); g.fillEllipse (c);
-            g.setColour (col ("#1a1208")); g.fillRect (c.getCentreX() - 6.5f, c.getCentreY() - 1.0f, 13.0f, 2.0f); g.fillRect (c.getCentreX() - 1.0f, c.getCentreY() - 6.5f, 2.0f, 13.0f);
-            text (g, "ADD", font (Face::SemiBold, 12, 1), amber, R (xs + 48, cyN - 8, 60, 16));
-            zone (R (xs - 6, cyN - 26, lastW2 + 12, 52), Hit::UnitAdd);
-        }
         return;
     }
     std::vector<float> widths;
@@ -2338,7 +2329,7 @@ void Canvas::paintFaceplate (juce::Graphics& g, R plate, int unit)
     float swW = 0;
     if (! U.switches.empty()) { for (auto* t : U.switches) swW = juce::jmax (swW, 14 + 6 + textWidth (font (Face::CondSemiBold, 10, 1), t)); widths.push_back (swW); }
     const juce::String slotText = U8 ("slot ") + juce::String (slot + 1);
-    const float lastW = slot >= 0 ? 10 + 12 + 4 + textWidth (font (Face::Regular, 11), slotText) + 10 : 40 + 8 + textWidth (font (Face::SemiBold, 12, 1), "ADD");
+    const float lastW = slot >= 0 ? 10 + 12 + 4 + textWidth (font (Face::Regular, 11), slotText) + 10 : 0.0f;   // V14: no ADD button (double-click the gear)
     widths.push_back (lastW);
     float total = 0; for (float w : widths) total += w;
     const float gap = (772 - 40 - total) / (float) (widths.size() - 1);
@@ -2392,15 +2383,6 @@ void Canvas::paintFaceplate (juce::Graphics& g, R plate, int unit)
         strokeRound (g, b, 13, juce::Colours::white.withAlpha (0.25f));
         icon (g, Icon::Check, R (b.getX() + 10, cy - 6, 12, 12), col (U.ink), 1.5f);
         text (g, slotText, font (Face::Regular, 11), col (U.ink), R (b.getX() + 26, cy - 8, 100, 16));
-    }
-    else
-    {
-        const R c (x, cy - 20, 40, 40);
-        g.setColour (amber.withAlpha (0.2f)); g.fillEllipse (c.expanded (6));
-        g.setColour (amber); g.fillEllipse (c);
-        g.setColour (col ("#1a1208")); g.fillRect (c.getCentreX() - 6.5f, c.getCentreY() - 1.0f, 13.0f, 2.0f); g.fillRect (c.getCentreX() - 1.0f, c.getCentreY() - 6.5f, 2.0f, 13.0f);
-        text (g, "ADD", font (Face::SemiBold, 12, 1), amber, R (x + 48, cy - 8, 60, 16));
-        zone (R (x - 6, cy - 26, lastW + 12, 52), Hit::UnitAdd);
     }
 }
 
@@ -2526,7 +2508,9 @@ void Canvas::paintCharTab (juce::Graphics& g)
         g.restoreState();
         {   // V9: a one-word hint, just above the hardware
             auto fh = font (Face::CondMedium, 10, 1.6f);   // V10: plain text, like CLEAN / SUBTLE / WARM
-            text (g, juce::String (unitHint (preview)).toUpperCase(), fh, col ("#b9b3a7", 0.55f), R (PW * 0.5f - 100, hwTop - 26, 200, 13), juce::Justification::centred);   // V11: higher, quieter
+            const auto chn = proc.chain();
+            const bool inChain = std::find (chn.begin(), chn.end(), preview) != chn.end();
+            text (g, juce::String (unitHint (preview)).toUpperCase() + (inChain ? juce::String() : DOT + "DOUBLE-CLICK TO ADD"), fh, col ("#b9b3a7", 0.55f), R (PW * 0.5f - 100, hwTop - 26, 200, 13), juce::Justification::centred);   // V11: higher, quieter
         }
         for (auto i = n0; i < zones.size(); ++i) zones[i].r = zones[i].r.transformedBy (tr).translated (o.x, o.y);
         g.endTransparencyLayer();

@@ -517,6 +517,12 @@ void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
         case Hit::ResoBg: addResoNode (e.position); break;
         case Hit::CharNode: proc.charOff[(size_t) preview].fetch_xor (1 << z->a); break;   // V12: double-click switches a Character band off / on
         case Hit::TahorBg: addTahorBand (e.position); break;
+        case Hit::Hardware:   // V14: double-click the gear at the bottom to add it to the chain (no need for the list)
+        {
+            auto c = proc.chain();
+            if ((int) c.size() < maxChain && std::find (c.begin(), c.end(), preview) == c.end()) { c.push_back (preview); proc.setChain (c); }
+            break;
+        }
         default: break;
     }
     repaint();

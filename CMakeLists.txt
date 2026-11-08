@@ -93,7 +93,9 @@ endif()
 #   V14 = the dynamic range can be grabbed anywhere along its dashed outline (it brightens under the mouse);
 #        the band bubble stays open while you hover it and lingers 4 s (like Pro-Q 4), so Solo is easy to reach;
 #        click the shape for a menu, or click the frequency / gain / Q to type a value ("2.5k", "A4", "-3", "0.7");
-#        over the empty screen a hairline and readout show the frequency, note (and gain on Tahor) under the mouse
+#        over the empty screen a hairline and readout show the frequency, note (and gain on Tahor) under the mouse;
+#        double-click the hardware shown at the bottom of CHARACTER to add it to the chain (the ADD button on the gear is gone);
+#        presets that don't use Reso load with Reso bypassed
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
