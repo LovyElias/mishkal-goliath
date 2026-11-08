@@ -141,9 +141,9 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
         fill.startNewSubPath (xR, 40.0f);
         for (int a = 0; a < n; ++a) { const float x = xR - (float) a * 2.0f, y = 40.0f + juce::jmin (24.0f, at (hGr, a)) * 9.0f; fill.lineTo (x, y); if (a == 0) edge.startNewSubPath (x, y); else edge.lineTo (x, y); }
         fill.lineTo (xR - (float) (n - 1) * 2.0f, 40.0f); fill.closeSubPath();
-        if (kind == 1 && std::getenv ("PRESS_RVOX") == nullptr)
+        if (kind == 1)
         {
-            // LE-RC, LE-DS1, LE-MLA and LE-PRO: just a red line, like Pro-C 3 - no fill
+            // every CLEAN engine: just a red line, like Pro-C 3 - no fill
             g.setColour (col ("#000000", 0.45f)); g.strokePath (edge, juce::PathStrokeType (3.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             g.setColour (col ("#ff4d5e")); g.strokePath (edge, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
