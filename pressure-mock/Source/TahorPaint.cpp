@@ -620,7 +620,7 @@ void Canvas::paintHeader (juce::Graphics& g)
     // the compact selector
     {
         auto f = font (Face::CondMedium, 10, 1.3f);
-        const char* names[3] { "HELPER", "CLEAN", "VINTAGE" };
+        const char* names[3] { "HELPERS", "CLEAN", "VINTAGE" };
         const juce::Colour cols[3] { col ("#2bc2b0"), engineColour(), amber };   // CLEAN: the engine's colour
         const char* pw[3] { "resoOn", "tahorOn", "charOn" };
         const float labW = textWidth (f, "VINTAGE");
@@ -2737,11 +2737,12 @@ void Canvas::paintMeters (juce::Graphics& g)
 // Pressure: a gain-reduction meter beside the output meter (like Pro-C): red, hanging from the top, 0 to 30 dB
 void Canvas::paintGrMeter (juce::Graphics& g)
 {
-    if (tab == 0 || hGr.empty()) return;
+    if (hGr.empty()) return;
     const int nh = (int) hGr.size();
-    const float grn = hGr[(size_t) ((hPos - 1 + nh) % nh)];
+    const float gs = 1.0f;   // HELPER: the 1964's peak reduction - the same meter, it just takes less
+    const float grn = hGr[(size_t) ((hPos - 1 + nh) % nh)] * gs;
     float hold = 0.0f;
-    for (int a = 0; a < 90 && a < nh; ++a) hold = juce::jmax (hold, hGr[(size_t) ((hPos - 1 - a + 2 * nh) % nh)]);
+    for (int a = 0; a < 90 && a < nh; ++a) hold = juce::jmax (hold, hGr[(size_t) ((hPos - 1 - a + 2 * nh) % nh)] * gs);
     const R bar (20.0f, 70, 7, 670);   // beside the input meter
     fillRound (g, bar.expanded (2, 0), 3, col ("#0b0b0e", 0.85f));
     fillRound (g, bar, 2, juce::Colours::white.withAlpha (0.05f));
@@ -2761,7 +2762,7 @@ void Canvas::paintGrMeter (juce::Graphics& g)
     // ticks every 6 dB
     for (int db = 6; db < 30; db += 6) { g.setColour (juce::Colours::black.withAlpha (0.6f)); g.fillRect (bar.getX(), std::round (yOf ((float) db)), bar.getWidth(), 1.0f); }
     text (g, "GR", font (Face::CondMedium, 8, 1.2f), mlG ? col ("#ecd59c") : dsG ? col ("#ef4444") : col ("#ff8a8a"), R (bar.getX() - 6, 56, 19, 10), juce::Justification::centred);
-    if (dsG)   // LE-DS1: how much it's taking off, in red beside the meter
+    if (dsG || tab == 0)   // LE-DS1 and HELPER: how much it's taking off, in red beside the meter
         text (g, (hold > 0.05f ? MINUS : juce::String()) + juce::String (hold, 1), font (Face::Medium, 9), col ("#ef4444"), R (bar.getRight() + 4, 56, 40, 10), juce::Justification::centredLeft);
 }
 

@@ -1,3 +1,4 @@
+static bool liftDynEq() { return std::getenv ("PRESS_LIFTMODE") != nullptr && std::atoi (std::getenv ("PRESS_LIFTMODE")) == 1; }
 // Pressure - the dynamics screens (mock): a scrolling picture of the level, newest on the right.
 // HELPER: the rider, breath control and peak catcher. CLEAN: a modern compressor drawn on the screen.
 // VINTAGE: the same picture over the chained hardware.
@@ -70,7 +71,7 @@ void Canvas::pushHistory()
     const bool breath = in < -34.0f && in > -56.0f;
     breathEnv += ((breath ? -8.0f : 0.0f) - breathEnv) * 0.25f;
     hIn[(size_t) hPos] = in;
-    hGr[(size_t) hPos] = tab == 0 ? 0.0f : compEnv;
+    hGr[(size_t) hPos] = tab == 0 ? juce::jmax (0.0f, (in + ride + breathEnv) - (-14.0f)) * 0.8f : compEnv;   // HELPER: what the 1964 catches (mock: the peaks over its threshold)
     hRide[(size_t) hPos] = ride;
     hBreath[(size_t) hPos] = breathEnv;
     hOut[(size_t) hPos] = tab == 0 ? juce::jmin (-6.0f, in + ride + breathEnv) : in - compEnv;
@@ -161,6 +162,13 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
             g.setColour (c); g.fillEllipse (b.getX() + 8, b.getCentreY() - 2, 4, 4);
             text (g, t, f, c.interpolatedWith (juce::Colours::white, 0.3f), b.withTrimmedLeft (8), juce::Justification::centred);
         };
+        // the 1964's gain reduction: the same thin red line as the compressors, hanging from the top
+        {
+            juce::Path edge;
+            for (int a = 0; a < n; ++a) { const float x = xR - (float) a * 2.0f, y = 40.0f + juce::jmin (24.0f, at (hGr, a)) * 9.0f; if (a == 0) edge.startNewSubPath (x, y); else edge.lineTo (x, y); }
+            g.setColour (col ("#000000", 0.45f)); g.strokePath (edge, juce::PathStrokeType (3.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour (col ("#ff4d5e")); g.strokePath (edge, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
         const float ride = at (hRide, 0);
         pill (x1 - 10, mid - ride * 10.0f - 18, "RIDER  " + juce::String (ride > 0 ? "+" : ride < 0 ? MINUS : juce::String()) + juce::String (std::abs (ride), 1) + " dB", helperC);
         pill (x1 - 10, py - 14, U8 ("1964  \xe2\x88\x92") + "6.0 dB", peakC);
@@ -1517,13 +1525,13 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         if (! cardOn) g.endTransparencyLayer();
         return y;
     };
-    // ---- left: Lift (its two bands side by side, a column each) and the Breath under it
+    // ---- right: Lift (its two bands side by side, a column each) and the Breath under it - next to its Tone drawer
     {
-        const R s (0, top, pw, ph);
-        panel (s, false);
+        const R s (PW - pw, top, pw, ph);
+        panel (s, true);
         float y = s.getY() + 36;
         card (s, y, "LIFT  /  2-BAND", liC, true);
-        seg (R (s.getX() + 18, y, s.getWidth() - 36, 18), { "UPWARD", "DYN EQ" }, 0, liC);
+        seg (R (s.getX() + 18, y, s.getWidth() - 36, 18), { "UPWARD", "DYN EQ" }, liftDynEq() ? 1 : 0, liC);
         y += 30;
         const float colW = (s.getWidth() - 36) * 0.5f, cL = s.getX() + 18 + colW * 0.5f, cR = cL + colW;
         text (g, "LOW", font (Face::CondMedium, 9.5f, 2.0f), ink, R (cL - colW * 0.5f, y, colW, 11), juce::Justification::centred);
@@ -1532,13 +1540,47 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         y += 20;
         knobCol (cL, y, colW, { { "FREQ", "120 Hz", 0.25f }, { "THRESH", U8 ("\xe2\x88\x92" "30 dB"), 0.4f }, { "LIFT", "+4 dB", 0.6f } }, liC, 54.0f);
         y = knobCol (cR, y, colW, { { "FREQ", "6 kHz", 0.7f }, { "THRESH", U8 ("\xe2\x88\x92" "34 dB"), 0.35f }, { "LIFT", "+3 dB", 0.55f } }, liC, 54.0f) + 4;
+        {   // Breath's light: blinks each time it catches a breath, and how many it has caught
+            const int n = (int) hBreath.size();
+            auto bAt = [&] (int age) { return hBreath[(size_t) ((hPos - 1 - age + 2 * n) % n)]; };
+            const bool lit = bAt (0) < -3.0f;
+            int caught = 0; for (int a = 1; a < n; ++a) if (bAt (a - 1) < -3.0f && bAt (a) >= -3.0f) ++caught;
+            const float lx = s.getRight() - 18 - 14 - 24, ly = y + 1.5f;
+            if (lit) { g.setGradientFill (juce::ColourGradient (brC.withAlpha (0.7f), lx + 4, ly + 4, brC.withAlpha (0.0f), lx + 14, ly + 4, true)); g.fillEllipse (lx - 6, ly - 6, 20, 20); }
+            g.setColour (lit ? brC.interpolatedWith (juce::Colours::white, 0.45f) : juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (lx, ly, 8, 8);
+            g.setColour (juce::Colours::black.withAlpha (0.5f)); g.drawEllipse (lx, ly, 8, 8, 0.8f);
+            juce::ignoreUnused (caught);
+        }
         card (s, y, "BREATH", brC, std::getenv ("PRESS_HOFF") == nullptr);
-        knobs (s, y, { { "AMOUNT", U8 ("\xe2\x88\x92" "8 dB"), 0.33f } }, brC);
+        knobs (s, y, { { "AMOUNT", U8 ("\xe2\x88\x92" "8 dB"), 0.33f }, { "SENSE", "55 %", 0.55f }, { "FADE", "40 ms", 0.4f } }, brC);
+        {   // the breaths it has caught lately: each one a soft bronze dip, scrolling with the music
+            const int n = (int) hBreath.size();
+            auto bAt = [&] (int age) { return hBreath[(size_t) ((hPos - 1 - age + 2 * n) % n)]; };
+            int caught = 0; for (int a = 1; a < n; ++a) if (bAt (a - 1) < -3.0f && bAt (a) >= -3.0f) ++caught;
+            const float x = s.getX() + 18, w = s.getWidth() - 36;
+            y += 2;
+            text (g, "CAUGHT", font (Face::CondMedium, 8.5f, 1.6f), col ("#b9b3a7"), R (x, y, 80, 10));
+            text (g, juce::String (caught) + " breaths", font (Face::CondMedium, 9.5f, 1.0f), brC.interpolatedWith (juce::Colours::white, 0.3f), R (x + w - 90, y - 1, 90, 11), juce::Justification::centredRight);
+            const R lane (x, y + 16, w, 30);
+            fillRound (g, lane, 5, col ("#000000", 0.35f)); strokeRound (g, lane, 5, juce::Colours::white.withAlpha (0.08f));
+            g.setColour (juce::Colours::white.withAlpha (0.1f)); g.fillRect (lane.getX() + 4, lane.getY() + 6, lane.getWidth() - 8, 1.0f);
+            juce::Path p; const int cols = (int) (lane.getWidth() - 8);
+            const int span = juce::jmin (n - 1, 300);
+            for (int i = 0; i <= cols; ++i)
+            {
+                const int age = (int) ((float) (cols - i) / (float) cols * (float) span);
+                const float yy = lane.getY() + 6 - bAt (age) / 8.0f * (lane.getHeight() - 12);
+                if (i == 0) p.startNewSubPath (lane.getX() + 4 + (float) i, yy); else p.lineTo (lane.getX() + 4 + (float) i, yy);
+            }
+            juce::Path f (p); f.lineTo (lane.getRight() - 4, lane.getY() + 6); f.lineTo (lane.getX() + 4, lane.getY() + 6); f.closeSubPath();
+            g.setGradientFill (juce::ColourGradient (brC.withAlpha (0.05f), 0, lane.getY() + 6, brC.withAlpha (0.4f), 0, lane.getBottom() - 6, false)); g.fillPath (f);
+            g.setColour (brC.interpolatedWith (juce::Colours::white, 0.3f)); g.strokePath (p, juce::PathStrokeType (1.2f));
+        }
     }
-    // ---- right: the Spectra 1964 peak limiter (its 610 Complimiter's controls), then the Rider
+    // ---- left: the Spectra 1964 peak limiter (its 610 Complimiter's controls), then the Rider
     {
-        const R s (PW - pw, top, pw, ph);
-        panel (s, true);
+        const R s (0, top, pw, ph);
+        panel (s, false);
         float y = s.getY() + 36;
         const float ty = y;
         card (s, y, "1964 PEAK", peakC, true);
@@ -1565,7 +1607,52 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         y += 46;
         card (s, y, "RIDER", teal, true);
         knobs (s, y, { { "RANGE", U8 ("\xc2\xb1" "6 dB"), 0.5f }, { "TARGET", U8 ("\xe2\x88\x92" "16"), 0.6f }, { "SPEED", "MED", 0.5f } }, teal);
+        {   // the Rider's meter: how far it is riding right now (+/-6 dB from the centre), and the loudness in vs its target
+            const int n = (int) hRide.size();
+            const float ride = hRide[(size_t) ((hPos - 1 + n) % n)];
+            const float x = s.getX() + 18, w = s.getWidth() - 36;
+            y += 4;
+            text (g, "RIDING", font (Face::CondMedium, 8.5f, 1.6f), col ("#b9b3a7"), R (x, y, 80, 10));
+            text (g, juce::String (ride > 0.05f ? "+" : ride < -0.05f ? MINUS : juce::String()) + juce::String (std::abs (ride), 1) + " dB",
+                  font (Face::CondMedium, 9.5f, 1.0f), teal.interpolatedWith (juce::Colours::white, 0.3f), R (x + w - 80, y - 1, 80, 11), juce::Justification::centredRight);
+            const R bar (x, y + 17, w, 8);
+            fillRound (g, bar, 4, col ("#000000", 0.4f)); strokeRound (g, bar, 4, juce::Colours::white.withAlpha (0.1f));
+            const float cx = bar.getCentreX(), ex = cx + ride / 6.0f * (w * 0.5f - 4);
+            const R fillR (juce::jmin (cx, ex), bar.getY() + 2, std::abs (ex - cx), 4);
+            g.setGradientFill (juce::ColourGradient (teal.withAlpha (0.25f), cx, 0, teal.withAlpha (0.9f), ex, 0, false)); g.fillRoundedRectangle (fillR, 2.0f);
+            g.setGradientFill (juce::ColourGradient (teal.withAlpha (0.6f), ex, bar.getCentreY(), teal.withAlpha (0.0f), ex + 10, bar.getCentreY(), true)); g.fillEllipse (ex - 10, bar.getCentreY() - 10, 20, 20);
+            g.setColour (juce::Colours::white); g.fillEllipse (ex - 2.5f, bar.getCentreY() - 2.5f, 5, 5);
+            const char* tl[] { "\xe2\x88\x92" "6", "\xe2\x88\x92" "3", "0", "+3", "+6" };
+            for (int i = 0; i < 5; ++i)
+            {
+                const float tx = bar.getX() + 4 + (w - 8) * (float) i / 4.0f;
+                g.setColour (juce::Colours::white.withAlpha (i == 2 ? 0.35f : 0.15f)); g.fillRect (tx - 0.5f, bar.getBottom() + 2, 1.0f, i == 2 ? 5.0f : 3.0f);
+                text (g, juce::String::fromUTF8 (tl[i]), font (Face::Regular, 8), grey, R (tx - 12, bar.getBottom() + 7, 24, 9), juce::Justification::centred);
+            }
+            // loudness: what's coming in, and where the Rider is bringing it (its target)
+            const float yl = bar.getBottom() + 26;
+            g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (x, yl - 6, w, 1.0f);
+            auto read = [&] (float rx, const char* l, float v, juce::Colour c)
+            {
+                text (g, l, font (Face::CondMedium, 7.5f, 1.4f), grey, R (rx, yl, 60, 9));
+                text (g, MINUS + juce::String (std::abs (v), 1), font (Face::Light, 15.0f, 0.3f), c, R (rx, yl + 10, 60, 18));
+            };
+            read (x, "IN", slowLvl, ink);
+            read (x + w * 0.42f, "OUT", slowLvl + ride, teal.interpolatedWith (juce::Colours::white, 0.35f));
+            text (g, "LUFS", font (Face::CondMedium, 7.5f, 1.4f), grey, R (x + w - 40, yl + 15, 40, 9), juce::Justification::centredRight);
+            g.setColour (teal.withAlpha (0.6f)); g.drawArrow (juce::Line<float> (x + w * 0.27f, yl + 19, x + w * 0.38f, yl + 19), 1.0f, 5.0f, 4.0f);
+        }
         juce::ignoreUnused (hpC, flC);
+    }
+    // the left edge: the KNEE drawer back, like the compressors - here it draws the 1964's curve (threshold and slope)
+    {
+        const float keepT = mThr, keepR = mRatio, keepK = mKnee;
+        mThr = -14.0f; mRatio = 2.0f; mKnee = 6.0f;
+        const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
+        const float alpha = (kneeOn || std::getenv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+        if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
+        paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
+        mThr = keepT; mRatio = keepR; mKnee = keepK;
     }
     // the right edge: the TONE drawer - the high pass and the two Lift bands on a frequency graph, moving with the music
     {
@@ -1681,7 +1768,7 @@ void Canvas::paintKneeContent (juce::Graphics& g, R k)
         g.setColour (juce::Colours::white.withAlpha (0.2f + 0.8f * lift)); g.fillEllipse (c.x - 2, c.y - 2, 4, 4);
     }
     // what it says
-    text (g, "KNEE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 80, 12));
+    text (g, gHelperTab ? "1964  CURVE" : "KNEE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 100, 12));
     if (std::getenv ("PRESS_MLA") != nullptr)   // LE-MLA: the threshold is fixed - Input Gain drives into it - and so is the knee
         text (g, U8 ("drive \xe2\x88\x92" "8 dB  \xc2\xb7  2:1  \xc2\xb7  soft knee"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 214, a.getY() - 31, 214, 13), juce::Justification::centredRight);
     else
@@ -1889,6 +1976,264 @@ void Canvas::valueBar (juce::Graphics& g, R r, const char* label, const juce::St
 
 // the sidechain: closed, a handle on the bottom edge. Open, the detector EQ rises big onto the screen behind a horizontal
 // glass edge (blended in like the knee), with the sidechain controls in a row along the bottom centre
+// HELPERS' bottom glass window: the De-esser and the Pop control, side by side
+static void paintHelperDrawerContent (juce::Graphics& g, R k, double tms)
+{
+    const auto c = helperC, ink2 = col ("#b9b3a7");
+    const float half = (k.getWidth() - 40.0f) * 0.5f;
+    auto light = [&] (P at, bool lit)
+    {
+        if (lit) { g.setGradientFill (juce::ColourGradient (c.withAlpha (0.7f), at.x, at.y, c.withAlpha (0.0f), at.x + 11, at.y, true)); g.fillEllipse (at.x - 11, at.y - 11, 22, 22); }
+        g.setColour (lit ? c.interpolatedWith (juce::Colours::white, 0.45f) : juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (at.x - 4, at.y - 4, 8, 8);
+        g.setColour (juce::Colours::black.withAlpha (0.5f)); g.drawEllipse (at.x - 4, at.y - 4, 8, 8, 0.8f);
+    };
+    auto header = [&] (float x, float w, float y, const char* name, const juce::String& sub, bool lit, const juce::String& now)
+    {
+        g.setColour (c); g.fillEllipse (x, y + 3, 5, 5);
+        text (g, name, font (Face::CondMedium, 10, 2.0f), ink, R (x + 12, y, 120, 12));
+        text (g, sub, font (Face::CondMedium, 7.5f, 1.4f), grey, R (x + 12, y + 14, 200, 9));
+        const R pb (x + w - 14, y - 1, 14, 14);
+        g.setColour (c.withAlpha (0.55f)); g.drawEllipse (pb.reduced (0.5f), 1.0f);
+        icon (g, Icon::Power, pb.reduced (3.5f), c.interpolatedWith (juce::Colours::white, 0.25f), 1.1f);
+        light (P (x + w - 34, y + 6), lit);
+        text (g, now, font (Face::CondMedium, 9.5f, 1.0f), c.interpolatedWith (juce::Colours::white, 0.3f), R (x + w - 146, y, 100, 12), juce::Justification::centredRight);
+        g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (x, y + 26, w, 1.0f);
+    };
+    auto knobRow = [&] (float x, float y, float w, std::initializer_list<std::tuple<const char*, juce::String, float>> ks)
+    {
+        const int n = (int) ks.size(); const float cw = w / (float) n, sz = 40.0f; int i = 0;
+        for (auto& kk : ks)
+        {
+            const float cx = x + cw * ((float) i++ + 0.5f);
+            text (g, std::get<0> (kk), font (Face::CondMedium, 8.5f, 1.5f), ink2, R (cx - cw * 0.5f, y, cw, 10), juce::Justification::centred);
+            helperKnob (g, R (cx - sz * 0.5f, y + 14, sz, sz), std::get<2> (kk), c, std::get<1> (kk));
+            text (g, std::get<1> (kk), font (Face::Light, 11.5f, 0.3f), ink, R (cx - cw * 0.5f, y + 14 + sz + 3, cw, 14), juce::Justification::centred);
+        }
+    };
+    auto screen = [&] (R r) { fillRound (g, r, 6, col ("#000000", 0.35f)); strokeRound (g, r, 6, juce::Colours::white.withAlpha (0.08f)); };
+    const float top = k.getY() + 22, scW = 168.0f, scH = 96.0f;
+    const int style = std::getenv ("PRESS_DSTYLE") ? std::atoi (std::getenv ("PRESS_DSTYLE")) : 0;
+    const float sNow = juce::jlimit (0.0f, 1.0f, (float) std::sin (tms / 260.0 + 4.4) * 1.3f - 0.1f), red = sNow * 5.5f;
+    // the De-esser's picture: the top of the spectrum, its band, the esses carved out
+    auto essScreen = [&] (R a)
+    {
+        auto fx = [&] (float hz) { return a.getX() + std::log2 (hz / 2000.0f) / 3.0f * a.getWidth(); };
+        for (float hz : { 2000.0f, 4000.0f, 8000.0f, 16000.0f })
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.05f)); g.fillRect (fx (hz), a.getY(), 1.0f, a.getHeight());
+            text (g, juce::String ((int) (hz / 1000)) + "k", font (Face::Regular, 7.5f), grey, R (fx (hz) - 10, a.getBottom() + 3, 20, 9), juce::Justification::centred);
+        }
+        const float f0 = 6500.0f;
+        g.setColour (c.withAlpha (0.13f)); g.fillRect (R (fx (f0 / 1.45f), a.getY(), fx (f0 * 1.45f) - fx (f0 / 1.45f), a.getHeight()));
+        juce::Path in, out; juce::Random rnd (3);
+        for (int i = 0; i <= 120; ++i)
+        {
+            const float hz = 2000.0f * std::pow (8.0f, (float) i / 120.0f);
+            const float o = std::log2 (hz / 7000.0f);
+            const float lvl = 0.22f + 0.5f * std::exp (-o * o * 2.0f) * (0.45f + sNow * 0.8f) + 0.05f * rnd.nextFloat();
+            const float ob = std::log2 (hz / f0), cut = red / 6.0f * 0.5f * std::exp (-ob * ob * 3.5f);
+            const P pi (fx (hz), a.getBottom() - juce::jmin (1.0f, lvl) * a.getHeight());
+            const P po (fx (hz), a.getBottom() - juce::jlimit (0.0f, 1.0f, lvl - cut) * a.getHeight());
+            if (i == 0) { in.startNewSubPath (pi); out.startNewSubPath (po); } else { in.lineTo (pi); out.lineTo (po); }
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.28f)); g.strokePath (in, juce::PathStrokeType (1.0f));
+        juce::Path f (out); f.lineTo (a.getRight(), a.getBottom()); f.lineTo (a.getX(), a.getBottom()); f.closeSubPath();
+        g.setGradientFill (juce::ColourGradient (c.withAlpha (0.38f), 0, a.getY(), c.withAlpha (0.03f), 0, a.getBottom(), false)); g.fillPath (f);
+        g.setColour (juce::Colours::white.withAlpha (0.92f)); g.strokePath (out, juce::PathStrokeType (1.4f));
+    };
+    // Pop's picture: the low end over time, thumps over its line flattened
+    auto popScreen = [&] (R a, bool labels)
+    {
+        const float thrY = a.getY() + a.getHeight() * 0.4f;
+        juce::Random rnd (11);
+        const float sx = a.getWidth() / 152.0f;
+        for (int i = 0; i < (int) a.getWidth(); i += 2)
+        {
+            const float t = (float) i / sx;
+            float v = 0.15f + 0.2f * rnd.nextFloat();
+            for (float pk : { 14.0f, 58.0f, 100.0f, 128.0f })
+            { const float d = t - pk; if (d > 0 && d < 16) v = juce::jmax (v, 0.97f * std::exp (-d / 4.5f)); }
+            const float y = a.getBottom() - v * a.getHeight(), yo = juce::jmax (y, thrY);
+            if (y < thrY) { g.setColour (juce::Colours::white.withAlpha (0.16f)); g.fillRect (a.getX() + (float) i, y, 1.4f, yo - y); }
+            g.setColour (y < thrY ? c.withAlpha (0.9f) : c.withAlpha (0.38f)); g.fillRect (a.getX() + (float) i, yo, 1.4f, a.getBottom() - yo);
+        }
+        g.setColour (c.withAlpha (0.75f)); g.fillRect (a.getX(), thrY, a.getWidth(), 1.0f);
+        if (labels)
+        {
+            text (g, "CAUGHT  4", font (Face::CondMedium, 7.5f, 1.2f), grey, R (a.getX(), a.getBottom() + 3, 80, 9));
+            text (g, "time", font (Face::Regular, 7.5f), grey, R (a.getRight() - 40, a.getBottom() + 3, 40, 9), juce::Justification::centredRight);
+        }
+    };
+    auto divider = [&] (float h)
+    {
+        juce::ColourGradient dg (juce::Colours::white.withAlpha (0.0f), 0, top, juce::Colours::white.withAlpha (0.0f), 0, top + h, false); dg.addColour (0.5, juce::Colours::white.withAlpha (0.1f));
+        g.setGradientFill (dg); g.fillRect (k.getCentreX() - 0.5f, top, 1.0f, h);
+    };
+    if (style == 1)
+    {   // B: HARDWARE - a lit bronze VU dial for each tool showing what it's taking out, bigger knobs beside it
+        auto vu = [&] (R r, float grDb, const char* cap)
+        {
+            fillRound (g, r, 8, col ("#0b0b0e", 0.85f));
+            g.setGradientFill (juce::ColourGradient (c.withAlpha (0.16f), r.getCentreX(), r.getBottom(), c.withAlpha (0.0f), r.getCentreX(), r.getY(), false));
+            g.fillRoundedRectangle (r.reduced (2), 7);
+            strokeRound (g, r, 8, juce::Colours::white.withAlpha (0.12f));
+            const P pv (r.getCentreX(), r.getBottom() + 14);
+            const float rad = r.getHeight() - 4, a0 = -0.85f, a1 = 0.85f;   // radians either side of straight up
+            auto at = [&] (float ang, float rr) { return P (pv.x + rr * std::sin (ang), pv.y - rr * std::cos (ang)); };
+            juce::Path arc; arc.addCentredArc (pv.x, pv.y, rad - 12, rad - 12, 0, a0, a1, true);
+            g.setColour (juce::Colours::white.withAlpha (0.35f)); g.strokePath (arc, juce::PathStrokeType (1.0f));
+            const float dbs[] { 0, 2, 4, 6, 8, 10, 12 };
+            for (int i = 0; i < 7; ++i)
+            {
+                const float ang = a1 - (a1 - a0) * dbs[i] / 12.0f;   // 0 dB at the right, reduction swings left
+                const P p0 = at (ang, rad - 12), p1 = at (ang, rad - (i % 2 == 0 ? 20.0f : 16.0f));
+                g.setColour (i == 0 ? c : juce::Colours::white.withAlpha (0.5f)); g.drawLine (p0.x, p0.y, p1.x, p1.y, 1.0f);
+                if (i % 2 == 0) { const P lp = at (ang, rad - 4); text (g, juce::String ((int) dbs[i]), font (Face::Regular, 7.5f), grey, R (lp.x - 8, lp.y - 5, 16, 9), juce::Justification::centred); }
+            }
+            const float ang = a1 - (a1 - a0) * juce::jlimit (0.0f, 12.0f, grDb) / 12.0f;
+            const P tip = at (ang, rad - 10);
+            g.saveState(); g.reduceClipRegion (r.reduced (3).toNearestInt());
+            g.setColour (juce::Colours::black.withAlpha (0.5f)); g.drawLine (pv.x + 1, pv.y + 1, tip.x + 1, tip.y + 1, 2.2f);
+            g.setColour (c.interpolatedWith (juce::Colours::white, 0.3f)); g.drawLine (pv.x, pv.y, tip.x, tip.y, 1.4f);
+            g.restoreState();
+            text (g, cap, font (Face::CondMedium, 7.5f, 1.6f), grey, R (r.getX(), r.getBottom() - 14, r.getWidth(), 9), juce::Justification::centred);
+        };
+        auto bigKnobs = [&] (float x, float y, float w, std::initializer_list<std::tuple<const char*, juce::String, float>> ks)
+        {
+            const int n = (int) ks.size(); const float cw = w / (float) n, sz = 50.0f; int i = 0;
+            for (auto& kk : ks)
+            {
+                const float cx = x + cw * ((float) i++ + 0.5f);
+                text (g, std::get<0> (kk), font (Face::CondMedium, 8.5f, 1.5f), ink2, R (cx - cw * 0.5f, y, cw, 10), juce::Justification::centred);
+                helperKnob (g, R (cx - sz * 0.5f, y + 14, sz, sz), std::get<2> (kk), c, std::get<1> (kk));
+                text (g, std::get<1> (kk), font (Face::Light, 12.0f, 0.3f), ink, R (cx - cw * 0.5f, y + 14 + sz + 3, cw, 14), juce::Justification::centred);
+            }
+        };
+        for (int side = 0; side < 2; ++side)
+        {
+            const float x = side == 0 ? k.getX() : k.getCentreX() + 20, w = half;
+            if (side == 0) header (x, w, top, "DE-ESSER", U8 ("SPLIT  \xc2\xb7  ONLY THE ESSES"), red > 0.5f, MINUS + juce::String (red, 1) + " dB");
+            else           header (x, w, top, "POP", U8 ("PLOSIVES  \xc2\xb7  BELOW 150 HZ"), true, MINUS + "5.2 dB");
+            const R m (x, top + 36, 150, 74);
+            vu (m, side == 0 ? red : 5.2f, side == 0 ? "ESS  GR" : "POP  GR");
+            glassButton (g, R (x, top + 116, 72, 20), "LISTEN", false);
+            glassButton (g, R (x + 78, top + 116, 72, 20), side == 0 ? "SPLIT" : "SOFT", true, true);
+            if (side == 0) bigKnobs (x + 160, top + 40, w - 160, { { "FREQ", "6.5 kHz", 0.6f }, { "AMOUNT", MINUS + "6 dB", 0.5f }, { "RANGE", MINUS + "8 dB", 0.55f } });
+            else           bigKnobs (x + 160, top + 40, w - 160, { { "SENSE", "60 %", 0.6f }, { "FREQ", "150 Hz", 0.4f }, { "AMOUNT", MINUS + "9 dB", 0.6f } });
+        }
+        divider (136);
+        return;
+    }
+    if (style == 2)
+    {   // C: WIDE SCREENS - each tool's picture across its whole half, controls as slim glass sliders under it (no knobs)
+        auto slider = [&] (R r, const char* label, const juce::String& v, float pos)
+        {
+            fillRound (g, r, r.getHeight() * 0.5f, col ("#000000", 0.32f));
+            strokeRound (g, r, r.getHeight() * 0.5f, juce::Colours::white.withAlpha (0.1f));
+            const R fr = r.reduced (2).withWidth ((r.getWidth() - 4) * pos);
+            g.setGradientFill (juce::ColourGradient (c.withAlpha (0.08f), fr.getX(), 0, c.withAlpha (0.42f), fr.getRight(), 0, false));
+            g.fillRoundedRectangle (fr, (r.getHeight() - 4) * 0.5f);
+            g.setColour (c.interpolatedWith (juce::Colours::white, 0.5f)); g.fillRoundedRectangle (R (fr.getRight() - 1.5f, r.getY() + 5, 3, r.getHeight() - 10), 1.5f);
+            text (g, label, font (Face::CondMedium, 8.0f, 1.4f), ink2, R (r.getX() + 10, r.getY(), 70, r.getHeight()), juce::Justification::centredLeft);
+            text (g, v, font (Face::Regular, 10.5f), ink, R (r.getRight() - 70, r.getY(), 62, r.getHeight()), juce::Justification::centredRight);
+        };
+        for (int side = 0; side < 2; ++side)
+        {
+            const float x = side == 0 ? k.getX() : k.getCentreX() + 20, w = half;
+            if (side == 0) header (x, w, top, "DE-ESSER", U8 ("SPLIT  \xc2\xb7  ONLY THE ESSES"), red > 0.5f, MINUS + juce::String (red, 1) + " dB");
+            else           header (x, w, top, "POP", U8 ("PLOSIVES  \xc2\xb7  BELOW 150 HZ"), true, MINUS + "5.2 dB");
+            const R sc (x, top + 34, w, 56);
+            screen (sc);
+            if (side == 0) essScreen (sc.reduced (10, 6).withTrimmedBottom (10)); else popScreen (sc.reduced (10, 6).withTrimmedBottom (10), false);
+            const float y = top + 100, sw = (w - 12) / 3.0f;
+            if (side == 0)
+            {
+                slider (R (x, y, sw, 22), "FREQ", "6.5 kHz", 0.6f);
+                slider (R (x + sw + 6, y, sw, 22), "AMOUNT", MINUS + "6 dB", 0.5f);
+                slider (R (x + 2 * (sw + 6), y, sw, 22), "RANGE", MINUS + "8 dB", 0.55f);
+            }
+            else
+            {
+                slider (R (x, y, sw, 22), "SENSE", "60 %", 0.6f);
+                slider (R (x + sw + 6, y, sw, 22), "FREQ", "150 Hz", 0.4f);
+                slider (R (x + 2 * (sw + 6), y, sw, 22), "AMOUNT", MINUS + "9 dB", 0.6f);
+            }
+            glassButton (g, R (x, y + 28, 70, 18), "LISTEN", false);
+            glassButton (g, R (x + 76, y + 28, 76, 18), side == 0 ? "SPLIT" : "SOFT", true, true);
+        }
+        divider (146);
+        return;
+    }
+    // ---- DE-ESSER: the top of the spectrum where the esses live, its band, and what it's taking out right now
+    {
+        const float x = k.getX(), w = half;
+        const float sNow = juce::jlimit (0.0f, 1.0f, (float) std::sin (tms / 260.0 + 4.4) * 1.3f - 0.1f);
+        const float red = sNow * 5.5f;
+        header (x, w, top, "DE-ESSER", U8 ("SPLIT  \xc2\xb7  ONLY THE ESSES"), red > 0.5f, MINUS + juce::String (red, 1) + " dB");
+        const R sc (x, top + 36, scW, scH);
+        screen (sc);
+        const R a = sc.reduced (8, 8).withTrimmedBottom (12);
+        auto fx = [&] (float hz) { return a.getX() + std::log2 (hz / 2000.0f) / 3.0f * a.getWidth(); };
+        for (float hz : { 2000.0f, 4000.0f, 8000.0f, 16000.0f })
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.05f)); g.fillRect (fx (hz), a.getY(), 1.0f, a.getHeight());
+            text (g, juce::String ((int) (hz / 1000)) + "k", font (Face::Regular, 7.5f), grey, R (fx (hz) - 10, a.getBottom() + 3, 20, 9), juce::Justification::centred);
+        }
+        const float f0 = 6500.0f;
+        g.setColour (c.withAlpha (0.13f)); g.fillRect (R (fx (f0 / 1.45f), a.getY(), fx (f0 * 1.45f) - fx (f0 / 1.45f), a.getHeight()));
+        juce::Path in, out; juce::Random rnd (3);
+        for (int i = 0; i <= 90; ++i)
+        {
+            const float hz = 2000.0f * std::pow (8.0f, (float) i / 90.0f);
+            const float o = std::log2 (hz / 7000.0f);
+            const float lvl = 0.22f + 0.5f * std::exp (-o * o * 2.0f) * (0.45f + sNow * 0.8f) + 0.05f * rnd.nextFloat();
+            const float ob = std::log2 (hz / f0), cut = red / 6.0f * 0.5f * std::exp (-ob * ob * 3.5f);
+            const P pi (fx (hz), a.getBottom() - juce::jmin (1.0f, lvl) * a.getHeight());
+            const P po (fx (hz), a.getBottom() - juce::jlimit (0.0f, 1.0f, lvl - cut) * a.getHeight());
+            if (i == 0) { in.startNewSubPath (pi); out.startNewSubPath (po); } else { in.lineTo (pi); out.lineTo (po); }
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.28f)); g.strokePath (in, juce::PathStrokeType (1.0f));
+        juce::Path f (out); f.lineTo (a.getRight(), a.getBottom()); f.lineTo (a.getX(), a.getBottom()); f.closeSubPath();
+        g.setGradientFill (juce::ColourGradient (c.withAlpha (0.38f), 0, a.getY(), c.withAlpha (0.03f), 0, a.getBottom(), false)); g.fillPath (f);
+        g.setColour (juce::Colours::white.withAlpha (0.92f)); g.strokePath (out, juce::PathStrokeType (1.4f));
+        const float kx = sc.getRight() + 10, kw = w - scW - 10;
+        knobRow (kx, top + 36, kw, { { "FREQ", "6.5 kHz", 0.6f }, { "AMOUNT", MINUS + "6 dB", 0.5f }, { "RANGE", MINUS + "8 dB", 0.55f } });
+        glassButton (g, R (kx + 8, top + 112, kw * 0.5f - 12, 20), "LISTEN", false);
+        glassButton (g, R (kx + kw * 0.5f + 4, top + 112, kw * 0.5f - 12, 20), "SPLIT", true, true);
+    }
+    {   // a fine divider
+        juce::ColourGradient dg (juce::Colours::white.withAlpha (0.0f), 0, top, juce::Colours::white.withAlpha (0.0f), 0, top + 132, false); dg.addColour (0.5, juce::Colours::white.withAlpha (0.1f));
+        g.setGradientFill (dg); g.fillRect (k.getCentreX() - 0.5f, top, 1.0f, 132.0f);
+    }
+    // ---- POP: the low end over time - thumps from P's and B's poke over its line and get flattened
+    {
+        const float x = k.getCentreX() + 20, w = half;
+        header (x, w, top, "POP", U8 ("PLOSIVES  \xc2\xb7  BELOW 150 HZ"), true, MINUS + "5.2 dB");
+        const R sc (x, top + 36, scW, scH);
+        screen (sc);
+        const R a = sc.reduced (8, 8).withTrimmedBottom (12);
+        const float thrY = a.getY() + a.getHeight() * 0.4f;
+        juce::Random rnd (11);
+        for (int i = 0; i < (int) a.getWidth(); i += 2)
+        {
+            const float t = (float) i;
+            float v = 0.15f + 0.2f * rnd.nextFloat();
+            for (float pk : { 14.0f, 58.0f, 100.0f, 128.0f })
+            { const float d = t - pk; if (d > 0 && d < 16) v = juce::jmax (v, 0.97f * std::exp (-d / 4.5f)); }
+            const float y = a.getBottom() - v * a.getHeight(), yo = juce::jmax (y, thrY);
+            if (y < thrY) { g.setColour (juce::Colours::white.withAlpha (0.16f)); g.fillRect (a.getX() + t, y, 1.4f, yo - y); }
+            g.setColour (y < thrY ? c.withAlpha (0.9f) : c.withAlpha (0.38f)); g.fillRect (a.getX() + t, yo, 1.4f, a.getBottom() - yo);
+        }
+        g.setColour (c.withAlpha (0.75f)); g.fillRect (a.getX(), thrY, a.getWidth(), 1.0f);
+        text (g, "CAUGHT  4", font (Face::CondMedium, 7.5f, 1.2f), grey, R (a.getX(), a.getBottom() + 3, 80, 9));
+        text (g, "time", font (Face::Regular, 7.5f), grey, R (a.getRight() - 40, a.getBottom() + 3, 40, 9), juce::Justification::centredRight);
+        const float kx = sc.getRight() + 10, kw = w - scW - 10;
+        knobRow (kx, top + 36, kw, { { "SENSE", "60 %", 0.6f }, { "FREQ", "150 Hz", 0.4f }, { "AMOUNT", MINUS + "9 dB", 0.6f } });
+        glassButton (g, R (kx + 8, top + 112, kw * 0.5f - 12, 20), "LISTEN", false);
+        glassButton (g, R (kx + kw * 0.5f + 4, top + 112, kw * 0.5f - 12, 20), "SOFT", true, true);
+    }
+}
+
 void Canvas::paintScDrawer (juce::Graphics& g, bool open)
 {
     const float x0 = 214.0f, x1 = PW - 214.0f;
@@ -1902,7 +2247,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         juce::ColourGradient lg (juce::Colours::white.withAlpha (0.0f), strip.getX(), 0, juce::Colours::white.withAlpha (0.0f), strip.getRight(), 0, false);
         lg.addColour (0.12, cleanC.withAlpha (0.45f)); lg.addColour (0.5, juce::Colours::white.withAlpha (0.55f)); lg.addColour (0.88, cleanC.withAlpha (0.45f));
         // the line, with a gap in the middle where the name sits (no bubble)
-        const R h (PW * 0.5f - 62, ey - 12, 124, 24);
+        const R h = gHelperTab ? R (PW * 0.5f - 72, ey - 12, 144, 24) : R (PW * 0.5f - 62, ey - 12, 124, 24);
         g.setGradientFill (lg);
         g.fillRect (strip.getX(), strip.getCentreY() - 0.5f, h.getX() - 6 - strip.getX(), 1.0f);
         g.fillRect (h.getRight() + 6, strip.getCentreY() - 0.5f, strip.getRight() - h.getRight() - 6, 1.0f);
@@ -1916,11 +2261,26 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
             else        { c.startNewSubPath (cx - 4, cy + 3); c.lineTo (cx, cy - 2); c.lineTo (cx + 4, cy + 3); }   // up: bring it up
             g.setColour (ink); g.strokePath (c, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
-        text (g, "SIDECHAIN", font (Face::CondMedium, 9.5f, 1.8f), ink, R (h.getX() + 38, h.getY(), h.getWidth() - 46, h.getHeight()), juce::Justification::centredLeft);
+        text (g, gHelperTab ? U8 ("DE-ESS  \xc2\xb7  POP") : juce::String ("SIDECHAIN"), font (Face::CondMedium, 9.5f, 1.8f), ink, R (h.getX() + 38, h.getY(), h.getWidth() - 46, h.getHeight()), juce::Justification::centredLeft);
         g.endTransparencyLayer();
     };
     if (! open) { scEdge (652.0f, false); return; }
     const float edgeY = 498.0f;   // a short band along the bottom
+    if (gHelperTab)
+    {   // HELPERS: the De-esser and Pop on a glass window, the graph fading behind it
+        const R k (x0, edgeY, x1 - x0, 668.0f - edgeY);
+        {   // frosted glass: the graph behind goes soft and dark from the edge down
+            juce::ColourGradient fg (col ("#111218", 0.0f), 0, edgeY - 36, col ("#111218", 0.93f), 0, edgeY + 18, false);
+            juce::Path pnl; pnl.addRectangle (R (x0 + 8, edgeY - 36, x1 - x0 - 16, 716.0f - edgeY));
+            g.setGradientFill (fg); g.fillPath (pnl);
+            juce::ColourGradient tint (helperC.withAlpha (0.0f), 0, edgeY, helperC.withAlpha (0.05f), 0, 668.0f, false);
+            g.setGradientFill (tint); g.fillPath (pnl);
+        }
+        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        paintHelperDrawerContent (g, k.reduced (24, 0), tms);
+        scEdge (edgeY, true);
+        return;
+    }
     const R rowR0 (PW * 0.5f - 380.0f, 650.0f - 26.0f, 760, 50);
     const bool onControls = rowR0.expanded (10).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_ROW") != nullptr;
     const float eqFwd = onControls ? 0.3f : 1.0f;
@@ -2427,9 +2787,92 @@ void Canvas::paintCharContent (juce::Graphics& g, R k)
 }
 
 // ---- HELPER's TONE drawer: the high pass and Lift's two bands on a frequency graph; the bands rise and settle with the music
+
+// UPWARD mode: each band as a level curve - below its threshold quiet parts are lifted (up to its Lift), above it untouched
+static void paintUpwardCurves (juce::Graphics& g, R a, juce::Colour liC, double tms)
+{
+    // UPWARD mode: for each band, how much it lifts at every input level - the full Lift on quiet parts, easing to none at its threshold
+    const float gap = 36.0f, bw = (a.getWidth() - gap) * 0.5f;
+    struct Band { const char* name; const char* hz; float thr, lift, ratio, lvl; double per, ph; };
+    const Band bands[] {
+        { "LOW",  "120 Hz", -30.0f, 4.0f, 1.2f, -40.0f + 9.0f * (float) std::sin (tms / 700.0), 700.0, 0.0 },
+        { "HIGH", "6 kHz",  -34.0f, 3.0f, 1.2f, -44.0f + 10.0f * (float) std::sin (tms / 530.0 + 1.3), 530.0, 1.3 } };
+    auto gainAt = [] (const Band& b, float in)
+    {
+        const float under = b.thr - in, kn = 6.0f;
+        float u = under <= -kn * 0.5f ? 0.0f : under >= kn * 0.5f ? under : (under + kn * 0.5f) * (under + kn * 0.5f) / (2.0f * kn);
+        return juce::jmin (b.lift, u * (1.0f - 1.0f / b.ratio));
+    };
+    auto fs = font (Face::Regular, 9);
+    for (int bi = 0; bi < 2; ++bi)
+    {
+        const Band& b = bands[bi];
+        const R box (a.getX() + (bi == 0 ? 0.0f : bw + gap), a.getY() + 14, bw, a.getHeight() - 14);
+        auto px = [&] (float db) { return box.getX() + (db + 60.0f) / 60.0f * box.getWidth(); };
+        auto py = [&] (float lift) { return box.getBottom() - lift / 6.0f * box.getHeight(); };
+        for (int db = -60; db <= 0; db += 12)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.05f)); g.fillRect (px ((float) db), box.getY(), 1.0f, box.getHeight());
+            text (g, db == 0 ? juce::String ("0") : MINUS + juce::String (-db), fs, grey, R (px ((float) db) - 14, box.getBottom() + 6, 28, 10), juce::Justification::centred);
+        }
+        for (int l = 0; l <= 6; l += 2)
+        {
+            g.setColour (juce::Colours::white.withAlpha (l == 0 ? 0.16f : 0.05f)); g.fillRect (box.getX(), py ((float) l), box.getWidth(), 1.0f);
+            if (l > 0) text (g, "+" + juce::String (l), fs, grey, R (box.getX() + 4, py ((float) l) - 11, 24, 10));
+        }
+        // its threshold
+        g.setColour (liC.withAlpha (0.5f)); g.fillRect (px (b.thr) - 0.5f, box.getY(), 1.0f, box.getHeight());
+        text (g, "THRESH " + MINUS + juce::String ((int) -b.thr), font (Face::CondMedium, 8.5f, 1.2f), liC.withAlpha (0.9f), R (px (b.thr) + 6, box.getY() + 2, 80, 10));
+        // how much it can lift, dashed, at the top of the shelf
+        { juce::Path l, d; l.startNewSubPath (box.getX(), py (b.lift)); l.lineTo (px (b.thr), py (b.lift));
+          const float dl[] { 3.0f, 4.0f }; juce::PathStrokeType (1.0f).createDashedStroke (d, l, dl, 2);
+          g.setColour (liC.withAlpha (0.45f)); g.fillPath (d);
+          text (g, "LIFT +" + juce::String ((int) b.lift) + " dB", font (Face::CondMedium, 8.5f, 1.2f), liC, R (box.getX() + 30, py (b.lift) - 13, 90, 10)); }
+        // the curve and the lift under it
+        juce::Path c;
+        for (int i = 0; i <= 240; ++i)
+        {
+            const float in = -60.0f + 60.0f * (float) i / 240.0f;
+            const P pt (px (in), py (gainAt (b, in)));
+            if (i == 0) c.startNewSubPath (pt); else c.lineTo (pt);
+        }
+        juce::Path fill (c); fill.lineTo (px (0), py (0)); fill.lineTo (px (-60), py (0)); fill.closeSubPath();
+        g.setGradientFill (juce::ColourGradient (liC.withAlpha (0.32f), 0, py (b.lift), liC.withAlpha (0.04f), 0, py (0), false)); g.fillPath (fill);
+        g.setColour (juce::Colours::black.withAlpha (0.4f)); g.strokePath (c, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (juce::Colours::white.withAlpha (0.95f)); g.strokePath (c, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // the band's level right now riding the curve, leaving a trail
+        for (int i = 12; i >= 1; --i)
+        {
+            const float age = (float) i / 12.0f;
+            const float lv = b.lvl - 5.0f * age * (float) std::cos (tms / b.per + b.ph);
+            const P tp (px (lv), py (gainAt (b, lv)));
+            g.setColour (liC.interpolatedWith (juce::Colours::white, 0.3f).withAlpha (0.55f * (1.0f - age)));
+            const float r = 1.5f + 3.2f * (1.0f - age); g.fillEllipse (tp.x - r * 0.5f, tp.y - r * 0.5f, r, r);
+        }
+        const float gnow = gainAt (b, b.lvl);
+        const P d (px (b.lvl), py (gnow));
+        g.setColour (liC.withAlpha (0.35f)); g.drawLine (d.x, d.y + 6, d.x, py (0), 1.0f);
+        g.setGradientFill (juce::ColourGradient (liC.withAlpha (0.6f), d.x, d.y, liC.withAlpha (0.0f), d.x + 14, d.y, true));
+        g.fillEllipse (d.x - 14, d.y - 14, 28, 28);
+        g.setColour (liC.interpolatedWith (juce::Colours::white, 0.5f)); g.fillEllipse (d.x - 4.5f, d.y - 4.5f, 9, 9);
+        g.setColour (juce::Colours::white); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
+        text (g, "+" + juce::String (gnow, 1) + " dB", font (Face::CondMedium, 9, 1.2f), ink, R (d.x + 10, d.y - 16, 70, 11));
+        text (g, juce::String (b.name) + U8 ("  \xc2\xb7  ") + b.hz, font (Face::CondMedium, 9.5f, 2.0f), ink, R (box.getRight() - 110, box.getCentreY() - 6, 104, 11), juce::Justification::centredRight);
+        text (g, "IN", fs, grey, R (box.getRight() - 20, box.getBottom() + 17, 20, 10), juce::Justification::centredRight);
+    }
+}
+
 void Canvas::paintDynEqContent (juce::Graphics& g, R k)
 {
     const R a = k.reduced (44, 96);
+    if (! liftDynEq())
+    {
+        const double tms0 = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        paintUpwardCurves (g, a, helperC, tms0);
+        text (g, "TONE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
+        text (g, U8 ("Lift  \xc2\xb7  upward, 2 bands"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
+        return;
+    }
     const auto hpC = col ("#7fd3ff"), liC = helperC;
     auto fx = [&] (float hz) { return a.getX() + std::log10 (hz / 20.0f) / 3.0f * a.getWidth(); };
     auto fy = [&] (float db) { return a.getCentreY() - db / 15.0f * a.getHeight() * 0.5f; };
@@ -2504,5 +2947,5 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
     bandDot (120.0f, l1, 4.0f, "LOW");
     bandDot (6000.0f, l2, 3.0f, "HIGH");
     text (g, "TONE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
-    text (g, U8 ("Lift  \xc2\xb7  upward, 2 bands"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
+    text (g, U8 ("Lift  \xc2\xb7  dynamic EQ, 2 bands"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
 }
