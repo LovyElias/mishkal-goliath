@@ -16,7 +16,8 @@ namespace
         if (std::getenv ("PRESS_MLA")  != nullptr) return col ("#ecd59c");   // LE-MLA: pale gold over an ivory wave - Maselec MLA-2: silver and black, like the DS1 look - its blue light is in the meters and the reduction
         if (std::getenv ("PRESS_PRO")  != nullptr) { if (auto* c = std::getenv ("PRESS_PRO_COL")) return col (c); return col ("#c9a24e"); }   // LE-PRO: antique brass   // Pro-C 3: its yellow
         if (std::getenv ("PRESS_VIOLET") != nullptr) return col ("#a99bff");
-        return col ("#ee9b3d");                                               // LE-RC (Renaissance Comp): its amber faders
+        if (auto* c = std::getenv ("PRESS_RC_COL")) return col (c);
+        return col ("#a8916a");   // LE-RC: smoked gold                                               // LE-RC (Renaissance Comp): its amber faders
     }
 }
 #define cleanC engineColour()
@@ -59,6 +60,8 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
     if (kind == 1 && std::getenv ("PRESS_PRO") != nullptr) tc = col ("#b8a57f");    // LE-PRO: a bronze-tinted wave under the brass
     if (kind == 1 && std::getenv ("PRESS_MLA") != nullptr) tc = col ("#ebe7de");    // LE-MLA: ivory wave
     if (kind == 1 && std::getenv ("PRESS_DS1") != nullptr) tc = col ("#6e6a63");    // LE-DS1: a black wave (its black display)
+    if (kind == 1 && std::getenv ("PRESS_RVOX") == nullptr && std::getenv ("PRESS_DS1") == nullptr && std::getenv ("PRESS_MLA") == nullptr && std::getenv ("PRESS_PRO") == nullptr)
+        tc = col ("#7e7567");                                                     // LE-RC: a slate wave under the smoked gold
     if (kind == 1) if (auto* w = std::getenv ("PRESS_WAVE_COL")) tc = col (w);   // (mock: try a separate waveform colour)
     auto at = [&] (const std::vector<float>& h, int age) { return h[(size_t) ((hPos - 1 - age + 2 * n) % n)]; };
     // the waveform, Pro-C style: centred like a clip in the DAW, in dB so the quiet parts still show -
@@ -138,9 +141,9 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
         fill.startNewSubPath (xR, 40.0f);
         for (int a = 0; a < n; ++a) { const float x = xR - (float) a * 2.0f, y = 40.0f + juce::jmin (24.0f, at (hGr, a)) * 9.0f; fill.lineTo (x, y); if (a == 0) edge.startNewSubPath (x, y); else edge.lineTo (x, y); }
         fill.lineTo (xR - (float) (n - 1) * 2.0f, 40.0f); fill.closeSubPath();
-        if (kind == 1 && (std::getenv ("PRESS_MLA") != nullptr || std::getenv ("PRESS_PRO") != nullptr || std::getenv ("PRESS_DS1") != nullptr))
+        if (kind == 1 && std::getenv ("PRESS_RVOX") == nullptr)
         {
-            // LE-MLA, LE-PRO and LE-DS1: just a red line, like Pro-C 3 - no fill
+            // LE-RC, LE-DS1, LE-MLA and LE-PRO: just a red line, like Pro-C 3 - no fill
             g.setColour (col ("#000000", 0.45f)); g.strokePath (edge, juce::PathStrokeType (3.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             g.setColour (col ("#ff4d5e")); g.strokePath (edge, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
