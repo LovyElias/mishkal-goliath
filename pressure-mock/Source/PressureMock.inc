@@ -248,7 +248,88 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
 
 // a modern hardware knob: matte body with a knurled rim, a scale of ticks, the value as a glowing arc, a white index
 static constexpr int kVinUnits = 15;   // VINTAGE units in the mock (the first seven + LE-8X + seven more)
-static bool gHelperKnob = false;   // HELPER's knobs: the same family, but the arc is a ring of lit segments and the cap glows in the tool's colour
+static bool gHelperKnob = false;
+// HELPER's own knob - three candidates (mock: PRESS_HKNOB = 1 machined, 2 skirted, 3 glass ring)
+static void helperKnob (juce::Graphics& g, R b, float pos, juce::Colour c, const juce::String& val)
+{
+    const int style = std::getenv ("PRESS_HKNOB") ? std::atoi (std::getenv ("PRESS_HKNOB")) : 2;   // chosen: 2, skirted vintage
+    pos = juce::jlimit (0.0f, 1.0f, pos);
+    const auto ctr = b.getCentre();
+    const float r = b.getWidth() * 0.5f, a0 = -135.0f * pi / 180.0f, a1 = 135.0f * pi / 180.0f, av = a0 + (a1 - a0) * pos;
+    auto arcPath = [&] (float rr, float from, float to) { juce::Path p; p.addCentredArc (ctr.x, ctr.y, rr, rr, 0.0f, from, to, true); return p; };
+    if (style == 3)
+    {
+        // GLASS RING: no body at all - a thick smoked-glass ring, the value filling it in the tool's colour, the number in the middle
+        const float rr = r - 5.0f;
+        g.setColour (juce::Colours::black.withAlpha (0.45f)); g.strokePath (arcPath (rr, a0, a1), juce::PathStrokeType (9.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (juce::Colours::white.withAlpha (0.07f)); g.strokePath (arcPath (rr + 4.0f, a0, a1), juce::PathStrokeType (1.0f));
+        if (pos > 0.005f)
+        {
+            g.setColour (c.withAlpha (0.22f)); g.strokePath (arcPath (rr, a0, av), juce::PathStrokeType (14.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            juce::ColourGradient cg (c.withMultipliedBrightness (0.7f), ctr.x - r, ctr.y + r, c.interpolatedWith (juce::Colours::white, 0.25f), ctr.x + r, ctr.y - r, false);
+            g.setGradientFill (cg); g.strokePath (arcPath (rr, a0, av), juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+        const P d (ctr.x + rr * std::sin (av), ctr.y - rr * std::cos (av));
+        g.setColour (juce::Colours::black.withAlpha (0.5f)); g.fillEllipse (d.x - 6, d.y - 5, 12, 12);
+        g.setColour (col ("#f4f1ea")); g.fillEllipse (d.x - 4.5f, d.y - 4.5f, 9, 9);
+        text (g, val, font (Face::Light, r > 30 ? 14.0f : 12.0f, 0.3f), ink, b.withSizeKeepingCentre (b.getWidth() - 16, 18), juce::Justification::centred);
+        return;
+    }
+    // shared: a soft shadow under the body
+    const R body = b.reduced (style == 2 ? 2.0f : 6.0f);
+    { juce::Path p; p.addEllipse (body.translated (0, 3)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.7f), 8, {}), p); }
+    if (style == 2)
+    {
+        // SKIRTED: like the old hardware - a wide dark skirt with a 0-10 scale printed on it and a bronze pointer line, a small glossy cap
+        g.setGradientFill (juce::ColourGradient (col ("#2a2724"), body.getX(), body.getY(), col ("#0d0c0b"), body.getRight(), body.getBottom(), false));
+        g.fillEllipse (body);
+        g.setColour (juce::Colours::white.withAlpha (0.08f)); g.drawEllipse (body.reduced (0.5f), 1.0f);
+        const float sr = body.getWidth() * 0.5f;
+        for (int i = 0; i <= 10; ++i)
+        {
+            const float t = a0 + (a1 - a0) * (float) i / 10.0f;
+            const bool major = i % 5 == 0;
+            g.setColour (juce::Colours::white.withAlpha (major ? 0.55f : 0.28f));
+            const float r0 = sr - (major ? 7.0f : 5.0f), r1 = sr - 2.5f;
+            g.drawLine (ctr.x + r0 * std::sin (t), ctr.y - r0 * std::cos (t), ctr.x + r1 * std::sin (t), ctr.y - r1 * std::cos (t), major ? 1.3f : 0.9f);
+        }
+        if (pos > 0.005f) { g.setColour (c.withAlpha (0.8f)); g.strokePath (arcPath (sr - 9.5f, a0, av), juce::PathStrokeType (1.6f)); }
+        // the pointer, printed on the skirt, running out from the cap
+        g.setColour (c.interpolatedWith (juce::Colours::white, 0.2f));
+        const float p0 = sr * 0.42f, p1 = sr - 2.0f;
+        g.drawLine (ctr.x + p0 * std::sin (av), ctr.y - p0 * std::cos (av), ctr.x + p1 * std::sin (av), ctr.y - p1 * std::cos (av), 2.2f);
+        const R cap = body.reduced (body.getWidth() * 0.3f);
+        g.setGradientFill (juce::ColourGradient (col ("#4a4640"), cap.getCentreX(), cap.getY(), col ("#121110"), cap.getCentreX(), cap.getBottom(), false));
+        g.fillEllipse (cap);
+        g.setColour (juce::Colours::white.withAlpha (0.22f)); g.fillEllipse (cap.getX() + cap.getWidth() * 0.25f, cap.getY() + cap.getHeight() * 0.12f, cap.getWidth() * 0.5f, cap.getHeight() * 0.22f);
+        return;
+    }
+    // MACHINED: a turned-metal knob - a thin bronze arc outside, a brushed silver-dark face with fine circular grain, a bronze index line
+    {
+        if (pos > 0.005f)
+        {
+            g.setColour (c.withAlpha (0.18f)); g.strokePath (arcPath (r - 1.5f, a0, av), juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour (c); g.strokePath (arcPath (r - 1.5f, a0, av), juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.08f)); g.strokePath (arcPath (r - 1.5f, av, a1), juce::PathStrokeType (1.0f));
+        g.setGradientFill (juce::ColourGradient (col ("#5a5853"), body.getX(), body.getY(), col ("#1a1918"), body.getRight(), body.getBottom(), false));
+        g.fillEllipse (body);
+        const R face = body.reduced (3.0f);
+        g.setGradientFill (juce::ColourGradient (col ("#3b3a37"), face.getX(), face.getY(), col ("#1d1c1b"), face.getRight(), face.getBottom(), false));
+        g.fillEllipse (face);
+        for (float rr = 3.0f; rr < face.getWidth() * 0.5f; rr += 2.2f)   // the turned grain
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.025f + 0.02f * std::sin (rr)));
+            g.drawEllipse (ctr.x - rr, ctr.y - rr, rr * 2, rr * 2, 0.6f);
+        }
+        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.16f), face.getX(), face.getY(), juce::Colours::white.withAlpha (0.0f), face.getCentreX(), face.getCentreY(), true);
+        g.setGradientFill (sheen); g.fillEllipse (face);
+        g.setColour (juce::Colours::black.withAlpha (0.5f)); g.drawEllipse (face, 1.0f);
+        const float i0 = face.getWidth() * 0.18f, i1 = face.getWidth() * 0.47f;
+        g.setColour (c.interpolatedWith (juce::Colours::white, 0.15f));
+        g.drawLine (ctr.x + i0 * std::sin (av), ctr.y - i0 * std::cos (av), ctr.x + i1 * std::sin (av), ctr.y - i1 * std::cos (av), 2.4f);
+    }
+}   // HELPER's knobs: the same family, but the arc is a ring of lit segments and the cap glows in the tool's colour
 static int gKnobSteps = 0;   // > 0: a stepped knob (like the Maselec's precision switches) - detent dots, not ticks
 static const char* const* gKnobLabels = nullptr;   // optional: a name at each step, like the markings round a rotary switch
 static void modernKnob (juce::Graphics& g, R b, float pos, juce::Colour c)
@@ -1390,7 +1471,8 @@ void Canvas::paintLevelTab (juce::Graphics& g)
     auto knobs = [&] (R s, float& y, std::initializer_list<std::tuple<const char*, juce::String, float>> ks, juce::Colour c)
     {
         const int n = (int) ks.size();
-        const float w = (s.getWidth() - 36) / (float) n, sz = n >= 3 ? 42.0f : n == 2 ? 54.0f : 62.0f;
+        const float w = (s.getWidth() - 36) / (float) n, sz = n >= 3 ? 48.0f : n == 2 ? 64.0f : 76.0f;
+        const bool ring = std::getenv ("PRESS_HKNOB") != nullptr && std::atoi (std::getenv ("PRESS_HKNOB")) == 3;
         int i = 0;
         gHelperKnob = false;   // (the compressors' own knob)
         if (! cardOn) g.beginTransparencyLayer (0.3f);   // an off tool's knobs sit back
@@ -1398,13 +1480,13 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         {
             const float cx = s.getX() + 18 + w * ((float) i + 0.5f);
             text (g, std::get<0> (k), font (Face::CondMedium, 9.5f, 1.6f), col ("#b9b3a7"), R (cx - w * 0.5f, y, w, 11), juce::Justification::centred);
-            modernKnob (g, R (cx - sz * 0.5f, y + 17, sz, sz), std::get<2> (k), c);
-            text (g, std::get<1> (k), font (Face::Light, n >= 3 ? 12.5f : 14.0f, 0.4f), ink, R (cx - w * 0.5f, y + 17 + sz + 6, w, 16), juce::Justification::centred);
+            helperKnob (g, R (cx - sz * 0.5f, y + 17, sz, sz), std::get<2> (k), c, std::get<1> (k));
+            if (! ring) text (g, std::get<1> (k), font (Face::Light, n >= 3 ? 12.5f : 14.0f, 0.4f), ink, R (cx - w * 0.5f, y + 17 + sz + 6, w, 16), juce::Justification::centred);
             ++i;
         }
         gHelperKnob = false;
         if (! cardOn) g.endTransparencyLayer();
-        y += 17 + sz + 6 + 16 + 10;
+        y += 17 + sz + (ring ? 12.0f : 6.0f + 16.0f + 10.0f);
     };
     auto seg = [&] (R r, std::initializer_list<const char*> labs, int at, juce::Colour c)
     {
@@ -1420,26 +1502,44 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         }
     };
     const auto teal = helperC, hpC = col ("#7fd3ff"), brC = helperC, flC = col ("#c08bff"), liC = helperC;
-    // ---- left: Lift, the two-band upward compressor / dynamic EQ
+    // a column of knobs, one under another (Lift's bands): label above, value under
+    auto knobCol = [&] (float cx, float y, float colW, std::initializer_list<std::tuple<const char*, juce::String, float>> ks, juce::Colour c, float sz)
+    {
+        const bool ring = std::getenv ("PRESS_HKNOB") != nullptr && std::atoi (std::getenv ("PRESS_HKNOB")) == 3;
+        if (! cardOn) g.beginTransparencyLayer (0.3f);
+        for (auto& k : ks)
+        {
+            text (g, std::get<0> (k), font (Face::CondMedium, 9.5f, 1.6f), col ("#b9b3a7"), R (cx - colW * 0.5f, y, colW, 11), juce::Justification::centred);
+            helperKnob (g, R (cx - sz * 0.5f, y + 16, sz, sz), std::get<2> (k), c, std::get<1> (k));
+            if (! ring) text (g, std::get<1> (k), font (Face::Light, 13.0f, 0.4f), ink, R (cx - colW * 0.5f, y + 16 + sz + 5, colW, 16), juce::Justification::centred);
+            y += 16 + sz + (ring ? 14.0f : 5.0f + 16.0f + 12.0f);
+        }
+        if (! cardOn) g.endTransparencyLayer();
+        return y;
+    };
+    // ---- left: Lift (its two bands side by side, a column each) and the Breath under it
     {
         const R s (0, top, pw, ph);
         panel (s, false);
-        float y = s.getY() + 110;
+        float y = s.getY() + 36;
         card (s, y, "LIFT  /  2-BAND", liC, true);
         seg (R (s.getX() + 18, y, s.getWidth() - 36, 18), { "UPWARD", "DYN EQ" }, 0, liC);
         y += 30;
-        text (g, "LOW", font (Face::CondMedium, 9, 1.4f), liC, R (s.getX() + 18, y - 2, 40, 10));
-        y += 10;
-        knobs (s, y, { { "FREQ", "120 Hz", 0.25f }, { "THRESH", U8 ("\xe2\x88\x92" "30"), 0.4f }, { "LIFT", "+4 dB", 0.6f } }, liC);
-        text (g, "HIGH", font (Face::CondMedium, 9, 1.4f), liC, R (s.getX() + 18, y - 2, 40, 10));
-        y += 10;
-        knobs (s, y, { { "FREQ", "6 kHz", 0.7f }, { "THRESH", U8 ("\xe2\x88\x92" "34"), 0.35f }, { "LIFT", "+3 dB", 0.55f } }, liC);
+        const float colW = (s.getWidth() - 36) * 0.5f, cL = s.getX() + 18 + colW * 0.5f, cR = cL + colW;
+        text (g, "LOW", font (Face::CondMedium, 9.5f, 2.0f), ink, R (cL - colW * 0.5f, y, colW, 11), juce::Justification::centred);
+        text (g, "HIGH", font (Face::CondMedium, 9.5f, 2.0f), ink, R (cR - colW * 0.5f, y, colW, 11), juce::Justification::centred);
+        g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (cL + colW * 0.5f - 0.5f, y + 18, 1.0f, 290.0f);
+        y += 20;
+        knobCol (cL, y, colW, { { "FREQ", "120 Hz", 0.25f }, { "THRESH", U8 ("\xe2\x88\x92" "30 dB"), 0.4f }, { "LIFT", "+4 dB", 0.6f } }, liC, 54.0f);
+        y = knobCol (cR, y, colW, { { "FREQ", "6 kHz", 0.7f }, { "THRESH", U8 ("\xe2\x88\x92" "34 dB"), 0.35f }, { "LIFT", "+3 dB", 0.55f } }, liC, 54.0f) + 4;
+        card (s, y, "BREATH", brC, std::getenv ("PRESS_HOFF") == nullptr);
+        knobs (s, y, { { "AMOUNT", U8 ("\xe2\x88\x92" "8 dB"), 0.33f } }, brC);
     }
-    // ---- right: the Spectra 1964 peak limiter (its 610 Complimiter's controls), then the Rider and the Breath
+    // ---- right: the Spectra 1964 peak limiter (its 610 Complimiter's controls), then the Rider
     {
         const R s (PW - pw, top, pw, ph);
         panel (s, true);
-        float y = s.getY() + 14;
+        float y = s.getY() + 36;
         const float ty = y;
         card (s, y, "1964 PEAK", peakC, true);
         {   // its two lights: white when peaks cross the threshold, red on overload
@@ -1454,21 +1554,17 @@ void Canvas::paintLevelTab (juce::Graphics& g)
             led (s.getRight() - 62, col ("#ff4a3d"), false, "OVER");
         }
         // BUILD NOTE: the 1964 must be super clean, like the Spectra 1964 610 - no saturation, no distortion, no colour stage of any kind.
-        // Only the gain changes: a clean, very fast peak limiter / compressor (oversampled detection, no clipping, no waveshaping).
-        text (g, "TRANSPARENT  /  NO COLOUR", font (Face::CondMedium, 7.5f, 1.4f), grey, R (s.getX() + 32, y - 9, s.getWidth() - 50, 9));
+        text (g, "TRANSPARENT  /  NO COLOUR", font (Face::CondMedium, 7.5f, 1.4f), grey, R (s.getX() + 30, y - 9, s.getWidth() - 50, 9));
         y += 4;
         knobs (s, y, { { "INPUT", U8 ("\xe2\x88\x92" "40 dBu"), 0.55f }, { "OUTPUT", "+4 dBu", 0.5f } }, peakC);
         knobs (s, y, { { "SLOPE", "2 : 1", 0.5f }, { "RELEASE", "3", 0.3f } }, peakC);
-        y -= 4;
         seg (R (s.getX() + 18, y, (s.getWidth() - 36) * 0.48f, 18), { "GR", "+4", "+8" }, 0, peakC);
         seg (R (s.getX() + 18 + (s.getWidth() - 36) * 0.52f, y, (s.getWidth() - 36) * 0.48f, 18), { "OFF", "10", "20" }, 0, peakC);   // the pad: off, 10 or 20 dB
         text (g, "METER", font (Face::CondMedium, 7.5f, 1.0f), grey, R (s.getX() + 18, y + 20, 80, 9));
         text (g, "PAD", font (Face::CondMedium, 7.5f, 1.0f), grey, R (s.getX() + 18 + (s.getWidth() - 36) * 0.52f, y + 20, 40, 9));
-        y += 42;
+        y += 46;
         card (s, y, "RIDER", teal, true);
         knobs (s, y, { { "RANGE", U8 ("\xc2\xb1" "6 dB"), 0.5f }, { "TARGET", U8 ("\xe2\x88\x92" "16"), 0.6f }, { "SPEED", "MED", 0.5f } }, teal);
-        card (s, y, "BREATH", brC, std::getenv ("PRESS_HOFF") == nullptr);
-        knobs (s, y, { { "AMOUNT", U8 ("\xe2\x88\x92" "8 dB"), 0.33f } }, brC);
         juce::ignoreUnused (hpC, flC);
     }
     // the right edge: the TONE drawer - the high pass and the two Lift bands on a frequency graph, moving with the music
