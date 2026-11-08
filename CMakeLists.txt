@@ -95,7 +95,7 @@ endif()
 #        click the shape for a menu, or click the frequency / gain / Q to type a value ("2.5k", "A4", "-3", "0.7");
 #        over the empty screen a hairline and readout show the frequency, note (and gain on Tahor) under the mouse;
 #        double-click the hardware shown at the bottom of CHARACTER to add it to the chain (the ADD button on the gear is gone);
-#        presets that don't use Reso load with Reso bypassed
+#        presets that don't use Reso load with Reso bypassed; the word above the hardware is bright again, letters spaced out
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"

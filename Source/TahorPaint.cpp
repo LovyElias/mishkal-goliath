@@ -2507,10 +2507,10 @@ void Canvas::paintCharTab (juce::Graphics& g)
         paintFaceplate (g, R (36 + 12 + 4.5f, 4.5f, 800, plateH), preview);
         g.restoreState();
         {   // V9: a one-word hint, just above the hardware
-            auto fh = font (Face::CondMedium, 10, 1.6f);   // V10: plain text, like CLEAN / SUBTLE / WARM
+            auto fh = font (Face::CondMedium, 11, 3.6f);   // V14: brighter again, letters spaced out   // V10: plain text, like CLEAN / SUBTLE / WARM
             const auto chn = proc.chain();
             const bool inChain = std::find (chn.begin(), chn.end(), preview) != chn.end();
-            text (g, juce::String (unitHint (preview)).toUpperCase() + (inChain ? juce::String() : DOT + "DOUBLE-CLICK TO ADD"), fh, col ("#b9b3a7", 0.55f), R (PW * 0.5f - 100, hwTop - 26, 200, 13), juce::Justification::centred);   // V11: higher, quieter
+            text (g, juce::String (unitHint (preview)).toUpperCase() + (inChain ? juce::String() : DOT + "DOUBLE-CLICK TO ADD"), fh, col ("#e6dfd2", 0.92f), R (PW * 0.5f - 260, hwTop - 27, 520, 14), juce::Justification::centred);   // V11: higher, quieter
         }
         for (auto i = n0; i < zones.size(); ++i) zones[i].r = zones[i].r.transformedBy (tr).translated (o.x, o.y);
         g.endTransparencyLayer();
