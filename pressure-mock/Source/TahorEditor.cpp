@@ -241,9 +241,35 @@ void Canvas::mouseMove (const juce::MouseEvent& e)
 
 void Canvas::mouseExit (const juce::MouseEvent&) { mouse = { -1, -1 }; hoverUnit = -1; repaint(); }
 
+// PRESSURE: a knob / bar / button, the engine arrows, a drawer handle
+static bool isPressureHit (Hit k) { return k == Hit::PCtl || k == Hit::PEngine || k == Hit::PDrawer; }
+
 void Canvas::mouseDown (const juce::MouseEvent& e)
 {
     grabKeyboardFocus();   // V11: so the shortcuts work
+    if (auto* pzz = zoneAt (e.position); pzz != nullptr && isPressureHit (pzz->kind))
+    {
+        if (typeIn != nullptr) closeTypeIn (true);
+        downAt = e.position; mouse = e.position; dragging = true; down = *pzz; dragPid = {}; dragPid2 = {};
+        if (down.kind == Hit::PCtl && juce::isPositiveAndBelow (down.a, (int) pz.size()))
+        {
+            const auto pid = pz[(size_t) down.a];
+            if (e.mods.isAltDown())   // alt-click: back to its default
+            {
+                if (auto* p = proc.apvts.getParameter (pid)) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); }
+                dragging = false; down = {}; repaint(); return;
+            }
+            if (down.b == 0 || down.b == 3 || down.b == 4 || down.b == 5)
+            {
+                dragPid = pid; dragStart = pn (pid); proc.beginGesture (pid);
+                if (down.b == 5 && down.a + 1 < (int) pz.size()) { dragPid2 = pz[(size_t) down.a + 1]; dragStart2 = pn (dragPid2); proc.beginGesture (dragPid2); }
+                static const juce::StringArray kneeIds { "cThresh", "cRatio", "cKnee", "cDsKnee", "cMlaIn", "cMlaRatio", "cVoxComp" };
+                if (kneeIds.contains (pid)) kneeTouch = juce::Time::getMillisecondCounterHiRes();   // the knee display shows while you turn them
+            }
+        }
+        repaint();
+        return;
+    }
     if (e.mods.isAltDown())   // V11: alt-click resets
         if (auto* z0 = zoneAt (e.position))
             if (z0->kind == Hit::ResoKnob || z0->kind == Hit::TiltKnob || z0->kind == Hit::LinkKnob || z0->kind == Hit::ResoNodeKnob || z0->kind == Hit::TahorKnob
@@ -363,6 +389,23 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
 {
     mouse = e.position;
     const auto d = e.position - downAt;
+    if (isPressureHit (down.kind))
+    {
+        if (down.kind == Hit::PCtl && dragPid.isNotEmpty())
+        {
+            const float sens = e.mods.isShiftDown() ? 1000.0f : 200.0f;   // shift: fine
+            float delta = (d.x - d.y) / sens;                                 // knobs and bars: up or right = more
+            if (down.b == 3) delta = -delta;                                  // drawn the other way round
+            if (down.b == 4 || down.b == 5) delta = d.x / (e.mods.isShiftDown() ? 1500.0f : 420.0f);   // EQ nodes: across = frequency
+            static const juce::StringArray kneeIds { "cThresh", "cRatio", "cKnee", "cDsKnee", "cMlaIn", "cMlaRatio", "cVoxComp" };
+            if (kneeIds.contains (dragPid)) kneeTouch = juce::Time::getMillisecondCounterHiRes();   // keep the knee display up while turning
+            if (auto* p = proc.apvts.getParameter (dragPid)) p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart + delta));
+            if (dragPid2.isNotEmpty())
+                if (auto* p2 = proc.apvts.getParameter (dragPid2)) p2->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart2 - d.y / (e.mods.isShiftDown() ? 900.0f : 220.0f)));
+        }
+        repaint();
+        return;
+    }
     switch (down.kind)
     {
         case Hit::ResoKnob: case Hit::TiltKnob: case Hit::LinkKnob: case Hit::ResoNodeKnob: case Hit::TahorKnob:
@@ -467,6 +510,41 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
 
 void Canvas::mouseUp (const juce::MouseEvent& e)
 {
+    if (isPressureHit (down.kind))
+    {
+        dragging = false;
+        if (dragPid.isNotEmpty()) proc.endGesture (dragPid);
+        if (dragPid2.isNotEmpty()) proc.endGesture (dragPid2);
+        const bool moved = e.position.getDistanceFrom (downAt) > 3.0f;
+        if (! moved)
+        {
+            if (down.kind == Hit::PCtl && (down.b == 1 || down.b == 2) && juce::isPositiveAndBelow (down.a, (int) pz.size()))
+                if (auto* p = proc.apvts.getParameter (pz[(size_t) down.a]))   // click: the next setting (or the one before)
+                {
+                    const int steps = juce::jmax (2, p->getNumSteps());
+                    const int at = juce::roundToInt (p->getValue() * (float) (steps - 1));
+                    const int nx = (at + (down.b == 1 ? 1 : -1) + steps) % steps;
+                    p->beginChangeGesture(); p->setValueNotifyingHost ((float) nx / (float) (steps - 1)); p->endChangeGesture();
+                }
+            if (down.kind == Hit::PEngine)
+            {
+                if (tab == 1) proc.setParam ("cEngine", (float) (((int) proc.param ("cEngine") + down.a + 5) % 5));
+                else if (tab == 2) preview = (preview + down.a + 15) % 15;
+            }
+            if (down.kind == Hit::PDrawer)
+            {
+                if (down.a == 0) kneeOn = ! kneeOn;
+                if (down.a == 1) envOn = ! envOn;
+                if (down.a == 2) topOff = ! topOff;
+                if (down.a == 3) scOn = ! scOn;
+            }
+        }
+        dragPid = {}; dragPid2 = {}; down = {};
+        auto& st = proc.apvts.state;
+        st.setProperty ("uiTab", tab, nullptr); st.setProperty ("uiPreview", preview, nullptr);
+        repaint();
+        return;
+    }
     dragging = false;
     if (dragPid.isNotEmpty()) proc.endGesture (dragPid);
     if (dragPid2.isNotEmpty()) proc.endGesture (dragPid2);
@@ -506,6 +584,14 @@ void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
 {
     auto* z = zoneAt (e.position);
     if (z == nullptr) return;
+    if (z->kind == Hit::PCtl)   // PRESSURE: double-click a knob or bar - back to its default
+    {
+        if ((z->b == 0 || z->b == 3 || z->b == 4) && juce::isPositiveAndBelow (z->a, (int) pz.size()))
+            if (auto* p = proc.apvts.getParameter (pz[(size_t) z->a])) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); }
+        repaint();
+        return;
+    }
+    if (isPressureHit (z->kind)) return;
     auto reset = [this] (const juce::String& pid) { if (auto* p = proc.apvts.getParameter (pid)) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); } };
     switch (z->kind)
     {
@@ -1371,7 +1457,7 @@ TahorEditor::~TahorEditor() {}
 float TahorEditor::globalScale (float set)
 {
     juce::PropertiesFile::Options o;
-    o.applicationName = "Tahor"; o.filenameSuffix = "settings"; o.folderName = "Mishkal Audio";
+    o.applicationName = "Pressure"; o.filenameSuffix = "settings"; o.folderName = "Mishkal Audio";
     o.osxLibrarySubFolder = "Application Support";
     juce::PropertiesFile f (o);
     if (set > 0.0f) { f.setValue ("scale", set); f.saveIfNeeded(); return set; }

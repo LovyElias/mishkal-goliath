@@ -5,6 +5,7 @@ namespace { juce::Colour engineColour(); }   // Pressure: the CLEAN engine's col
 
 using namespace tahor;
 using namespace tahor::ui;
+static tahor::Canvas* gPressCanvas = nullptr;   // PRESSURE: the canvas penv asks
 
 namespace
 {
@@ -250,8 +251,10 @@ float dbRange (TahorProcessor& p) { static const float r[4] { 3.0f, 6.0f, 12.0f,
 //==============================================================================
 void Canvas::paint (juce::Graphics& g)
 {
+    gPressCanvas = this;
     gCompMode = tab == 2;
     zones.clear();
+    pz.clear();
     glassRects.clear();
     revealRects.clear();
     soloHzUi = 0.0f; soloQUi = 1.0f;
@@ -2699,7 +2702,7 @@ void Canvas::paintMeters (juce::Graphics& g)
         const auto j = side == 0 ? juce::Justification::centredLeft : juce::Justification::centredRight;
         const R a (side == 0 ? 4.0f : W - 64.0f, 743, 60, 10), b2 (side == 0 ? 4.0f : W - 64.0f, 753, 60, 10);
         const bool hot = pkHold[side] > -0.3f;
-        const bool dsN = tab == 1 && std::getenv ("PRESS_DS1") != nullptr;   // LE-DS1: the peak numbers in red
+        const bool dsN = tab == 1 && penv ("PRESS_DS1") != nullptr;   // LE-DS1: the peak numbers in red
         text (g, (side == 0 ? "PK " : "") + t (pkHold[side]) + (side == 1 ? " PK" : ""), f, hot || dsN ? col ("#ef4444") : ink, a, j);
         text (g, (side == 0 ? "AVG " : "") + t (avgDb[side]) + (side == 1 ? " AVG" : ""), fl, grey, b2, j);
     }
@@ -2708,9 +2711,9 @@ void Canvas::paintMeters (juce::Graphics& g)
         const R box (side == 0 ? 3.0f : W - 15.0f, 70, 12, 670);   // V3: thin, at the very edges
         for (int c = 0; c < 2; ++c)
         {
-            const float db = (side == 1 && std::getenv ("PRESS_CLIP") != nullptr) ? 0.0f : meterDb[side * 2 + c];   // (mock: a clip)
+            const float db = (side == 1 && penv ("PRESS_CLIP") != nullptr) ? 0.0f : meterDb[side * 2 + c];   // (mock: a clip)
             const R bar (box.getX() + 1 + (float) c * 6, box.getY(), 4, box.getHeight());
-            const bool dsM = tab == 1 && (std::getenv ("PRESS_DS1") != nullptr || std::getenv ("PRESS_MLA") != nullptr), mlaM = tab == 1 && std::getenv ("PRESS_MLA") != nullptr;   // LE-MLA: the same black, lit blue like its VU meters   // LE-DS1: grey on black, like its display
+            const bool dsM = tab == 1 && (penv ("PRESS_DS1") != nullptr || penv ("PRESS_MLA") != nullptr), mlaM = tab == 1 && penv ("PRESS_MLA") != nullptr;   // LE-MLA: the same black, lit blue like its VU meters   // LE-DS1: grey on black, like its display
             fillRound (g, bar, 2, dsM ? col ("#000000", 0.9f) : juce::Colours::white.withAlpha (0.05f));
             const float frac = juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
             if (frac > 0.0f)
@@ -2746,18 +2749,18 @@ void Canvas::paintGrMeter (juce::Graphics& g)
     const R bar (20.0f, 70, 7, 670);   // beside the input meter
     fillRound (g, bar.expanded (2, 0), 3, col ("#0b0b0e", 0.85f));
     fillRound (g, bar, 2, juce::Colours::white.withAlpha (0.05f));
-    if (tab == 1 && (std::getenv ("PRESS_DS1") != nullptr || std::getenv ("PRESS_MLA") != nullptr)) fillRound (g, bar, 2, col ("#000000", 0.9f));   // a black display
+    if (tab == 1 && (penv ("PRESS_DS1") != nullptr || penv ("PRESS_MLA") != nullptr)) fillRound (g, bar, 2, col ("#000000", 0.9f));   // a black display
     auto yOf = [&] (float db) { return bar.getY() + bar.getHeight() * juce::jlimit (0.0f, 1.0f, db / 30.0f); };
     if (grn > 0.01f)
     {
         g.saveState(); juce::Path cl; cl.addRoundedRectangle (bar, 2); g.reduceClipRegion (cl);
-        const bool ds = tab == 1 && std::getenv ("PRESS_DS1") != nullptr;   // LE-DS1: grey on black, like its display
-        const bool ml = tab == 1 && std::getenv ("PRESS_MLA") != nullptr;   // LE-MLA: blue light on black
+        const bool ds = tab == 1 && penv ("PRESS_DS1") != nullptr;   // LE-DS1: grey on black, like its display
+        const bool ml = tab == 1 && penv ("PRESS_MLA") != nullptr;   // LE-MLA: blue light on black
         g.setGradientFill (juce::ColourGradient (ml ? col ("#f3ead6") : ds ? col ("#c9ccd1") : col ("#ff8a8a"), 0, bar.getY(), ml ? col ("#b39a5e") : ds ? col ("#6c7076") : col ("#e0303f"), 0, yOf (grn), false));
         g.fillRect (R (bar.getX(), bar.getY(), bar.getWidth(), yOf (grn) - bar.getY()));
         g.restoreState();
     }
-    const bool dsG = tab == 1 && std::getenv ("PRESS_DS1") != nullptr, mlG = tab == 1 && std::getenv ("PRESS_MLA") != nullptr;
+    const bool dsG = tab == 1 && penv ("PRESS_DS1") != nullptr, mlG = tab == 1 && penv ("PRESS_MLA") != nullptr;
     g.setColour (mlG ? col ("#fbf5e6") : dsG ? col ("#e6e8eb") : col ("#ffb3b3")); g.fillRect (bar.getX(), yOf (hold) - 1.0f, bar.getWidth(), 2.0f);
     // ticks every 6 dB
     for (int db = 6; db < 30; db += 6) { g.setColour (juce::Colours::black.withAlpha (0.6f)); g.fillRect (bar.getX(), std::round (yOf ((float) db)), bar.getWidth(), 1.0f); }
@@ -2770,12 +2773,12 @@ void Canvas::paintGrMeter (juce::Graphics& g)
 // gate is turning the gaps down (0 to 30 dB, hanging from the top)
 void Canvas::paintGateMeter (juce::Graphics& g)
 {
-    if (tab != 1 || std::getenv ("PRESS_RVOX") == nullptr || hIn.empty()) return;
+    if (tab != 1 || penv ("PRESS_RVOX") == nullptr || hIn.empty()) return;
     const int nh = (int) hIn.size();
     auto redAt = [&] (int age)
     {
         const float in = hIn[(size_t) ((hPos - 1 - age + 2 * nh) % nh)], gate = -48.0f;
-        if (std::getenv ("PRESS_RVOX_DEMO") == nullptr) return 0.0f;   // the gate starts off
+        if (penv ("PRESS_RVOX_DEMO") == nullptr) return 0.0f;   // the gate starts off
         return in < gate ? juce::jmin (18.0f, (gate - in) * 0.75f) : 0.0f;   // about 1:4 below the gate, at most 18 dB
     };
     float now = 0.0f, hold = 0.0f;
@@ -2785,7 +2788,7 @@ void Canvas::paintGateMeter (juce::Graphics& g)
     const R bar (W - 27.0f, 70, 7, 670);
     fillRound (g, bar.expanded (2, 0), 3, col ("#0b0b0e", 0.85f));
     fillRound (g, bar, 2, juce::Colours::white.withAlpha (0.05f));
-    if (tab == 1 && std::getenv ("PRESS_DS1") != nullptr) fillRound (g, bar, 2, col ("#000000", 0.9f));   // a black display
+    if (tab == 1 && penv ("PRESS_DS1") != nullptr) fillRound (g, bar, 2, col ("#000000", 0.9f));   // a black display
     auto yOf = [&] (float db) { return bar.getY() + bar.getHeight() * juce::jlimit (0.0f, 1.0f, db / 30.0f); };
     if (now > 0.01f)
     {

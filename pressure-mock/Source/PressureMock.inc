@@ -1,4 +1,91 @@
-static bool liftDynEq() { return std::getenv ("PRESS_LIFTMODE") != nullptr && std::atoi (std::getenv ("PRESS_LIFTMODE")) == 1; }
+// ===== PRESSURE: switches and controls =====
+const char* tahor::penv (const char* name)
+{
+   #if PRESSURE_MOCK
+    if (auto* v = std::getenv (name)) return v;   // the snapshot harness: the environment says how to draw
+    return nullptr;
+   #else
+    return gPressCanvas != nullptr ? gPressCanvas->flagFor (name) : nullptr;
+   #endif
+}
+
+const char* Canvas::flagFor (const char* name)
+{
+    gPressCanvas = this;
+    auto is = [name] (const char* k) { return std::strcmp (name, k) == 0; };
+    static const char* yes = "1";
+    const int eng = (int) proc.param ("cEngine");
+    if (is ("PRESS_RVOX")) return tab == 1 && eng == 1 ? yes : nullptr;
+    if (is ("PRESS_DS1"))  return tab == 1 && eng == 2 ? yes : nullptr;
+    if (is ("PRESS_MLA"))  return tab == 1 && eng == 3 ? yes : nullptr;
+    if (is ("PRESS_PRO"))  return tab == 1 && eng == 4 ? yes : nullptr;
+    if (is ("PRESS_KNEE")) return kneeOn ? yes : nullptr;
+    if (is ("PRESS_ENV") || is ("PRESS_CHAR") || is ("PRESS_DYNEQ")) return envOn ? yes : nullptr;
+    if (is ("PRESS_SC"))   return scOn && tab == 1 ? yes : nullptr;
+    if (is ("PRESS_TOPOFF")) return topOff ? yes : nullptr;
+    if (is ("PRESS_DS1_BAND")) return (int) proc.param ("cDsBand") == 1 ? yes : nullptr;
+    if (is ("PRESS_RVOX_DEMO")) return tab == 1 && eng == 1 && proc.param ("cVoxComp") < -0.5f ? yes : nullptr;
+    if (is ("PRESS_MLA_LAMPOFF")) return proc.grDb.load() < 0.3f ? yes : nullptr;   // green while it isn't compressing
+    if (is ("PRESS_VUNIT")) { static char b[8]; std::snprintf (b, sizeof (b), "%d", juce::jlimit (0, 14, preview)); return b; }
+    return nullptr;
+}
+
+int Canvas::pctl (R r, const juce::String& pid, int kind)
+{
+    pz.push_back (pid);
+    const int idx = (int) pz.size() - 1;
+    dz (r, Hit::PCtl, idx, kind);
+    return idx;
+}
+float Canvas::pn (const juce::String& pid) const
+{
+    if (auto* p = proc.apvts.getParameter (pid)) return p->getValue();
+    return 0.0f;
+}
+juce::String Canvas::pchoice (const juce::String& pid) const
+{
+    if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (pid))) return p->getCurrentChoiceName();
+    return {};
+}
+juce::String Canvas::pfmt (const juce::String& pid) const
+{
+    const float v = proc.param (pid);
+    const juce::String minus = juce::String::fromUTF8 ("\xe2\x88\x92");
+    auto db = [&] (float x, int dec, bool plus)
+    {
+        if (std::abs (x) < 0.05f && dec > 0) return juce::String ("0.0 dB");
+        return (x < 0 ? minus : plus && x > 0 ? juce::String ("+") : juce::String()) + juce::String (std::abs (x), dec) + " dB";
+    };
+    auto ms = [] (float x)
+    {
+        if (x >= 1000.0f) return juce::String (x / 1000.0f, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " s";
+        if (x < 0.005f) return juce::String ("0 ms");
+        if (x < 1.0f) return juce::String (x, 2) + " ms";
+        if (x < 10.0f) return juce::String (x, 1) + " ms";
+        return juce::String ((int) std::round (x)) + " ms";
+    };
+    if (pid == "cThresh") return db (v, 1, false);
+    if (pid == "cRatio")  return (v >= 19.95f ? juce::String ("INF") : juce::String (v, v < 10.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")) + " : 1";
+    if (pid == "cKnee")   return juce::String (v, 0) + " dB";
+    if (pid == "cDsKnee") return juce::String (v, 2);
+    if (pid == "cAttack" || pid == "cRelease" || pid == "cDsRelF" || pid == "cDsRelS" || pid == "cDsAvg" || pid == "cHold") return ms (v);
+    if (pid == "cMakeup" || pid == "cVoxGain" || pid == "cScGain") return db (v, 1, true);
+    if (pid == "cProWet") return db (v, 1, true);
+    if (pid == "cProDry") return v <= -59.95f ? minus + juce::String::fromUTF8 ("\xe2\x88\x9e") : db (v, 1, false);
+    if (pid == "cVoxComp") return db (v, 1, false);
+    if (pid == "cVoxGate") return v <= -79.5f ? juce::String ("Off") : minus + juce::String ((int) std::round (-v)) + " dB";
+    if (pid == "cMix" || pid == "cScLink" || pid == "cProDrive") return juce::String ((int) std::round (v)) + "%";
+    if (pid == "cRange") return juce::String (v, 0) + " dB";
+    if (pid == "cMlaIn") return v < 0.5f ? juce::String ("0 dB") : minus + juce::String ((int) std::round (v)) + " dB";
+    if (pid == "cMlaRatio") { const auto c = pchoice (pid); return c == "INF" ? c : c + " : 1"; }
+    if (pid == "cMlaAtk") return pchoice (pid) + " ms/dB";
+    if (pid == "cMlaRel") return pchoice (pid) + " s/dB";
+    if (pid == "cLook") return juce::String (v, 1) + " ms";
+    if (auto* p = proc.apvts.getParameter (pid)) return p->getCurrentValueAsText();
+    return {};
+}
+
+static bool liftDynEq() { return penv ("PRESS_LIFTMODE") != nullptr && std::atoi (penv ("PRESS_LIFTMODE")) == 1; }
 // Pressure - the dynamics screens (mock): a scrolling picture of the level, newest on the right.
 // HELPER: the rider, breath control and peak catcher. CLEAN: a modern compressor drawn on the screen.
 // VINTAGE: the same picture over the chained hardware.
@@ -7,10 +94,10 @@ namespace
 {
     inline float dynY (float db) { return 40.0f + juce::jlimit (0.0f, 62.0f, -db) / 60.0f * 590.0f; }
     // HELPER, classy: soft, harmonised tones - sea glass, champagne, mist and sage - instead of bright primaries
-    inline juce::Colour helperAccent() { if (auto* c = std::getenv ("PRESS_HCOL")) return col (c); return col ("#b08d57"); }   // HELPER: bronze (from the vintage metals)
+    inline juce::Colour helperAccent() { if (auto* c = penv ("PRESS_HCOL")) return col (c); return col ("#b08d57"); }   // HELPER: bronze (from the vintage metals)
     const juce::Colour helperCx = col ("#e3bf7a"), peakCx = col ("#e3bf7a");
     // gain reduction: red, except LE-DS1, whose display is black with grey bars like the real DS1-MK3
-    inline juce::Colour grColour() { return std::getenv ("PRESS_MLA") != nullptr ? col ("#8fcaff") : std::getenv ("PRESS_DS1") != nullptr ? col ("#a7abb1") : col ("#ff5a6a"); }
+    inline juce::Colour grColour() { return penv ("PRESS_MLA") != nullptr ? col ("#8fcaff") : penv ("PRESS_DS1") != nullptr ? col ("#a7abb1") : col ("#ff5a6a"); }
     // each CLEAN engine wears the colour of the original it comes from
     inline bool gHelperTab = false;   // HELPER is drawing: everything wears its teal
     juce::Colour engineColour()
@@ -33,16 +120,16 @@ namespace
                                        "#b9767a",    // LE-2A: dusty rose
                                        "#5677ab",    // LE-1B: denim
                                        "#d0682f" };  // LE-VSC: burnt orange  // LE-336: slate blue (the Neve's blue-grey)
-            const int vi = juce::jlimit (0, 14, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : 0);
-            if (auto* vs = std::getenv ("PRESS_VCOLS")) { auto t = juce::StringArray::fromTokens (vs, ",", ""); if (vi < t.size()) return col (t[vi].toRawUTF8()); }   // (mock: try a palette)
+            const int vi = juce::jlimit (0, 14, penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : 0);
+            if (auto* vs = penv ("PRESS_VCOLS")) { auto t = juce::StringArray::fromTokens (vs, ",", ""); if (vi < t.size()) return col (t[vi].toRawUTF8()); }   // (mock: try a palette)
             return col (vc[vi]);
         }
-        if (std::getenv ("PRESS_RVOX") != nullptr) return col ("#e8a98f");   // LE-755C: rose gold
-        if (std::getenv ("PRESS_DS1")  != nullptr) { if (auto* c = std::getenv ("PRESS_DS1_COL")) return col (c); return col ("#efe5cf"); }   // LE-DS1: white gold (the DS1-MK3's white face, in the gold family)
-        if (std::getenv ("PRESS_MLA")  != nullptr) return col ("#ecd59c");   // LE-MLA: pale gold over an ivory wave - Maselec MLA-2: silver and black, like the DS1 look - its blue light is in the meters and the reduction
-        if (std::getenv ("PRESS_PRO")  != nullptr) { if (auto* c = std::getenv ("PRESS_PRO_COL")) return col (c); return col ("#c9a24e"); }   // LE-PRO: antique brass   // Pro-C 3: its yellow
-        if (std::getenv ("PRESS_VIOLET") != nullptr) return col ("#a99bff");
-        if (auto* c = std::getenv ("PRESS_RC_COL")) return col (c);
+        if (penv ("PRESS_RVOX") != nullptr) return col ("#e8a98f");   // LE-755C: rose gold
+        if (penv ("PRESS_DS1")  != nullptr) { if (auto* c = penv ("PRESS_DS1_COL")) return col (c); return col ("#efe5cf"); }   // LE-DS1: white gold (the DS1-MK3's white face, in the gold family)
+        if (penv ("PRESS_MLA")  != nullptr) return col ("#ecd59c");   // LE-MLA: pale gold over an ivory wave - Maselec MLA-2: silver and black, like the DS1 look - its blue light is in the meters and the reduction
+        if (penv ("PRESS_PRO")  != nullptr) { if (auto* c = penv ("PRESS_PRO_COL")) return col (c); return col ("#c9a24e"); }   // LE-PRO: antique brass   // Pro-C 3: its yellow
+        if (penv ("PRESS_VIOLET") != nullptr) return col ("#a99bff");
+        if (auto* c = penv ("PRESS_RC_COL")) return col (c);
         return col ("#a8916a");   // LE-RC: smoked gold                                               // LE-RC (Renaissance Comp): its amber faders
     }
 }
@@ -57,8 +144,8 @@ void Canvas::pushHistory()
     if ((int) hIn.size() != n) { hIn.assign ((size_t) n, -90.0f); hOut = hIn; hGr.assign ((size_t) n, 0.0f); hRide = hGr; hBreath = hGr; hPos = 0; }
     const float in = juce::Decibels::gainToDecibels (juce::jmax (proc.inMeterL.load(), proc.inMeterR.load()), -90.0f);
     // the compressor (soft knee) the screen draws
-    const bool rvox0 = std::getenv ("PRESS_RVOX") != nullptr && std::getenv ("PRESS_RVOX_DEMO") == nullptr;
-    const bool heavy = std::getenv ("PRESS_GR_HEAVY") != nullptr;   // (mock: pushed hard, to show lots of gain reduction)
+    const bool rvox0 = penv ("PRESS_RVOX") != nullptr && penv ("PRESS_RVOX_DEMO") == nullptr;
+    const bool heavy = penv ("PRESS_GR_HEAVY") != nullptr;   // (mock: pushed hard, to show lots of gain reduction)
     const float thrNow = heavy ? -42.0f : rvox0 ? 0.0f : mThr, ratioNow = heavy ? 6.0f : mRatio;
     float over = in - thrNow, gr = 0.0f;
     if (over > mKnee * 0.5f) gr = over * (1.0f - 1.0f / ratioNow);
@@ -71,10 +158,20 @@ void Canvas::pushHistory()
     const bool breath = in < -34.0f && in > -56.0f;
     breathEnv += ((breath ? -8.0f : 0.0f) - breathEnv) * 0.25f;
     hIn[(size_t) hPos] = in;
+   #if PRESSURE_MOCK
     hGr[(size_t) hPos] = tab == 0 ? juce::jmax (0.0f, (in + ride + breathEnv) - (-14.0f)) * 0.8f : compEnv;   // HELPER: what the 1964 catches (mock: the peaks over its threshold)
     hRide[(size_t) hPos] = ride;
     hBreath[(size_t) hPos] = breathEnv;
     hOut[(size_t) hPos] = tab == 0 ? juce::jmin (-6.0f, in + ride + breathEnv) : in - compEnv;
+   #else
+    // the real thing: CLEAN's reduction and what comes out (HELPERS and VINTAGE pass the sound through in V1)
+    const float out = juce::Decibels::gainToDecibels (juce::jmax (proc.meterL.load(), proc.meterR.load()), -90.0f);
+    hGr[(size_t) hPos] = tab == 1 && proc.param ("tahorOn") > 0.5f ? proc.grDb.load() : 0.0f;
+    hRide[(size_t) hPos] = 0.0f;
+    hBreath[(size_t) hPos] = 0.0f;
+    hOut[(size_t) hPos] = out;
+    juce::ignoreUnused (ride);
+   #endif
     hPos = (hPos + 1) % n;
 }
 
@@ -84,15 +181,15 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
     if (n < 2) return;
     const float xR = PW - 50.0f;
     auto tc = kind == 0 ? helperC : kind == 1 ? cleanC : amber;
-    if (kind == 1 && std::getenv ("PRESS_RVOX") != nullptr) tc = col ("#dcc4b8");   // LE-755C: a warm blush wave under the rose gold
-    if (kind == 1 && std::getenv ("PRESS_PRO") != nullptr) tc = col ("#b8a57f");    // LE-PRO: a bronze-tinted wave under the brass
-    if (kind == 1 && std::getenv ("PRESS_MLA") != nullptr) tc = col ("#ebe7de");    // LE-MLA: ivory wave
-    if (kind == 1 && std::getenv ("PRESS_DS1") != nullptr) tc = col ("#6e6a63");    // LE-DS1: a black wave (its black display)
+    if (kind == 1 && penv ("PRESS_RVOX") != nullptr) tc = col ("#dcc4b8");   // LE-755C: a warm blush wave under the rose gold
+    if (kind == 1 && penv ("PRESS_PRO") != nullptr) tc = col ("#b8a57f");    // LE-PRO: a bronze-tinted wave under the brass
+    if (kind == 1 && penv ("PRESS_MLA") != nullptr) tc = col ("#ebe7de");    // LE-MLA: ivory wave
+    if (kind == 1 && penv ("PRESS_DS1") != nullptr) tc = col ("#6e6a63");    // LE-DS1: a black wave (its black display)
     if (kind == 0) tc = helperC.interpolatedWith (col ("#77777c"), 0.55f);   // HELPER: a wave tinted by its colour, like VINTAGE   // HELPER: a sea-glass tinted wave, quiet like the compressors'
     if (kind == 1 && gCompMode) tc = cleanC.interpolatedWith (col ("#77777c"), 0.55f);   // VINTAGE: a wave tinted by the unit's jewel colour
-    else if (kind == 1 && std::getenv ("PRESS_RVOX") == nullptr && std::getenv ("PRESS_DS1") == nullptr && std::getenv ("PRESS_MLA") == nullptr && std::getenv ("PRESS_PRO") == nullptr)
+    else if (kind == 1 && penv ("PRESS_RVOX") == nullptr && penv ("PRESS_DS1") == nullptr && penv ("PRESS_MLA") == nullptr && penv ("PRESS_PRO") == nullptr)
         tc = col ("#7e7567");                                                     // LE-RC: a slate wave under the smoked gold
-    if (kind == 1) if (auto* w = std::getenv ("PRESS_WAVE_COL")) tc = col (w);   // (mock: try a separate waveform colour)
+    if (kind == 1) if (auto* w = penv ("PRESS_WAVE_COL")) tc = col (w);   // (mock: try a separate waveform colour)
     auto at = [&] (const std::vector<float>& h, int age) { return h[(size_t) ((hPos - 1 - age + 2 * n) % n)]; };
     // the waveform, Pro-C style: centred like a clip in the DAW, in dB so the quiet parts still show -
     // what comes in in dark grey, what goes out over it in the tab's colour with a light edge
@@ -113,7 +210,7 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
     wave (hIn, juce::Colours::white.withAlpha (0.09f), juce::Colours::white.withAlpha (0.18f), 1.0f);
     wave (hOut, tc.withAlpha (0.24f), tc.withAlpha (0.9f), 1.2f);
     g.setColour (juce::Colours::white.withAlpha (0.08f)); g.fillRect (0.0f, cy, xR, 1.0f);
-    if (kind == 1 && std::getenv ("PRESS_RVOX") != nullptr && std::getenv ("PRESS_RVOX_DEMO") != nullptr)   // gate on only
+    if (kind == 1 && penv ("PRESS_RVOX") != nullptr && penv ("PRESS_RVOX_DEMO") != nullptr)   // gate on only
     {
         const float gate = -48.0f, gh = hOf (gate);
         const auto gc = col ("#e8b84a");
@@ -187,7 +284,7 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
             g.setColour (col ("#000000", 0.45f)); g.strokePath (edge, juce::PathStrokeType (3.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             g.setColour (col ("#ff4d5e")); g.strokePath (edge, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
-        else if (kind == 1 && std::getenv ("PRESS_DS1") != nullptr)
+        else if (kind == 1 && penv ("PRESS_DS1") != nullptr)
         {
             // LE-DS1: like its display - the reduction in black, with a grey edge
             g.setGradientFill (juce::ColourGradient (col ("#000000", 0.55f), 0, 40, col ("#000000", 0.85f), 0, 200, false)); g.fillPath (fill);
@@ -260,7 +357,7 @@ static bool gHelperKnob = false;
 // HELPER's own knob - three candidates (mock: PRESS_HKNOB = 1 machined, 2 skirted, 3 glass ring)
 static void helperKnob (juce::Graphics& g, R b, float pos, juce::Colour c, const juce::String& val)
 {
-    const int style = std::getenv ("PRESS_HKNOB") ? std::atoi (std::getenv ("PRESS_HKNOB")) : 2;   // chosen: 2, skirted vintage
+    const int style = penv ("PRESS_HKNOB") ? std::atoi (penv ("PRESS_HKNOB")) : 2;   // chosen: 2, skirted vintage
     pos = juce::jlimit (0.0f, 1.0f, pos);
     const auto ctr = b.getCentre();
     const float r = b.getWidth() * 0.5f, a0 = -135.0f * pi / 180.0f, a1 = 135.0f * pi / 180.0f, av = a0 + (a1 - a0) * pos;
@@ -689,9 +786,15 @@ void Canvas::paintSidechainDrawer (juce::Graphics& g, R unit)
 // on the right, in modern glass panels; the rest in a slim strip along the bottom
 void Canvas::paintCleanTab (juce::Graphics& g)
 {
-    if (std::getenv ("PRESS_DS1") != nullptr) { mThr = -14.0f; mRatio = 2.0f; mKnee = 17.0f; }
-    const bool mla = std::getenv ("PRESS_MLA") != nullptr;   // LE-MLA: the Maselec MLA-2 - drive into a fixed threshold, stepped controls
-    if (mla) { mThr = -20.0f; mRatio = 2.0f; mKnee = 8.0f; }   // LE-DS1: Goliath's defaults, soft knee 0.6 (~17 dB)
+    const bool mla = penv ("PRESS_MLA") != nullptr;   // LE-MLA: the Maselec MLA-2 - drive into a fixed threshold, stepped controls
+    if (! gCompMode)   // the curve the knee drawer draws: the engine's own
+    {
+        mThr = proc.param ("cThresh"); mRatio = proc.param ("cRatio"); mKnee = proc.param ("cKnee");
+        if (penv ("PRESS_DS1") != nullptr) mKnee = proc.param ("cDsKnee") * 2.0f * std::abs (mThr);
+        if (mla) { pressure::CleanSettings cs; cs.mlaIn = (int) proc.param ("cMlaIn"); mThr = pressure::CleanCompressor::mlaThreshold (cs);
+                   mRatio = pressure::mlaRatios[juce::jlimit (0, 8, (int) proc.param ("cMlaRatio"))]; mKnee = 8.0f; }
+        if (penv ("PRESS_PRO") != nullptr) mKnee += pressure::styleInfo ((int) proc.param ("cProStyle")).kneeAdd;
+    }
     const float pw = 196.0f, top = 46.0f, ph = 588.0f;
     // the side panels: glass running the full height of the screen - nearly clear where it meets the waveform and at the
     // very top and bottom, most solid behind the knobs, then easing off again at the outer edge
@@ -741,10 +844,25 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         text (g, val, font (Face::Light, sz > 90 ? 20.0f : 16.0f, 0.5f), ink, R (cx - 80, y + 24 + sz + 12, 160, 22), juce::Justification::centred);
         return y + 24 + sz + 12 + 22;
     };
+    // PRESSURE: a knob tied to its parameter (kind 3 = drawn the other way round: up = a lower value)
+    auto bigKnobP = [&] (float cx, float y, float sz, const char* lab, const juce::String& pid, int kind = 0)
+    {
+        const float pos = kind == 3 ? 1.0f - pn (pid) : pn (pid);
+        pctl (R (cx - sz * 0.5f - 6, y + 18, sz + 12, sz + 12), pid, kind);
+        return bigKnob (cx, y, sz, lab, pfmt (pid), pos);
+    };
+    auto smallKnobP = [&] (float kx, float y, float sz, float w, const char* lab, const juce::String& pid, float fsz = 14.0f)
+    {
+        title (R (kx - w * 0.5f, y, w, 12), lab);
+        modernKnob (g, R (kx - sz * 0.5f, y + 20, sz, sz), pn (pid), cleanC);
+        text (g, pfmt (pid), font (Face::Light, fsz, fsz < 13.0f ? 0.3f : 0.5f), ink, R (kx - w * 0.5f, y + 20 + sz + 8, w, fsz + 4), juce::Justification::centred);
+        pctl (R (kx - sz * 0.5f - 4, y + 16, sz + 8, sz + 8), pid, 0);
+    };
+    auto buttonP = [&] (R r, const char* t, const juce::String& pid) { glassButton (g, r, t, pon (pid)); pctl (r, pid, 1); };
     // ---- VINTAGE (glass): the unit's controls on the glass panels, its faceplate small at the bottom
     if (gCompMode)
     {
-        const int unit = juce::jlimit (0, kVinUnits - 1, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : preview);
+        const int unit = juce::jlimit (0, kVinUnits - 1, penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : preview);
         // each unit's own controls - the real panel's knobs, rotary switches, push buttons and toggles, in glass
         mThr = -18.0f; mRatio = 4.0f; mKnee = unit == 1 || unit == 5 || unit == 12 || unit == 13 ? 14.0f : unit == 2 || unit == 11 ? 10.0f : unit == 8 ? 8.0f : 4.0f;   // vari-mu and tube units: soft knees
         auto stepped = [&] (float cx, float y, float sz, const char* lab, const char* val, int n, int at, const char* const* labs)
@@ -836,7 +954,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 {
                     static const char* rv[9] { "A", "B", "C", "D", "E", "F", "G", "H", "LN" };
                     static const char* rn[9] { "BLUE STRIPE", "EARLY BLACK", "CLASS A", "BLACKFACE", "LOW NOISE", "BLACKFACE", "SILVER", "SILVER LN", "REISSUE" };
-                    const int r = std::getenv ("PRESS_REV") ? juce::jlimit (0, 8, std::atoi (std::getenv ("PRESS_REV"))) : 0;
+                    const int r = penv ("PRESS_REV") ? juce::jlimit (0, 8, std::atoi (penv ("PRESS_REV"))) : 0;
                     // each revision lights in its own colour - the look of that version
                     static const char* rc[9] { "#4f8dff",    // A: blue stripe
                                                "#e9e6df",    // B: early black - a plain white light
@@ -903,7 +1021,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 // THRUST: like the API's - one click steps NORM > MED > LOUD, and its little curve shows what the detector hears
                 // (MED and LOUD lean the detector away from the lows, so the bass pumps less)
                 {
-                    const int th = std::getenv ("PRESS_THRUST") ? juce::jlimit (0, 2, std::atoi (std::getenv ("PRESS_THRUST"))) : 0;
+                    const int th = penv ("PRESS_THRUST") ? juce::jlimit (0, 2, std::atoi (penv ("PRESS_THRUST"))) : 0;
                     const R tile = atY (rowL, yL, 74);
                     // each setting has its own colour: NORM a calm ivory, MED warm amber, LOUD hot ember
                     const juce::Colour tc = th == 0 ? col ("#d8d0c2") : th == 1 ? col ("#e8a24f") : col ("#ff5f3c");
@@ -939,9 +1057,9 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                     g.setColour (tc.interpolatedWith (juce::Colours::white, 0.35f)); g.strokePath (cv, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
                     // a dot running back and forth along it, up and down the lean, with a short glowing trail
                     {
-                        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
-                        const float u = std::getenv ("PRESS_THRUST_U") ? (float) std::atof (std::getenv ("PRESS_THRUST_U")) : 0.5f + 0.5f * (float) std::sin (tms / 1200.0);
-                        const float dir = std::getenv ("PRESS_THRUST_U") ? 1.0f : ((float) std::cos (tms / 1200.0) >= 0.0f ? 1.0f : -1.0f);
+                        const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+                        const float u = penv ("PRESS_THRUST_U") ? (float) std::atof (penv ("PRESS_THRUST_U")) : 0.5f + 0.5f * (float) std::sin (tms / 1200.0);
+                        const float dir = penv ("PRESS_THRUST_U") ? 1.0f : ((float) std::cos (tms / 1200.0) >= 0.0f ? 1.0f : -1.0f);
                         // it leaves a trail of little sparkles behind it, like the knee's dot - drifting off the line and fading
                         juce::Random rnd (11);
                         auto star = [&] (P c, float r, juce::Colour cc)
@@ -1121,33 +1239,32 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         }
         {
             const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-            const float alpha = (kneeOn || std::getenv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+            const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
             if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
-            paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
+            paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
         }
         {   // on the right: the CHARACTER drawer (what the unit does to the tone), in place of the envelope
-            const bool eo = envOn || std::getenv ("PRESS_CHAR") != nullptr;
+            const bool eo = envOn || penv ("PRESS_CHAR") != nullptr;
             if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
             paintEnvEdge (g, eo);
         }
         juce::ignoreUnused (unit);   // (no faceplate: the glass panels carry the unit)
-        paintTopStrip (g, std::getenv ("PRESS_TOPOFF") == nullptr);
-        paintScDrawer (g, std::getenv ("PRESS_SC") != nullptr);
+        paintTopStrip (g, penv ("PRESS_TOPOFF") == nullptr);
+        paintScDrawer (g, penv ("PRESS_SC") != nullptr);
         return;
     }
     // RVox: Goliath's one-knob vocal leveler - pushing COMPRESS levels the vocal and turns it up (like RVox);
     // LEVEL MATCH holds the level even instead, so you hear the compression, not the volume
-    if (std::getenv ("PRESS_RVOX") != nullptr)
+    if (penv ("PRESS_RVOX") != nullptr)
     {
         {
             const R s (0, top, pw, ph);
             panel (s, false);
             const float cx = s.getCentreX();
             float y = s.getY() + 70;
-            const bool demo = std::getenv ("PRESS_RVOX_DEMO") != nullptr;   // (mock: a pushed setting, to show it working)
-            y = bigKnob (cx + 4, y, 118, "COMPRESS", demo ? MINUS + "18.0 dB" : juce::String ("0.0 dB"), demo ? 0.62f : 0.0f) + 30;
+            y = bigKnobP (cx + 4, y, 118, "COMPRESS", "cVoxComp", 3) + 30;   // pushing it (clockwise) lowers the threshold
             // RVox's gate (Goliath's soft one, about 1:4 below its level): keeps the quiet gaps quiet as you push Compress
-            y = bigKnob (cx, y, 70, "GATE", demo ? MINUS + "48 dB" : juce::String ("Off"), demo ? 0.2f : 0.0f) + 8;
+            y = bigKnobP (cx, y, 70, "GATE", "cVoxGate") + 8;
             text (g, "keeps the gaps between", font (Face::Regular, 10), grey, R (s.getX() + 10, y, pw - 20, 13), juce::Justification::centred);
             text (g, "phrases quiet", font (Face::Regular, 10), grey, R (s.getX() + 10, y + 14, pw - 20, 13), juce::Justification::centred);
         }
@@ -1156,34 +1273,34 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             panel (s, true);
             const float cx = s.getCentreX();
             float y = s.getY() + 70;
-            y = bigKnob (cx, y, 96, "GAIN", "+0.0 dB", 0.5f) + 20;
+            y = bigKnobP (cx, y, 96, "GAIN", "cVoxGain") + 20;
             {
                 const R br (s.getX() + 18, y, pw - 36, 22);
                 // LEVEL MATCH: off, pushing Compress turns it up (like RVox); on, the level stays even
-                glassButton (g, br, "LEVEL MATCH", false);
+                buttonP (br, "LEVEL MATCH", "cVoxMatch");
                 text (g, "off: pushing Compress", font (Face::Regular, 10), grey, R (s.getX() + 10, y + 28, pw - 20, 13), juce::Justification::centred);
                 text (g, "turns the level up", font (Face::Regular, 10), grey, R (s.getX() + 10, y + 42, pw - 20, 13), juce::Justification::centred);
                 y += 72;
             }
-            y = bigKnob (cx, y, 64, "MIX", "100%", 1.0f);
+            y = bigKnobP (cx, y, 64, "MIX", "cMix");
         }
         // the knee drawer stays: RVox's own curve - a fixed 3:1 with a very soft 10 dB knee, display only
         {
             const float keepT = mThr, keepR = mRatio, keepK = mKnee;
-            mThr = std::getenv ("PRESS_RVOX_DEMO") ? -18.0f : 0.0f; mRatio = 3.0f; mKnee = 10.0f;
+            mThr = proc.param ("cVoxComp"); mRatio = 3.0f; mKnee = 10.0f;
             const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-            const float alpha = (kneeOn || std::getenv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+            const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
             if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
-            paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
+            paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
             mThr = keepT; mRatio = keepR; mKnee = keepK;
             {   // the envelope drawer: the right panel's twin of the knee
-                const bool eo = envOn || std::getenv ("PRESS_ENV") != nullptr;
+                const bool eo = envOn || penv ("PRESS_ENV") != nullptr;
                 if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
                 paintEnvEdge (g, eo);
             }
         }
-        paintTopStrip (g, std::getenv ("PRESS_TOPOFF") == nullptr);
-        paintScDrawer (g, std::getenv ("PRESS_SC") != nullptr);
+        paintTopStrip (g, penv ("PRESS_TOPOFF") == nullptr);
+        paintScDrawer (g, penv ("PRESS_SC") != nullptr);
         return;
     }
     // left: threshold, ratio, and the knee with its little graph
@@ -1198,7 +1315,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             // the MLA-2 has no threshold knob: INPUT GAIN drives the sound into it (0 to -20 dB, 1 dB steps)
             // the MLA-2's bi-colour lamp: green when the compressor is in, flashing red the moment it starts to compress
             {
-                const bool red = std::getenv ("PRESS_MLA_LAMPOFF") == nullptr;
+                const bool red = penv ("PRESS_MLA_LAMPOFF") == nullptr;
                 const auto lc = red ? col ("#ff4a3d") : col ("#4ade80");
                 const P l (cx + 62, y + 6);
                 g.setGradientFill (juce::ColourGradient (lc.withAlpha (0.55f), l.x, l.y, lc.withAlpha (0.0f), l.x + 11, l.y, true));
@@ -1206,29 +1323,28 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 g.setColour (lc.interpolatedWith (juce::Colours::white, 0.25f)); g.fillEllipse (l.x - 3.5f, l.y - 3.5f, 7, 7);
                 g.setColour (juce::Colours::white.withAlpha (0.7f)); g.fillEllipse (l.x - 1.5f, l.y - 2.2f, 2.2f, 2.2f);
             }
-            gKnobSteps = 21; y = bigKnob (cx, y, 104, "INPUT GAIN", MINUS + "8 dB", 12.0f / 20.0f) + 22;
-            gKnobSteps = 9;  y = bigKnob (cx, y, 80, "RATIO", "2 : 1", 3.0f / 8.0f) + 24;   // 1.2 1.4 1.7 2 2.5 3 5 8 inf
+            gKnobSteps = 21; y = bigKnobP (cx, y, 104, "INPUT GAIN", "cMlaIn", 3) + 22;
+            gKnobSteps = 9;  y = bigKnobP (cx, y, 80, "RATIO", "cMlaRatio") + 24;   // 1.2 1.4 1.7 2 2.5 3 5 8 inf
             gKnobSteps = 0;
             // ImageLink: links the two sides, but lets a short peak on one side through on its own
-            glassButton (g, R (s.getX() + 18, y, pw - 36, 24), "IMAGELINK", true);
+            buttonP (R (s.getX() + 18, y, pw - 36, 24), "IMAGELINK", "cMlaLink");
             text (g, "links L / R, lets short peaks through", font (Face::Regular, 9.5f), grey, R (s.getX() + 8, y + 30, pw - 16, 12), juce::Justification::centred);
             ratioY = y;
         }
         else {
-        { const float thr = std::getenv ("PRESS_DS1") != nullptr ? -14.0f : mThr;
-          y = bigKnob (cx, y, 104, "THRESHOLD", MINUS + juce::String (-thr, 1) + " dB", 1.0f - (-thr) / 60.0f) + 22; }
+        y = bigKnobP (cx, y, 104, "THRESHOLD", "cThresh") + 22;
         ratioY = y;
-        y = bigKnob (cx, y, 80, "RATIO", (std::getenv ("PRESS_DS1") != nullptr ? juce::String ("2") : juce::String (mRatio, 1).trimCharactersAtEnd (".0")) + " : 1", std::getenv ("PRESS_DS1") != nullptr ? 0.3f : 0.35f) + 10;
+        y = bigKnobP (cx, y, 80, "RATIO", "cRatio") + 10;
         y += 14;   // the ratio picks are gone - the wheel does it all (LE-DS1's wheel turns past 1:1 into expansion)
         // the knee: its knob (the graph appears big over the screen while you touch it)
-        if (std::getenv ("PRESS_DS1") != nullptr)
+        if (penv ("PRESS_DS1") != nullptr)
         {
             // the real DS1's soft-knee: a variable amount, 0 (hard) to 1 (from 0 dBFS down to twice the threshold)
-            y = bigKnob (cx, y, 64, "SOFT KNEE", "0.6", 0.6f);
+            y = bigKnobP (cx, y, 64, "SOFT KNEE", "cDsKnee");
         }
         else
-            y = bigKnob (cx, y, 64, "KNEE", juce::String (mKnee, 0) + " dB", mKnee / 24.0f);
-        if (std::getenv ("PRESS_PRO") != nullptr)
+            y = bigKnobP (cx, y, 64, "KNEE", "cKnee");
+        if (penv ("PRESS_PRO") != nullptr)
         {
             // LE-PRO's STYLE (like Pro-C 3): one compressor, many characters - click the arrows or the name for the list
             const R b (s.getX() + 18, 650.0f - 21.0f, pw - 36, 42);
@@ -1237,7 +1353,8 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             g.fillRoundedRectangle (b.reduced (1), 5);
             g.setColour (cleanC.withAlpha (0.45f)); g.drawRoundedRectangle (b.reduced (0.5f), 6, 1.0f);
             text (g, "STYLE", font (Face::CondMedium, 9, 1.4f), col ("#b9b3a7"), R (b.getX() + 8, b.getY() + 5, 60, 11));
-            text (g, "CLEAN", font (Face::Regular, 13.5f, 1.2f), ink, R (b.getX() + 22, b.getY() + 17, b.getWidth() - 44, 17), juce::Justification::centred);
+            text (g, pchoice ("cProStyle").toUpperCase(), font (Face::Regular, 13.5f, 1.2f), ink, R (b.getX() + 22, b.getY() + 17, b.getWidth() - 44, 17), juce::Justification::centred);
+            pctl (b.withWidth (b.getWidth() * 0.5f), "cProStyle", 2); pctl (b.withTrimmedLeft (b.getWidth() * 0.5f), "cProStyle", 1);
             auto chev = [&] (float x, bool left)
             {
                 juce::Path c; const float yy = b.getY() + 25.5f;
@@ -1246,13 +1363,13 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 g.setColour (cleanC.withAlpha (0.85f)); g.strokePath (c, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             };
             chev (b.getX() + 14, true); chev (b.getRight() - 14, false);
-            text (g, "1 / 14", font (Face::CondMedium, 8.5f, 1.2f), grey, R (b.getRight() - 58, b.getY() + 5, 50, 11), juce::Justification::centredRight);
+            text (g, juce::String ((int) proc.param ("cProStyle") + 1) + " / 14", font (Face::CondMedium, 8.5f, 1.2f), grey, R (b.getRight() - 58, b.getY() + 5, 50, 11), juce::Justification::centredRight);
         }
         }
         // the knee window's tab (replaced by the drawer's glass edge - kept off)
         if (false)
         {
-            const bool on = kneeOn || std::getenv ("PRESS_KNEE") != nullptr;
+            const bool on = kneeOn || penv ("PRESS_KNEE") != nullptr;
             const R t (pw - 1, ratioY + 18, 30, 92);
             juce::Path tp; tp.addRoundedRectangle (t.getX(), t.getY(), t.getWidth(), t.getHeight(), 8, 8, false, true, false, true);
             g.setGradientFill (juce::ColourGradient (on ? col ("#2a2550", 0.95f) : col ("#1c1d22", 0.9f), t.getX(), 0, on ? col ("#1d1a38", 0.95f) : col ("#141519", 0.9f), t.getRight(), 0, false));
@@ -1274,11 +1391,11 @@ void Canvas::paintCleanTab (juce::Graphics& g)
     // Pro-C 3 style knee display: big, over the waveform, while Threshold, Ratio or Knee is touched - fades 4 s after
     {
         const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-        const float alpha = (kneeOn || std::getenv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+        const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
         if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);   // the Figma size
-        paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
+        paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
         {   // the envelope drawer: the right panel's twin of the knee
-            const bool eo = envOn || std::getenv ("PRESS_ENV") != nullptr;
+            const bool eo = envOn || penv ("PRESS_ENV") != nullptr;
             if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
             paintEnvEdge (g, eo);
         }
@@ -1289,59 +1406,52 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         panel (s, true);
         const float cx = s.getCentreX();
         float y = s.getY() + 22;
-        const bool ds1 = std::getenv ("PRESS_DS1") != nullptr;
+        const bool ds1 = penv ("PRESS_DS1") != nullptr;
         if (mla)
         {
             // attack in ms per dB and release in s per dB, stepped - and both follow the music on their own
-            gKnobSteps = 9; y = bigKnob (cx, y, 76, "ATTACK", "0.02 ms/dB", 3.0f / 8.0f) + 10;
-            gKnobSteps = 9; y = bigKnob (cx, y, 76, "RELEASE", "0.10 s/dB", 4.0f / 8.0f) + 4;
+            gKnobSteps = 9; y = bigKnobP (cx, y, 76, "ATTACK", "cMlaAtk") + 10;
+            gKnobSteps = 9; y = bigKnobP (cx, y, 76, "RELEASE", "cMlaRel") + 4;
             gKnobSteps = 0;
             text (g, "both follow the program", font (Face::Regular, 9.5f), grey, R (s.getX() + 8, y, pw - 16, 12), juce::Justification::centred);
             y += 32;
         }
         else if (ds1)
         {
-            y = bigKnob (cx, y, 70, "ATTACK", "3.0 ms", 0.3f) + 8;
+            y = bigKnobP (cx, y, 70, "ATTACK", "cAttack") + 8;
             // two releases, like the real DS1: fast for the peaks, slow for the average level
             const float sz = 54;
-            const struct { const char* lab; const char* val; float pos; float x; } rk[2] { { "REL FAST", "200 ms", 0.35f, cx - 46 }, { "REL SLOW", "1.2 s", 0.6f, cx + 46 } };
-            for (auto& k : rk)
-            {
-                title (R (k.x - 46, y, 92, 12), k.lab);
-                modernKnob (g, R (k.x - sz * 0.5f, y + 20, sz, sz), k.pos, cleanC);
-                text (g, k.val, font (Face::Light, 14, 0.5f), ink, R (k.x - 46, y + 20 + sz + 8, 92, 18), juce::Justification::centred);
-            }
+            smallKnobP (cx - 46, y, sz, 92, "REL FAST", "cDsRelF");
+            smallKnobP (cx + 46, y, sz, 92, "REL SLOW", "cDsRelS");
             y += 20 + sz + 8 + 18 + 12;
-            valueBar (g, R (s.getX() + 18, y, pw - 36, 42), "AVERAGE", "30 ms", 0.3f);
+            valueBar (g, R (s.getX() + 18, y, pw - 36, 42), "AVERAGE", pfmt ("cDsAvg"), pn ("cDsAvg"));
+            pctl (R (s.getX() + 18, y, pw - 36, 42), "cDsAvg", 0);
             y += 42 + 22;
         }
         else
         {
-            y = bigKnob (cx, y, 76, "ATTACK", "8.0 ms", 0.4f) + 10;
-            y = bigKnob (cx, y, 76, "RELEASE", "120 ms", 0.45f) + 6;
+            y = bigKnobP (cx, y, 76, "ATTACK", "cAttack") + 10;
+            y = bigKnobP (cx, y, 76, "RELEASE", "cRelease") + 6;
         }
-        auto lit = [&] (float yy, const char* t)
+        auto lit = [&] (float yy, const char* t, const char* pid)
         {
-            // faint until the mouse comes over it (like Range and Hold)
+            // faint until the mouse comes over it (like Range and Hold) - but always clear when it's on
             const R br (s.getX() + 18, yy, pw - 36, 22);
-            const bool near = br.expanded (8).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_RH") != nullptr;
+            const bool near = br.expanded (8).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_RH") != nullptr || pon (pid);
             g.beginTransparencyLayer (near ? 1.0f : 0.14f);
-            glassButton (g, br, t, true);
+            glassButton (g, br, t, pon (pid));
             g.endTransparencyLayer();
+            pctl (br, pid, 1);
         };
-        if (! ds1 && ! mla) { lit (y, "AUTO RELEASE"); y += 36; }
+        if (! ds1 && ! mla) { lit (y, "AUTO RELEASE", "cAutoRel"); y += 36; }
         // LE-PRO: make-up, then separate dry and wet levels (linked so they cross over, like Pro-C 3)
-        if (std::getenv ("PRESS_PRO") != nullptr)
+        if (penv ("PRESS_PRO") != nullptr)
         {
             g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (s.getX() + 18, y - 10, pw - 36, 1.0f);
             const float sz = 44;
-            const struct { const char* lab; const char* val; float pos; float x; } ks[3] { { "MAKE-UP", "+4.0 dB", 0.6f, cx - 58 }, { "DRY", "\xe2\x88\x92\xe2\x88\x9e", 0.0f, cx }, { "WET", "0.0 dB", 1.0f, cx + 58 } };
-            for (auto& k : ks)
-            {
-                title (R (k.x - 30, y, 60, 12), k.lab);
-                modernKnob (g, R (k.x - sz * 0.5f, y + 20, sz, sz), k.pos, cleanC);
-                text (g, U8 (k.val), font (Face::Light, 12.5f, 0.3f), ink, R (k.x - 32, y + 20 + sz + 8, 64, 16), juce::Justification::centred);
-            }
+            smallKnobP (cx - 58, y, sz, 64, "MAKE-UP", "cMakeup", 12.5f);
+            smallKnobP (cx, y, sz, 64, "DRY", "cProDry", 12.5f);
+            smallKnobP (cx + 58, y, sz, 64, "WET", "cProWet", 12.5f);
             // the link between dry and wet: a small chain
             {
                 const P l (cx + 29, y + 20 + sz * 0.5f);
@@ -1355,31 +1465,27 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         {
             g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (s.getX() + 18, y - 10, pw - 36, 1.0f);
             const float sz = 56;
-            const struct { const char* lab; const char* val; float pos; float x; } ks[2] { { mla ? "OUTPUT" : "MAKE-UP", "+4.0 dB", 0.6f, cx - 46 }, { "MIX", "100%", 1.0f, cx + 46 } };
-            for (auto& k : ks)
-            {
-                title (R (k.x - 46, y, 92, 12), k.lab);
-                modernKnob (g, R (k.x - sz * 0.5f, y + 20, sz, sz), k.pos, cleanC);
-                text (g, k.val, font (Face::Light, 14, 0.5f), ink, R (k.x - 46, y + 20 + sz + 8, 92, 18), juce::Justification::centred);
-            }
+            smallKnobP (cx - 46, y, sz, 92, mla ? "OUTPUT" : "MAKE-UP", "cMakeup");
+            smallKnobP (cx + 46, y, sz, 92, "MIX", "cMix");
             y += 20 + sz + 8 + 18 + 14;
         }
-        lit (y, "AUTO GAIN");
+        lit (y, "AUTO GAIN", "cAutoGain");
         // range and hold: slim value bars level with the sidechain's look-ahead row - faint until the mouse comes over them
         // (not on LE-MLA: its timing is the program's)
         if (! mla)
         {
             const float bw = (pw - 36 - 10) * 0.5f, ry = 650.0f - 21.0f;
             const R both (s.getX() + 18, ry, pw - 36, 42);
-            const bool near = both.expanded (10).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_RH") != nullptr;
+            const bool near = both.expanded (10).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_RH") != nullptr;
             g.beginTransparencyLayer (near ? 1.0f : 0.14f);
-            valueBar (g, R (s.getX() + 18, ry, bw, 42), "RANGE", "24 dB", 0.8f);
-            valueBar (g, R (s.getX() + 18 + bw + 10, ry, bw, 42), "HOLD", "0 ms", 0.0f);
+            valueBar (g, R (s.getX() + 18, ry, bw, 42), "RANGE", pfmt ("cRange"), pn ("cRange"));
+            valueBar (g, R (s.getX() + 18 + bw + 10, ry, bw, 42), "HOLD", pfmt ("cHold"), pn ("cHold"));
+            pctl (R (s.getX() + 18, ry, bw, 42), "cRange", 0); pctl (R (s.getX() + 18 + bw + 10, ry, bw, 42), "cHold", 0);
             g.endTransparencyLayer();
         }
     }
-    paintTopStrip (g, std::getenv ("PRESS_TOPOFF") == nullptr);
-    paintScDrawer (g, std::getenv ("PRESS_SC") != nullptr);
+    paintTopStrip (g, penv ("PRESS_TOPOFF") == nullptr);
+    paintScDrawer (g, penv ("PRESS_SC") != nullptr);
     // the strip along the bottom: off for now (Lovy is deciding where its controls go)
     if (false)
     {
@@ -1480,7 +1586,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
     {
         const int n = (int) ks.size();
         const float w = (s.getWidth() - 36) / (float) n, sz = n >= 3 ? 48.0f : n == 2 ? 64.0f : 76.0f;
-        const bool ring = std::getenv ("PRESS_HKNOB") != nullptr && std::atoi (std::getenv ("PRESS_HKNOB")) == 3;
+        const bool ring = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
         int i = 0;
         gHelperKnob = false;   // (the compressors' own knob)
         if (! cardOn) g.beginTransparencyLayer (0.3f);   // an off tool's knobs sit back
@@ -1513,7 +1619,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
     // a column of knobs, one under another (Lift's bands): label above, value under
     auto knobCol = [&] (float cx, float y, float colW, std::initializer_list<std::tuple<const char*, juce::String, float>> ks, juce::Colour c, float sz)
     {
-        const bool ring = std::getenv ("PRESS_HKNOB") != nullptr && std::atoi (std::getenv ("PRESS_HKNOB")) == 3;
+        const bool ring = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
         if (! cardOn) g.beginTransparencyLayer (0.3f);
         for (auto& k : ks)
         {
@@ -1551,7 +1657,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
             g.setColour (juce::Colours::black.withAlpha (0.5f)); g.drawEllipse (lx, ly, 8, 8, 0.8f);
             juce::ignoreUnused (caught);
         }
-        card (s, y, "BREATH", brC, std::getenv ("PRESS_HOFF") == nullptr);
+        card (s, y, "BREATH", brC, penv ("PRESS_HOFF") == nullptr);
         knobs (s, y, { { "AMOUNT", U8 ("\xe2\x88\x92" "8 dB"), 0.33f }, { "SENSE", "55 %", 0.55f }, { "FADE", "40 ms", 0.4f } }, brC);
         {   // the breaths it has caught lately: each one a soft bronze dip, scrolling with the music
             const int n = (int) hBreath.size();
@@ -1649,14 +1755,14 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         const float keepT = mThr, keepR = mRatio, keepK = mKnee;
         mThr = -14.0f; mRatio = 2.0f; mKnee = 6.0f;
         const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-        const float alpha = (kneeOn || std::getenv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+        const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
         if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
-        paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
+        paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
         mThr = keepT; mRatio = keepR; mKnee = keepK;
     }
     // the right edge: the TONE drawer - the high pass and the two Lift bands on a frequency graph, moving with the music
     {
-        const bool eo = envOn || std::getenv ("PRESS_DYNEQ") != nullptr;
+        const bool eo = envOn || penv ("PRESS_DYNEQ") != nullptr;
         if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
         paintEnvEdge (g, eo);
     }
@@ -1687,7 +1793,7 @@ void Canvas::paintKneeContent (juce::Graphics& g, R k)
     g.fillRect (R (px (mThr - mKnee * 0.5f), a.getY(), px (mThr + mKnee * 0.5f) - px (mThr - mKnee * 0.5f), a.getHeight()));
     {
         // the threshold: a thin glass line, very faint, that slowly breathes brighter and back (a 3.5 s cycle)
-        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
         const float br = 0.5f + 0.5f * std::sin ((float) (tms / 3500.0 * juce::MathConstants<double>::twoPi));
         auto glassLine = [&] (R r, bool vertical)
         {
@@ -1769,12 +1875,12 @@ void Canvas::paintKneeContent (juce::Graphics& g, R k)
     }
     // what it says
     text (g, gHelperTab ? "1964  CURVE" : "KNEE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 100, 12));
-    if (std::getenv ("PRESS_MLA") != nullptr)   // LE-MLA: the threshold is fixed - Input Gain drives into it - and so is the knee
+    if (penv ("PRESS_MLA") != nullptr)   // LE-MLA: the threshold is fixed - Input Gain drives into it - and so is the knee
         text (g, U8 ("drive \xe2\x88\x92" "8 dB  \xc2\xb7  2:1  \xc2\xb7  soft knee"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 214, a.getY() - 31, 214, 13), juce::Justification::centredRight);
     else
-    text (g, MINUS + juce::String (-mThr, 1) + U8 (" dB  \xc2\xb7  ") + juce::String (mRatio, 1).trimCharactersAtEnd (".0") + U8 (":1  \xc2\xb7  ") + (std::getenv ("PRESS_DS1") != nullptr ? juce::String ("soft knee 0.6") : mKnee < 0.5f ? juce::String ("hard knee") : "knee " + juce::String (mKnee, 0) + " dB"),
+    text (g, MINUS + juce::String (-mThr, 1) + U8 (" dB  \xc2\xb7  ") + juce::String (mRatio, 1).trimCharactersAtEnd (".0") + U8 (":1  \xc2\xb7  ") + (penv ("PRESS_DS1") != nullptr ? juce::String ("soft knee 0.6") : mKnee < 0.5f ? juce::String ("hard knee") : "knee " + juce::String (mKnee, 0) + " dB"),
           font (Face::Regular, 10.5f), ink, R (a.getRight() - 214, a.getY() - 31, 214, 13), juce::Justification::centredRight);
-    if (std::getenv ("PRESS_RVOX") != nullptr || std::getenv ("PRESS_MLA") != nullptr || gCompMode)
+    if (penv ("PRESS_RVOX") != nullptr || penv ("PRESS_MLA") != nullptr || gCompMode)
         text (g, "FIXED", font (Face::CondMedium, 9, 1.6f), cleanC, R (a.getX() + 40, a.getY() - 30, 60, 12));
     text (g, "IN", font (Face::CondMedium, 9, 1.6f), grey, R (a.getRight() - 20, a.getBottom() + 16, 20, 10), juce::Justification::centredRight);
     text (g, "OUT", font (Face::CondMedium, 9, 1.6f), grey, R (a.getX() + 6, a.getY() + 4, 30, 10), juce::Justification::centredLeft);
@@ -1827,6 +1933,7 @@ void Canvas::paintKneeEdge (juce::Graphics& g, bool open)
     // the arrow handle: barely there until the mouse comes near, then bright
     {
         const R h (strip.getCentreX() - 12, 310, 24, 60);
+        dz (h.expanded (8, 6), Hit::PDrawer, 0);
         const bool near = h.expanded (30, 40).contains (mouse - display.getPosition());
         g.beginTransparencyLayer (near ? 1.0f : 0.18f);
         juce::Path p; p.addRoundedRectangle (h, 12);
@@ -1871,17 +1978,21 @@ void Canvas::paintArrowHandle (juce::Graphics& g, R h, int dir, const juce::Stri
 void Canvas::paintTopStrip (juce::Graphics& g, bool open)
 {
     const float x0 = 214.0f, x1 = PW - 214.0f;
-    if (! open) { paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 1, 44, 14), 1, {}); return; }
+    if (! open) { paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 1, 44, 14), 1, {}); dz (R ((x0 + x1) * 0.5f - 28, 0, 56, 20), Hit::PDrawer, 2); return; }
     const R s (x0, 0, x1 - x0, 42);
     drawGlass (g, s, [] (float u, float t) { return (0.3f + 0.7f * smoothStep ((1.0f - t) / 0.6f)) * smoothStep (u / 0.06f) * smoothStep ((1.0f - u) / 0.06f); });
     const float cy = 16.0f;
     // flip buttons show what they're set to (click to change); toggles light up
     auto flip = [&] (R r, const char* now, const char*) { glassButton (g, r, now, true, true); };
     auto toggle = [&] (R r, const char* t, bool on) { glassButton (g, r, t, on); };
+    // PRESSURE: tied to their parameters - a flip shows its setting (click for the next), a toggle lights when on
+    auto flipP = [&] (R r, const juce::String& pre, const char* pid) { glassButton (g, r, (pre + pchoice (pid).toUpperCase()).toRawUTF8(), true, true); pctl (r, pid, 1); };
+    auto toggleP = [&] (R r, const char* t, const char* pid) { glassButton (g, r, t, pon (pid)); pctl (r, pid, 1); };
+    auto handle = [&] (R h) { paintArrowHandle (g, h, 0, {}); dz (h.expanded (6, 4), Hit::PDrawer, 2); };
     const float bw = 96, gap = 14;
     if (gCompMode)   // VINTAGE: each unit's own switches, then Delta
     {
-        const int u = std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : 0;
+        const int u = penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : 0;
         std::vector<std::pair<const char*, float>> fl;
         switch (u)
         {
@@ -1907,58 +2018,59 @@ void Canvas::paintTopStrip (juce::Graphics& g, bool open)
         float x = (x0 + x1) * 0.5f - total * 0.5f;
         for (auto& f : fl) { flip (R (x, cy - 11, f.second, 22), f.first, ""); x += f.second + gap; }
         toggle (R (x, cy - 11, 76, 22), "DELTA", false);
-        paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 31, 44, 14), 0, {});
+        handle (R ((x0 + x1) * 0.5f - 22, 31, 44, 14));
         return;
     }
-    if (std::getenv ("PRESS_PRO") != nullptr)   // LE-PRO: Character (off / warm / punchy) with its drive, Peak / RMS, Delta
+    if (penv ("PRESS_PRO") != nullptr)   // LE-PRO: Character (off / warm / punchy) with its drive, Peak / RMS, Delta
     {
         // Character: Tube / Diode / Bright, its Drive, and whether it colours before or after the compressor;
         // Auto Threshold keeps the compression the same when the level going in changes
         const float total = 140 + 96 + 76 + 130 + 76 + gap * 4;
         float x = (x0 + x1) * 0.5f - total * 0.5f;
-        flip (R (x, cy - 11, 140, 22), "CHARACTER  TUBE", "DIODE"); x += 140 + gap;
-        toggle (R (x, cy - 11, 96, 22), "DRIVE  30%", true); x += 96 + gap;
-        flip (R (x, cy - 11, 76, 22), "PRE", "POST"); x += 76 + gap;
-        toggle (R (x, cy - 11, 130, 22), "AUTO THRESHOLD", false); x += 130 + gap;
-        toggle (R (x, cy - 11, 76, 22), "DELTA", false);
-        paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 31, 44, 14), 0, {});
+        flipP (R (x, cy - 11, 140, 22), "CHARACTER  ", "cProChar"); x += 140 + gap;
+        glassButton (g, R (x, cy - 11, 96, 22), ("DRIVE  " + pfmt ("cProDrive")).toRawUTF8(), proc.param ("cProDrive") > 0.5f);
+        pctl (R (x, cy - 11, 96, 22), "cProDrive", 0); x += 96 + gap;   // drag it for more or less
+        flipP (R (x, cy - 11, 76, 22), "", "cProPre"); x += 76 + gap;
+        toggleP (R (x, cy - 11, 130, 22), "AUTO THRESHOLD", "cProAutoThr"); x += 130 + gap;
+        toggleP (R (x, cy - 11, 76, 22), "DELTA", "cDelta");
+        handle (R ((x0 + x1) * 0.5f - 22, 31, 44, 14));
         return;
     }
-    if (std::getenv ("PRESS_MLA") != nullptr)   // LE-MLA: its meter switch (gain reduction or VU) and Delta
+    if (penv ("PRESS_MLA") != nullptr)   // LE-MLA: its meter switch (gain reduction or VU) and Delta
     {
         const float total = 120 + 76 + gap;
         float x = (x0 + x1) * 0.5f - total * 0.5f;
-        flip (R (x, cy - 11, 120, 22), "METER  GR", "METER  VU"); x += 120 + gap;
-        toggle (R (x, cy - 11, 76, 22), "DELTA", false);
-        paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 31, 44, 14), 0, {});
+        flipP (R (x, cy - 11, 120, 22), "METER  ", "cMlaMeter"); x += 120 + gap;
+        toggleP (R (x, cy - 11, 76, 22), "DELTA", "cDelta");
+        handle (R ((x0 + x1) * 0.5f - 22, 31, 44, 14));
         return;
     }
-    if (std::getenv ("PRESS_DS1") != nullptr)   // LE-DS1: full range or band-selective (only the chosen band is compressed), and Delta
+    if (penv ("PRESS_DS1") != nullptr)   // LE-DS1: full range or band-selective (only the chosen band is compressed), and Delta
     {
         const float total = 120 + 76 + gap;
         float x = (x0 + x1) * 0.5f - total * 0.5f;
-        flip (R (x, cy - 11, 120, 22), std::getenv ("PRESS_DS1_BAND") ? "BAND" : "FULL RANGE", "BAND"); x += 120 + gap;
-        toggle (R (x, cy - 11, 76, 22), "DELTA", false);
-        paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 31, 44, 14), 0, {});
+        flipP (R (x, cy - 11, 120, 22), "", "cDsBand"); x += 120 + gap;
+        toggleP (R (x, cy - 11, 76, 22), "DELTA", "cDelta");
+        handle (R ((x0 + x1) * 0.5f - 22, 31, 44, 14));
         return;
     }
-    if (std::getenv ("PRESS_RVOX") != nullptr)   // RVox's timing and tone are fixed: only Peak / RMS and Delta apply
+    if (penv ("PRESS_RVOX") != nullptr)   // RVox's timing and tone are fixed: only Peak / RMS and Delta apply
     {
         const float total = bw + 76 + gap;
         float x = (x0 + x1) * 0.5f - total * 0.5f;
-        flip (R (x, cy - 11, bw, 22), "PEAK", "RMS"); x += bw + gap;
-        toggle (R (x, cy - 11, 76, 22), "DELTA", false);
-        paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 31, 44, 14), 0, {});
+        flipP (R (x, cy - 11, bw, 22), "", "cPeak"); x += bw + gap;
+        toggleP (R (x, cy - 11, 76, 22), "DELTA", "cDelta");
+        handle (R ((x0 + x1) * 0.5f - 22, 31, 44, 14));
         return;
     }
     const float total = bw * 3 + 104 + 76 + gap * 4;
     float x = (x0 + x1) * 0.5f - total * 0.5f;
-    flip (R (x, cy - 11, bw, 22), "GLIDE", "SNAP"); x += bw + gap;
-    flip (R (x, cy - 11, bw, 22), "COLOR", "PURE"); x += bw + gap;
-    flip (R (x, cy - 11, bw, 22), "PEAK", "RMS"); x += bw + gap;
-    toggle (R (x, cy - 11, 104, 22), "AUTO ATTACK", false); x += 104 + gap;
-    toggle (R (x, cy - 11, 76, 22), "DELTA", false);
-    paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 31, 44, 14), 0, {});
+    flipP (R (x, cy - 11, bw, 22), "", "cGlide"); x += bw + gap;
+    flipP (R (x, cy - 11, bw, 22), "", "cColor"); x += bw + gap;
+    flipP (R (x, cy - 11, bw, 22), "", "cPeak"); x += bw + gap;
+    toggleP (R (x, cy - 11, 104, 22), "AUTO ATTACK", "cAutoAtk"); x += 104 + gap;
+    toggleP (R (x, cy - 11, 76, 22), "DELTA", "cDelta");
+    handle (R ((x0 + x1) * 0.5f - 22, 31, 44, 14));
 }
 
 // a slim value bar: a label, the value, and a thin bar filled to it - drag up / down (or left / right) to change
@@ -2012,7 +2124,7 @@ static void paintHelperDrawerContent (juce::Graphics& g, R k, double tms)
     };
     auto screen = [&] (R r) { fillRound (g, r, 6, col ("#000000", 0.35f)); strokeRound (g, r, 6, juce::Colours::white.withAlpha (0.08f)); };
     const float top = k.getY() + 22, scW = 168.0f, scH = 96.0f;
-    const int style = std::getenv ("PRESS_DSTYLE") ? std::atoi (std::getenv ("PRESS_DSTYLE")) : 0;
+    const int style = penv ("PRESS_DSTYLE") ? std::atoi (penv ("PRESS_DSTYLE")) : 0;
     const float sNow = juce::jlimit (0.0f, 1.0f, (float) std::sin (tms / 260.0 + 4.4) * 1.3f - 0.1f), red = sNow * 5.5f;
     // the De-esser's picture: the top of the spectrum, its band, the esses carved out
     auto essScreen = [&] (R a)
@@ -2248,10 +2360,11 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         lg.addColour (0.12, cleanC.withAlpha (0.45f)); lg.addColour (0.5, juce::Colours::white.withAlpha (0.55f)); lg.addColour (0.88, cleanC.withAlpha (0.45f));
         // the line, with a gap in the middle where the name sits (no bubble)
         const R h = gHelperTab ? R (PW * 0.5f - 72, ey - 12, 144, 24) : R (PW * 0.5f - 62, ey - 12, 124, 24);
+        dz (h.expanded (10, 4), Hit::PDrawer, 3);
         g.setGradientFill (lg);
         g.fillRect (strip.getX(), strip.getCentreY() - 0.5f, h.getX() - 6 - strip.getX(), 1.0f);
         g.fillRect (h.getRight() + 6, strip.getCentreY() - 0.5f, strip.getRight() - h.getRight() - 6, 1.0f);
-        const bool near = h.expanded (40, 30).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_SC") != nullptr;
+        const bool near = h.expanded (40, 30).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_SC") != nullptr;
         g.beginTransparencyLayer (near ? 1.0f : 0.35f);
         for (int i = 0; i < 2; ++i)
         {
@@ -2276,13 +2389,13 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
             juce::ColourGradient tint (helperC.withAlpha (0.0f), 0, edgeY, helperC.withAlpha (0.05f), 0, 668.0f, false);
             g.setGradientFill (tint); g.fillPath (pnl);
         }
-        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
         paintHelperDrawerContent (g, k.reduced (24, 0), tms);
         scEdge (edgeY, true);
         return;
     }
     const R rowR0 (PW * 0.5f - 380.0f, 650.0f - 26.0f, 760, 50);
-    const bool onControls = rowR0.expanded (10).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_ROW") != nullptr;
+    const bool onControls = rowR0.expanded (10).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_ROW") != nullptr;
     const float eqFwd = onControls ? 0.3f : 1.0f;
     // the EQ: drawn into its own picture, then faded in from the glass edge downwards
     {
@@ -2317,13 +2430,15 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         auto flip = [&] (R r, const char* now) { glassButton (g, r, now, true, true); };
         auto toggle = [&] (R r, const char* t, bool on) { glassButton (g, r, t, on); };
         const R rowR (PW * 0.5f - 380.0f, cy - 26, 760, 50);
-        const bool nearRow = rowR.expanded (10).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_ROW") != nullptr;
+        const bool nearRow = rowR.expanded (10).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_ROW") != nullptr;
         g.beginTransparencyLayer (nearRow ? 1.0f : 0.14f);
         float x = PW * 0.5f - 372.0f;
-        const bool pro = std::getenv ("PRESS_PRO") != nullptr, sync = pro && std::getenv ("PRESS_PRO_SYNC") != nullptr;
+        const bool pro = penv ("PRESS_PRO") != nullptr, sync = pro && penv ("PRESS_PRO_SYNC") != nullptr;
         // LE-PRO's sources: Internal, External, MIDI, Host Sync (a pump in time with the song)
-        flip (R (x, cy - 11, 100, 22), sync ? "HOST SYNC" : "INTERNAL"); x += 112;
-        toggle (R (x, cy - 11, 80, 22), "LISTEN", false); x += 96;
+        if (sync) flip (R (x, cy - 11, 100, 22), "HOST SYNC");
+        else { flip (R (x, cy - 11, 100, 22), pchoice ("cScSrc").toUpperCase().toRawUTF8()); pctl (R (x, cy - 11, 100, 22), "cScSrc", 1); }
+        x += 112;
+        toggle (R (x, cy - 11, 80, 22), "LISTEN", pon ("cScListen")); pctl (R (x, cy - 11, 80, 22), "cScListen", 1); x += 96;
         if (sync)
         {
             valueBar (g, R (x - 4, cy - 21, 76, 42), "OFFSET", "1/16", 0.25f);
@@ -2335,28 +2450,32 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         {
             const R tr (x + 6, cy - 22, 4, 44);
             fillRound (g, tr, 2, juce::Colours::white.withAlpha (0.1f));
-            const float pos = 0.5f, hy = tr.getBottom() - tr.getHeight() * pos;
+            const float pos = pn ("cScGain"), hy = tr.getBottom() - tr.getHeight() * pos;
             fillRound (g, R (tr.getX(), hy, 4, tr.getBottom() - hy), 2, cleanC);
             fillRound (g, R (tr.getCentreX() - 9, hy - 4, 18, 8), 3, col ("#e9e5dd"));
             text (g, "SC GAIN", font (Face::CondMedium, 9, 1.4f), col ("#b9b3a7"), R (x + 20, cy - 12, 60, 11));
-            text (g, "0.0 dB", font (Face::Regular, 11), ink, R (x + 20, cy + 1, 60, 13));
+            text (g, pfmt ("cScGain"), font (Face::Regular, 11), ink, R (x + 20, cy + 1, 60, 13));
+            pctl (R (x - 4, cy - 24, 84, 48), "cScGain", 0);
             x += 92;
         }
         // stereo link: a sideways slider - right is linked, left is unlinked
         {
             const R tr (x, cy + 4, sync ? 90.0f : 150.0f, 4);
             text (g, "LINK", font (Face::CondMedium, 9, 1.4f), col ("#b9b3a7"), R (x, cy - 16, 60, 11));
-            text (g, sync ? "100%" : "100%  linked", font (Face::Regular, 10.5f), ink, R (x, cy - 17, tr.getWidth(), 13), juce::Justification::centredRight);
+            const float lk = pn ("cScLink");
+            text (g, pfmt ("cScLink") + (sync ? "" : (lk > 0.99f ? "  linked" : lk < 0.01f ? "  unlinked" : "")), font (Face::Regular, 10.5f), ink, R (x, cy - 17, tr.getWidth(), 13), juce::Justification::centredRight);
             fillRound (g, tr, 2, juce::Colours::white.withAlpha (0.1f));
-            fillRound (g, tr, 2, cleanC);
-            fillRound (g, R (tr.getRight() - 4, tr.getCentreY() - 8, 8, 16), 3, col ("#e9e5dd"));
+            fillRound (g, tr.withWidth (tr.getWidth() * lk), 2, cleanC);
+            fillRound (g, R (tr.getX() + tr.getWidth() * lk - 4, tr.getCentreY() - 8, 8, 16), 3, col ("#e9e5dd"));
+            pctl (R (x - 4, cy - 18, tr.getWidth() + 8, 36), "cScLink", 0);
             text (g, "unlinked", font (Face::Regular, 8.5f), grey, R (x, cy + 11, 60, 10));
             if (! sync) text (g, "linked", font (Face::Regular, 8.5f), grey, R (x + 90, cy + 11, 60, 10), juce::Justification::centredRight);
             x += tr.getWidth() + 20;
         }
         // mid / side and look-ahead: buttons whose values you drag
-        valueBar (g, R (x, cy - 21, 96, 42), "M / S", "Stereo", 0.5f); x += 108;
-        valueBar (g, R (x, cy - 21, 96, 42), "LOOK-AHEAD", pro ? juce::String (U8 ("2.0 ms \xc2\xb7 max 10")) : juce::String ("2.0 ms"), 0.2f);
+        valueBar (g, R (x, cy - 21, 96, 42), "M / S", pchoice ("cScMs"), pn ("cScMs")); pctl (R (x, cy - 21, 96, 42), "cScMs", 1); x += 108;
+        valueBar (g, R (x, cy - 21, 96, 42), "LOOK-AHEAD", pfmt ("cLook") + (pro ? U8 (" \xc2\xb7 max 10") : juce::String()), pn ("cLook"));
+        pctl (R (x, cy - 21, 96, 42), "cLook", 0);
         g.endTransparencyLayer();
     }
 }
@@ -2386,9 +2505,10 @@ void Canvas::paintScEq (juce::Graphics& g, R e)
         g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.07f), 0, midY - 40, juce::Colours::white.withAlpha (0.0f), 0, e.getBottom(), false));
         g.fillPath (sp);
     }
-    const bool band = std::getenv ("PRESS_DS1_BAND") != nullptr;
-    const bool pro = std::getenv ("PRESS_PRO") != nullptr;
-    auto respDb = [band, pro] (float hz)
+    const bool band = penv ("PRESS_DS1_BAND") != nullptr;
+    const bool pro = false;   // (V1: every engine's detector has the same three bands - the 580E's six come later)
+    const float hpHz = proc.param ("cScHp"), bellHz = proc.param ("cScBellHz"), bellDb = proc.param ("cScBellDb"), lpHz = proc.param ("cScLp");
+    auto respDb = [band, pro, hpHz, bellHz, bellDb, lpHz] (float hz)
     {
         if (pro)   // six bands: brickwall low and high cuts, four bells between
         {
@@ -2397,15 +2517,15 @@ void Canvas::paintScEq (juce::Graphics& g, R e)
             auto bell = [hz] (float f, float db, float w) { const float o = std::log2 (hz / f); return db * std::exp (-o * o * w); };
             return hp + lp + bell (150.0f, -3.0f, 2.0f) + bell (450.0f, 2.0f, 2.5f) + bell (2000.0f, -2.5f, 2.0f) + bell (6000.0f, 4.0f, 1.6f);
         }
-        if (band)   // a band-pass around 5 kHz, an octave wide: only this part of the sound is compressed
+        if (band)   // a band-pass around the bell's frequency, an octave wide: only this part of the sound is compressed
         {
-            const float oct = std::log2 (hz / 5000.0f);
+            const float oct = std::log2 (hz / bellHz);
             return 8.0f * std::exp (-oct * oct * 2.2f) - 14.0f * (1.0f - std::exp (-oct * oct * 2.2f));
         }
-        const float hp = 10.0f * std::log10 (1.0f / (1.0f + std::pow (80.0f / hz, 4.0f)));
-        const float lp = 10.0f * std::log10 (1.0f / (1.0f + std::pow (hz / 14000.0f, 4.0f)));
-        const float oct = std::log2 (hz / 3000.0f);
-        return hp + lp + 3.0f * std::exp (-oct * oct * 1.4f);
+        const float hp = 10.0f * std::log10 (1.0f / (1.0f + std::pow (hpHz / hz, 4.0f)));
+        const float lp = 10.0f * std::log10 (1.0f / (1.0f + std::pow (hz / lpHz, 4.0f)));
+        const float oct = std::log2 (hz / bellHz);
+        return hp + lp + bellDb * std::exp (-oct * oct * 1.4f);
     };
     juce::Path c;
     for (int i = 0; i <= 300; ++i)
@@ -2418,15 +2538,19 @@ void Canvas::paintScEq (juce::Graphics& g, R e)
     g.setColour (juce::Colours::black.withAlpha (0.35f)); g.strokePath (c, juce::PathStrokeType (4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour (cleanC.withAlpha (0.3f)); g.strokePath (c, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour (cleanC.interpolatedWith (juce::Colours::white, 0.5f)); g.strokePath (c, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    const struct { float hz; const char* t; } nodes[3] { { 80.0f, "HP 80 Hz" }, { 3000.0f, "3 kHz  +3 dB" }, { 14000.0f, "LP 14 kHz" } };
-    const struct { float hz; const char* t; } bandNode[1] { { 5000.0f, "BAND-PASS  5 kHz  \xc2\xb7  1 oct" } };
+    auto hzTxt = [] (float hz) { return hz >= 1000.0f ? juce::String (hz / 1000.0f, hz < 10000.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " kHz" : juce::String ((int) std::round (hz)) + " Hz"; };
+    const juce::String nt[3] { "HP " + hzTxt (hpHz), hzTxt (bellHz) + "  " + (bellDb >= 0 ? "+" : "") + juce::String (bellDb, 1) + " dB", "LP " + hzTxt (lpHz) };
+    const struct { float hz; const char* t; } nodes[3] { { hpHz, nt[0].toRawUTF8() }, { bellHz, nt[1].toRawUTF8() }, { lpHz, nt[2].toRawUTF8() } };
+    const juce::String bt = "BAND-PASS  " + hzTxt (bellHz) + U8 ("  \xc2\xb7  1 oct");
+    const struct { float hz; const char* t; } bandNode[1] { { bellHz, bt.toRawUTF8() } };
     if (band)
     {
         const float x = fxS (bandNode[0].hz), y = juce::jlimit (e.getY() + 10, e.getBottom() - 10, midY - respDb (bandNode[0].hz) * dbPx);
         g.setColour (cleanC.withAlpha (0.4f)); g.fillEllipse (x - 11, y - 11, 22, 22);
         g.setColour (cleanC.interpolatedWith (juce::Colours::white, 0.2f)); g.fillEllipse (x - 7.5f, y - 7.5f, 15, 15);
-        text (g, U8 (bandNode[0].t), font (Face::Medium, 11), juce::Colours::white, R (x - 110, y - 26, 220, 13), juce::Justification::centred);
-        text (g, U8 ("drag for frequency \xc2\xb7 scroll for width \xc2\xb7 click for LP / BP / HP"), font (Face::Regular, 9.5f), grey, R (x - 150, y - 42, 300, 12), juce::Justification::centred);
+        text (g, juce::String::fromUTF8 (bandNode[0].t), font (Face::Medium, 11), juce::Colours::white, R (x - 110, y - 26, 220, 13), juce::Justification::centred);
+        text (g, "drag for frequency", font (Face::Regular, 9.5f), grey, R (x - 150, y - 42, 300, 12), juce::Justification::centred);
+        pctl (R (x - 14, y - 14, 28, 28), "cScBellHz", 4);
     }
     const struct { float hz; const char* t; } proNodes[6] { { 60.0f, "60 Hz brickwall" }, { 150.0f, "150 Hz" }, { 450.0f, "450 Hz" }, { 2000.0f, "2 kHz" }, { 6000.0f, "6 kHz  +4 dB" }, { 16000.0f, "16 kHz brickwall" } };
     for (int i = 0; i < (pro ? 6 : 0); ++i)
@@ -2444,7 +2568,10 @@ void Canvas::paintScEq (juce::Graphics& g, R e)
         g.setColour (cleanC.withAlpha (0.4f)); g.fillEllipse (x - 11, y - 11, 22, 22);
         g.setColour (cleanC.interpolatedWith (juce::Colours::white, 0.2f)); g.fillEllipse (x - 7.5f, y - 7.5f, 15, 15);
         text (g, juce::String (i + 1), font (Face::SemiBold, 9), col ("#16161a"), R (x - 6.5f, y - 6.5f, 13, 13), juce::Justification::centred);
-        text (g, nodes[i].t, font (Face::Medium, 11), juce::Colours::white, R (x - 50, y + 13, 100, 13), juce::Justification::centred);
+        text (g, juce::String::fromUTF8 (nodes[i].t), font (Face::Medium, 11), juce::Colours::white, R (x - 60, y + 13, 120, 13), juce::Justification::centred);
+        const R nz (x - 14, y - 14, 28, 28);
+        if (i == 1) { pctl (nz, "cScBellHz", 5); pz.push_back ("cScBellDb"); }   // drag across for frequency, up and down for gain
+        else pctl (nz, i == 0 ? "cScHp" : "cScLp", 4);
     }
     text (g, U8 ("DETECTOR EQ  \xc2\xb7  what the compressor listens to"), font (Face::CondMedium, 9.5f, 1.6f), col ("#b9b3a7"), R (e.getX(), e.getY() - 22, 400, 12));
 }
@@ -2454,13 +2581,13 @@ void Canvas::paintScEq (juce::Graphics& g, R e)
 void Canvas::paintEngineSlide (juce::Graphics& g)
 {
     const float cx = W * 0.5f, cy = 30.0f;   // up in the arch, above the strip that slides down
-    const bool rv = std::getenv ("PRESS_RVOX") != nullptr;
-    const bool ds = std::getenv ("PRESS_DS1") != nullptr;
-    const bool ml = std::getenv ("PRESS_MLA") != nullptr;
-    const bool pr = std::getenv ("PRESS_PRO") != nullptr;
+    const bool rv = penv ("PRESS_RVOX") != nullptr;
+    const bool ds = penv ("PRESS_DS1") != nullptr;
+    const bool ml = penv ("PRESS_MLA") != nullptr;
+    const bool pr = penv ("PRESS_PRO") != nullptr;
     if (gCompMode)
     {
-        const int unit = juce::jlimit (0, kVinUnits - 1, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : preview);
+        const int unit = juce::jlimit (0, kVinUnits - 1, penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : preview);
         static const char* extra[8] { "LE-8X", "LE-160", "LE-7", "LE-760", "LE-SHM", "LE-2A", "LE-1B", "LE-VSC" };
         const juce::String nm = unit < numCompUnits ? juce::String (units()[(size_t) unit].name) : juce::String (extra[unit - numCompUnits]);
         text (g, nm, font (Face::Light, 15, 2.6f), ink, R (cx - 80, cy - 10, 160, 18), juce::Justification::centred);
@@ -2476,6 +2603,7 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
             g.setColour (cleanC.withAlpha (0.8f)); g.strokePath (c, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         };
         chv (cx - half, true); chv (cx + half, false);
+        zone (R (cx - half - 14, cy - 14, 24, 28), Hit::PEngine, -1); zone (R (cx + half - 10, cy - 14, 24, 28), Hit::PEngine, 1);
         for (int i = 0; i < kVinUnits; ++i)
         {
             const P d (cx - (float) (kVinUnits - 1) * 4.0f + (float) i * 8, cy + 26);
@@ -2497,6 +2625,7 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
     text (g, sub, font (Face::CondMedium, 8.5f, 2.2f), juce::Colours::white.withAlpha (0.9f), R (cx - 90, cy + 9, 180, 11), juce::Justification::centred);
     const float half = textWidth (font (Face::Light, 15, 2.6f), nm) * 0.5f + 12.0f;   // the arrows sit just outside the name, however long
     chev (cx - half, true); chev (cx + half, false);
+    zone (R (cx - half - 14, cy - 14, 24, 28), Hit::PEngine, -1); zone (R (cx + half - 10, cy - 14, 24, 28), Hit::PEngine, 1);
     for (int i = 0; i < 5; ++i)   // LE-RC, RVox, LE-DS1, LE-MLA, LE-PRO
     {
         const P d (cx - 16 + (float) i * 8, cy + 26);
@@ -2531,8 +2660,8 @@ void Canvas::paintEnvOverlay (juce::Graphics& g, R k, float alpha)
 void Canvas::paintEnvContent (juce::Graphics& g, R k)
 {
     const R a = k.reduced (44, 96);
-    const bool ds1 = std::getenv ("PRESS_DS1") != nullptr, mla = std::getenv ("PRESS_MLA") != nullptr,
-               c755 = std::getenv ("PRESS_RVOX") != nullptr;
+    const bool ds1 = penv ("PRESS_DS1") != nullptr, mla = penv ("PRESS_MLA") != nullptr,
+               c755 = penv ("PRESS_RVOX") != nullptr;
     // each engine's timing (ms)
     const float att = ds1 ? 3.0f : mla ? 0.16f : c755 ? 2.0f : 8.0f;
     const float rel = ds1 ? 200.0f : mla ? 800.0f : c755 ? 80.0f : 120.0f, relSlow = 1200.0f;
@@ -2627,8 +2756,8 @@ void Canvas::paintEnvContent (juce::Graphics& g, R k)
     g.setColour (juce::Colours::white.withAlpha (0.95f)); g.strokePath (main, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     // the dot, running along the curve again and again, with its rainbow sparkle trail (like the knee)
     {
-        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
-        const float u = std::getenv ("PRESS_ENV_U") ? (float) std::atof (std::getenv ("PRESS_ENV_U")) : (float) std::fmod (tms / 3000.0, 1.0);
+        const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        const float u = penv ("PRESS_ENV_U") ? (float) std::atof (penv ("PRESS_ENV_U")) : (float) std::fmod (tms / 3000.0, 1.0);
         auto at = [&] (float uu) { const float ms = uu <= split ? tmin * std::pow (hit / tmin, uu / split) : hit + relSpan * (uu - split) / (1.0f - split); return P (px (ms), py (grAt (ms, 0))); };
         auto lift = [&] (P c) { return 0.15f + 0.85f * smoothStep ((a.getBottom() - c.y) / (a.getHeight() * 0.8f)); };
         juce::Random rnd (7);
@@ -2676,7 +2805,8 @@ void Canvas::paintEnvEdge (juce::Graphics& g, bool open)
     }
     {
         const R h (strip.getCentreX() - 12, 310, 24, 60);
-        const bool near = h.expanded (30, 40).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_ENV") != nullptr;
+        dz (h.expanded (8, 6), Hit::PDrawer, 1);
+        const bool near = h.expanded (30, 40).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_ENV") != nullptr;
         g.beginTransparencyLayer (near ? 1.0f : 0.18f);
         juce::Path p; p.addRoundedRectangle (h, 12);
         cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.4f), 10, { 0, 3 }), p);
@@ -2699,7 +2829,7 @@ void Canvas::paintEnvEdge (juce::Graphics& g, bool open)
 void Canvas::paintCharContent (juce::Graphics& g, R k)
 {
     const R a = k.reduced (44, 96);
-    const float thd = std::getenv ("PRESS_THD") ? (float) std::atof (std::getenv ("PRESS_THD")) / 100.0f : 0.35f;
+    const float thd = penv ("PRESS_THD") ? (float) std::atof (penv ("PRESS_THD")) / 100.0f : 0.35f;
     const float drive = 0.15f + 0.85f * thd;   // THD bends the curve and grows the harmonics
     const R tc (a.getX(), a.getY() + 10, a.getWidth(), a.getHeight() * 0.5f);
     // THD lives here, with what it does: a slim slider whose fill glows brighter amber the further it goes (like the EQs')
@@ -2740,8 +2870,8 @@ void Canvas::paintCharContent (juce::Graphics& g, R k)
     g.setColour (juce::Colours::black.withAlpha (0.4f)); g.strokePath (cv, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour (juce::Colours::white.withAlpha (0.95f)); g.strokePath (cv, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     {
-        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
-        const float ph = std::getenv ("PRESS_CHAR_X") ? (float) std::atof (std::getenv ("PRESS_CHAR_X")) : (float) std::sin (tms / 900.0) * 0.78f;
+        const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        const float ph = penv ("PRESS_CHAR_X") ? (float) std::atof (penv ("PRESS_CHAR_X")) : (float) std::sin (tms / 900.0) * 0.78f;
         juce::Random rnd (3);
         for (int i = 24; i >= 1; --i)
         {
@@ -2782,7 +2912,7 @@ void Canvas::paintCharContent (juce::Graphics& g, R k)
     text (g, "CHARACTER", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
     static const char* cr[15] { "FET colour", "vari-mu tube colour", "tube colour", "transformer punch", "console sheen", "tube & iron colour", "diode & iron colour", "Dist 2 / Dist 3 colour",
                                 "VCA bite", "tape & tranny colour", "discrete colour", "transformer colour", "opto tube colour", "tube colour", "discrete VCA colour" };
-    const int cu = juce::jlimit (0, kVinUnits - 1, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : 0);
+    const int cu = juce::jlimit (0, kVinUnits - 1, penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : 0);
     text (g, juce::String (cr[cu]) + U8 ("  \xc2\xb7  THD ") + juce::String ((int) std::round (thd * 100.0f)) + "%", font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
 }
 
@@ -2867,7 +2997,7 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
     const R a = k.reduced (44, 96);
     if (! liftDynEq())
     {
-        const double tms0 = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        const double tms0 = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
         paintUpwardCurves (g, a, helperC, tms0);
         text (g, "TONE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
         text (g, U8 ("Lift  \xc2\xb7  upward, 2 bands"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
@@ -2891,7 +3021,7 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
             if (db != 0) text (g, (db > 0 ? "+" : MINUS) + juce::String (std::abs (db)), fs, grey, R (a.getX() + 4, fy ((float) db) - 11, 26, 10));
         }
     }
-    const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+    const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
     // how much each band is lifting right now (mock: breathing with the music)
     const float l1 = 4.0f * (0.55f + 0.45f * (float) std::sin (tms / 700.0)), l2 = 3.0f * (0.55f + 0.45f * (float) std::sin (tms / 530.0 + 1.3));
     auto bell = [] (float hz, float f0, float db, float w) { const float o = std::log2 (hz / f0); return db * std::exp (-o * o * w); };

@@ -498,7 +498,7 @@ inline float nodePairOffset (int unit, int node)
 }
 inline const juce::StringArray& presetTagNames()
 {
-    static const juce::StringArray t { "Vocals", "Drums", "Instruments", "Mastering", "Mix Bus", "Tahor Surgical", "Reso Clean-up", "Character", "Effects", "Utility", "Mine" };   // V11
+    static const juce::StringArray t { "Vocals", "Drums", "Mix Bus", "Mastering", "Utility", "Mine" };   // Pressure
     return t;
 }
 

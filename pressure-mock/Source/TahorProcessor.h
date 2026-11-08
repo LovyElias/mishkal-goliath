@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "Dsp/ResoPro.h"
 #include "Dsp/VocalChain.h"
+#include "Dsp/PressureClean.h"
 #include "TahorModel.h"
 
 #ifndef TAHOR_VERSION
@@ -66,7 +67,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return "Mishkal Tahor"; }
+    const juce::String getName() const override { return "Mishkal Pressure"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -86,7 +87,7 @@ public:
     bool loadUserPreset (const juce::File&);
     static juce::File userPresetFolder();
     juce::Array<juce::File> userPresets() const;
-    juce::String presetName = juce::String::fromUTF8 ("Init \xc2\xb7 Flat");
+    juce::String presetName = juce::String::fromUTF8 ("Init \xc2\xb7 Default");
     bool presetDirty = false;
     void switchAB (int slot);
     int abSlot = 0;
@@ -95,7 +96,7 @@ public:
     void undo();
     void redo();
 
-    float param (const juce::String& pid) const { return apvts.getRawParameterValue (pid)->load(); }
+    float param (const juce::String& pid) const { auto* v = apvts.getRawParameterValue (pid); return v != nullptr ? v->load() : 0.0f; }   // Pressure: the old Tahor ids read 0
     void setParam (const juce::String& pid, float value);      // a one-off gesture from the UI (plain value)
     void beginGesture (const juce::String& pid);
     void dragParam (const juce::String& pid, float value);     // between begin / end
@@ -132,6 +133,9 @@ public:
     std::atomic<bool> autoLearning { false };
     std::atomic<float> charSoloHz { 0.0f }, charSoloQ { 1.0f };   // V8: a Character (V9: or Reso) node on solo (0 = none)
     bool hasSidechain() const;
+    // PRESSURE
+    pressure::CleanSettings cleanSettings() const;
+    std::atomic<float> grDb { 0.0f };   // CLEAN's gain reduction right now (dB, >= 0)
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -159,6 +163,8 @@ private:
     float matchIn = 0.0f, matchOut = 0.0f, matchGain = 1.0f;
     double learnSum = 0.0; int learnCount = 0;
     float inSmooth = 1.0f, outSmooth = 1.0f;
+    pressure::CleanCompressor clean;
+    std::atomic<float> cleanAvgGr { 0.0f };
 
     // undo / A-B
     std::vector<float> snapshot() const;

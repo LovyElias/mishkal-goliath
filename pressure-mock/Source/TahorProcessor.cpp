@@ -8,76 +8,16 @@ using namespace tahor;
 const std::vector<Preset>& tahor::factoryPresets()
 {
     // V11: the factory library - 69 presets in ten folders (the browser's tags)
+    // Pressure V1: CLEAN starting points (each lists only what it changes from the defaults)
     static const std::vector<Preset> list {
-        { "Init \xc2\xb7 Flat", {  }, "Utility" },
-        { "Clean Slate \xc2\xb7 Everything Off", { { "resoOn", 0.0f }, { "tahorOn", 1.0f } }, "Utility" },
-        { "Pop Vocal \xc2\xb7 Bright & Forward", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 90.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 250.0f }, { "t1Gain", -2.5f }, { "t1Q", 1.2f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 3000.0f }, { "t2Gain", 2.0f }, { "t2Q", 0.9f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 10000.0f }, { "t3Gain", 3.0f }, { "t3Q", 0.7f }, { "rsDepth", 3.5f }, { "chain0", 1.0f }, { "u0v3", 0.6667f }, { "u0v4", 0.35f }, { "u0v5", 0.6f }, { "charMode", 1.0f } }, "Vocals" },
-        { "Pop Vocal \xc2\xb7 Silky Air", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 100.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 1500.0f }, { "t2Gain", -1.5f }, { "t2Q", 1.0f }, { "rsDepth", 3.0f }, { "chain0", 9.0f }, { "u8v2", 0.5f }, { "u8v3", 0.45f } }, "Vocals" },
-        { "Rap Vocal \xc2\xb7 Upfront", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 110.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 300.0f }, { "t1Gain", -3.0f }, { "t1Q", 1.4f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 4500.0f }, { "t2Gain", 3.0f }, { "t2Q", 1.0f }, { "rsDepth", 4.0f }, { "rsDetail", 60.0f }, { "chain0", 4.0f }, { "u3v0", 0.5f }, { "u3v3", 0.5833f }, { "u3v4", 0.6f }, { "charMode", 2.0f }, { "charThd", 60.0f } }, "Vocals" },
-        { "Rap Vocal \xc2\xb7 Dark & Heavy", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 80.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 1.0f }, { "t1Hz", 200.0f }, { "t1Gain", 2.0f }, { "t1Q", 0.7f }, { "t3On", 1.0f }, { "t3Type", 4.0f }, { "t3Hz", 12000.0f }, { "t3Gain", 0.0f }, { "t3Q", 1.0f }, { "t3Slope", 1.0f }, { "chain0", 8.0f }, { "u7v0", 0.6f }, { "u7v3", 0.45f }, { "charMode", 2.0f } }, "Vocals" },
-        { "R&B Vocal \xc2\xb7 Smooth", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 90.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 350.0f }, { "t1Gain", -2.0f }, { "t1Q", 1.0f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 8000.0f }, { "t3Gain", 2.0f }, { "t3Q", 0.7f }, { "rsDepth", 3.0f }, { "chain0", 2.0f }, { "chain1", 11.0f }, { "u1v4", 0.4f }, { "u1v5", 0.3f }, { "u10v5", 0.5625f }, { "u10v4", 0.8333f } }, "Vocals" },
-        { "Worship Vocal \xc2\xb7 Warm & Open", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 80.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 2500.0f }, { "t2Gain", 1.5f }, { "t2Q", 0.8f }, { "chain0", 1.0f }, { "chain1", 16.0f }, { "u0v1", 0.2f }, { "u0v4", 0.25f } }, "Vocals" },
-        { "Gospel Lead \xc2\xb7 Power", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 100.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 400.0f }, { "t1Gain", -2.0f }, { "t1Q", 1.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 3500.0f }, { "t2Gain", 2.5f }, { "t2Q", 1.0f }, { "rsDepth", 4.0f }, { "chain0", 6.0f }, { "u5v4", 0.6667f }, { "u5v5", 0.3333f }, { "charMode", 2.0f }, { "charThd", 60.0f } }, "Vocals" },
-        { "Vocal \xc2\xb7 Air & Body", { { "t1On", 1.0f }, { "t1Type", 1.0f }, { "t1Hz", 180.0f }, { "t1Gain", 1.5f }, { "t1Q", 0.7f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 12000.0f }, { "t3Gain", 2.5f }, { "t3Q", 0.7f }, { "chain0", 1.0f }, { "u0v4", 0.3f } }, "Vocals" },
-        { "Vocal \xc2\xb7 De-harsh (Dynamic)", { { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 3200.0f }, { "t2Gain", 0.0f }, { "t2Q", 2.0f }, { "t2Dyn", 1.0f }, { "t2Thr", -30.0f }, { "t2Rng", -6.0f }, { "rsDepth", 6.0f }, { "rsDetail", 65.0f } }, "Vocals" },
-        { "Backing Vocals \xc2\xb7 Tuck Behind", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 200.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 400.0f }, { "t1Gain", -2.0f }, { "t1Q", 1.0f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 9000.0f }, { "t3Gain", 2.0f }, { "t3Q", 0.7f }, { "t4On", 1.0f }, { "t4Type", 4.0f }, { "t4Hz", 15000.0f }, { "t4Gain", 0.0f }, { "t4Q", 1.0f }, { "t4Slope", 1.0f } }, "Vocals" },
-        { "Podcast \xc2\xb7 Broadcast Voice", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 80.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 1.0f }, { "t1Hz", 150.0f }, { "t1Gain", 2.0f }, { "t1Q", 0.7f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 300.0f }, { "t2Gain", -2.5f }, { "t2Q", 1.0f }, { "t3On", 1.0f }, { "t3Type", 0.0f }, { "t3Hz", 5000.0f }, { "t3Gain", 2.0f }, { "t3Q", 1.0f }, { "rsDepth", 5.0f }, { "chain0", 5.0f }, { "u4v1", 0.5625f } }, "Vocals" },
-        { "Spoken Word \xc2\xb7 Clarity", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 100.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 250.0f }, { "t1Gain", -3.0f }, { "t1Q", 1.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 3000.0f }, { "t2Gain", 2.0f }, { "t2Q", 1.0f }, { "rsDepth", 3.0f } }, "Vocals" },
-        { "Kick \xc2\xb7 Punch", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 30.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 60.0f }, { "t1Gain", 3.0f }, { "t1Q", 1.5f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 350.0f }, { "t2Gain", -4.0f }, { "t2Q", 1.5f }, { "t3On", 1.0f }, { "t3Type", 0.0f }, { "t3Hz", 4000.0f }, { "t3Gain", 3.0f }, { "t3Q", 1.2f }, { "chain0", 6.0f }, { "u5v0", 0.6667f }, { "u5v1", 0.3333f } }, "Drums" },
-        { "Kick \xc2\xb7 Sub Weight", { { "t1On", 1.0f }, { "t1Type", 1.0f }, { "t1Hz", 55.0f }, { "t1Gain", 3.0f }, { "t1Q", 0.7f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 250.0f }, { "t2Gain", -3.0f }, { "t2Q", 1.2f }, { "chain0", 15.0f }, { "u14v0", 0.5f }, { "u14v1", 0.4f } }, "Drums" },
-        { "Snare \xc2\xb7 Crack", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 80.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 200.0f }, { "t1Gain", 2.0f }, { "t1Q", 1.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 900.0f }, { "t2Gain", -2.5f }, { "t2Q", 1.2f }, { "t3On", 1.0f }, { "t3Type", 0.0f }, { "t3Hz", 5000.0f }, { "t3Gain", 3.0f }, { "t3Q", 1.0f }, { "chain0", 3.0f }, { "u2v3", 0.6f } }, "Drums" },
-        { "Snare \xc2\xb7 Fat", { { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 180.0f }, { "t1Gain", 3.0f }, { "t1Q", 1.0f }, { "t3On", 1.0f }, { "t3Type", 4.0f }, { "t3Hz", 12000.0f }, { "t3Gain", 0.0f }, { "t3Q", 1.0f }, { "t3Slope", 1.0f }, { "chain0", 4.0f }, { "u3v1", 0.5938f }, { "u3v2", 0.6667f } }, "Drums" },
-        { "Drum Bus \xc2\xb7 Glue & Weight", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 25.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 1.0f }, { "t1Hz", 80.0f }, { "t1Gain", 1.5f }, { "t1Q", 0.7f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 10000.0f }, { "t3Gain", 1.5f }, { "t3Q", 0.7f }, { "rsDepth", 2.0f }, { "chain0", 4.0f }, { "chain1", 10.0f }, { "u9v5", 0.25f }, { "charMode", 2.0f } }, "Drums" },
-        { "Drum Bus \xc2\xb7 Smack", { { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 400.0f }, { "t2Gain", -2.0f }, { "t2Q", 1.0f }, { "chain0", 6.0f }, { "chain1", 12.0f }, { "charMode", 2.0f }, { "charThd", 70.0f } }, "Drums" },
-        { "808 \xc2\xb7 Clean Sub", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 25.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 300.0f }, { "t1Gain", -4.0f }, { "t1Q", 1.2f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 120.0f }, { "t2Gain", 2.0f }, { "t2Q", 0.8f } }, "Drums" },
-        { "Overheads \xc2\xb7 Shimmer", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 200.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 10000.0f }, { "t3Gain", 2.5f }, { "t3Q", 0.7f }, { "chain0", 9.0f }, { "u8v3", 0.4f } }, "Drums" },
-        { "Master \xc2\xb7 Polish", { { "rsDepth", 2.0f }, { "rsDetail", 35.0f }, { "chain0", 11.0f }, { "chain1", 10.0f }, { "phase", 1.0f }, { "u10v1", 0.5417f }, { "u10v5", 0.6f }, { "u9v5", 0.15f } }, "Mastering" },
-        { "Master \xc2\xb7 Gentle Air", { { "chain0", 13.0f }, { "u12v5", 0.8067f }, { "u12v6", 0.5469f } }, "Mastering" },
-        { "Master \xc2\xb7 Warm Low End", { { "chain0", 15.0f }, { "chain1", 16.0f }, { "u14v0", 0.3333f }, { "u14v1", 0.25f }, { "u15v1", 0.55f } }, "Mastering" },
-        { "Master \xc2\xb7 Loud & Clear", { { "rsDepth", 2.0f }, { "chain0", 14.0f }, { "u13v1", 0.5312f }, { "u13v7", 0.5312f }, { "u13v9", 0.5469f } }, "Mastering" },
-        { "Master \xc2\xb7 Tube Glue", { { "chain0", 16.0f }, { "chain1", 12.0f }, { "charMode", 2.0f }, { "charThd", 40.0f } }, "Mastering" },
-        { "Master \xc2\xb7 Tame Harshness", { { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 3000.0f }, { "t2Gain", 0.0f }, { "t2Q", 1.5f }, { "t2Dyn", 1.0f }, { "t2Thr", -35.0f }, { "t2Rng", -3.0f }, { "rsDepth", 2.5f }, { "rsDetail", 40.0f } }, "Mastering" },
-        { "Master \xc2\xb7 Clean Low Cut", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 25.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "phase", 1.0f } }, "Mastering" },
-        { "Mix Bus \xc2\xb7 Glow", { { "rsDepth", 2.5f }, { "chain0", 10.0f }, { "chain1", 11.0f }, { "charMode", 2.0f }, { "u9v5", 0.2f }, { "u9v1", 0.55f }, { "u10v5", 0.6f } }, "Mix Bus" },
-        { "Mix Bus \xc2\xb7 Punch", { { "chain0", 6.0f }, { "chain1", 4.0f }, { "u5v0", 0.5833f }, { "u5v4", 0.5833f } }, "Mix Bus" },
-        { "Mix Bus \xc2\xb7 Wide Air", { { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 12000.0f }, { "t3Gain", 1.5f }, { "t3Q", 0.7f }, { "chain0", 9.0f }, { "u8v3", 0.3f } }, "Mix Bus" },
-        { "Mix Bus \xc2\xb7 Tight Low End", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 30.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 200.0f }, { "t1Gain", -1.5f }, { "t1Q", 1.0f } }, "Mix Bus" },
-        { "Mix Bus \xc2\xb7 Vintage Console", { { "chain0", 3.0f }, { "chain1", 5.0f }, { "charMode", 2.0f }, { "charThd", 60.0f } }, "Mix Bus" },
-        { "Bass \xc2\xb7 Defined", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 35.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 80.0f }, { "t1Gain", 2.0f }, { "t1Q", 1.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 250.0f }, { "t2Gain", -2.5f }, { "t2Q", 1.2f }, { "t3On", 1.0f }, { "t3Type", 0.0f }, { "t3Hz", 800.0f }, { "t3Gain", 2.0f }, { "t3Q", 1.0f }, { "chain0", 4.0f } }, "Instruments" },
-        { "Bass \xc2\xb7 Round", { { "chain0", 15.0f }, { "chain1", 8.0f }, { "u14v1", 0.3f }, { "u7v0", 0.6f } }, "Instruments" },
-        { "Electric Guitar \xc2\xb7 Bite", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 90.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 300.0f }, { "t1Gain", -2.0f }, { "t1Q", 1.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 2500.0f }, { "t2Gain", 2.5f }, { "t2Q", 1.0f }, { "t4On", 1.0f }, { "t4Type", 4.0f }, { "t4Hz", 9000.0f }, { "t4Gain", 0.0f }, { "t4Q", 1.0f }, { "t4Slope", 1.0f }, { "chain0", 3.0f } }, "Instruments" },
-        { "Electric Guitar \xc2\xb7 Smooth", { { "t3On", 1.0f }, { "t3Type", 4.0f }, { "t3Hz", 8000.0f }, { "t3Gain", 0.0f }, { "t3Q", 1.0f }, { "t3Slope", 1.0f }, { "chain0", 8.0f }, { "charMode", 2.0f } }, "Instruments" },
-        { "Acoustic \xc2\xb7 Sparkle", { { "rsDepth", 4.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 280.0f }, { "t1Gain", -2.5f }, { "t1Q", 1.4f }, { "t3On", 1.0f }, { "t3Type", 0.0f }, { "t3Hz", 9000.0f }, { "t3Gain", 3.0f }, { "t3Q", 1.0f }, { "chain0", 9.0f }, { "u8v3", 0.35f } }, "Instruments" },
-        { "Acoustic \xc2\xb7 Warm Body", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 70.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 200.0f }, { "t1Gain", 1.5f }, { "t1Q", 1.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 800.0f }, { "t2Gain", -1.5f }, { "t2Q", 1.0f }, { "chain0", 1.0f } }, "Instruments" },
-        { "Keys \xc2\xb7 Clear Piano", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 60.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 300.0f }, { "t1Gain", -2.0f }, { "t1Q", 1.0f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 8000.0f }, { "t3Gain", 2.0f }, { "t3Q", 0.7f }, { "chain0", 13.0f } }, "Instruments" },
-        { "Synth Pad \xc2\xb7 Silk", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 120.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 1000.0f }, { "t2Gain", -1.5f }, { "t2Q", 1.0f }, { "chain0", 9.0f } }, "Instruments" },
-        { "Strings \xc2\xb7 Air", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 80.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t3On", 1.0f }, { "t3Type", 2.0f }, { "t3Hz", 9000.0f }, { "t3Gain", 2.0f }, { "t3Q", 0.7f } }, "Instruments" },
-        { "Surgical \xc2\xb7 De-mud", { { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 300.0f }, { "t1Gain", -4.0f }, { "t1Q", 1.4f } }, "Tahor Surgical" },
-        { "Surgical \xc2\xb7 De-box", { { "t1On", 1.0f }, { "t1Type", 0.0f }, { "t1Hz", 500.0f }, { "t1Gain", -4.0f }, { "t1Q", 2.0f } }, "Tahor Surgical" },
-        { "Surgical \xc2\xb7 Harshness Cut", { { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 3000.0f }, { "t2Gain", -5.0f }, { "t2Q", 4.0f } }, "Tahor Surgical" },
-        { "Surgical \xc2\xb7 Ring Notch 1 kHz", { { "t2On", 1.0f }, { "t2Type", 5.0f }, { "t2Hz", 1000.0f }, { "t2Gain", 0.0f }, { "t2Q", 8.0f } }, "Tahor Surgical" },
-        { "Surgical \xc2\xb7 Sibilance (Dynamic)", { { "t3On", 1.0f }, { "t3Type", 0.0f }, { "t3Hz", 7000.0f }, { "t3Gain", 0.0f }, { "t3Q", 3.0f }, { "t3Dyn", 1.0f }, { "t3Thr", -35.0f }, { "t3Rng", -8.0f } }, "Tahor Surgical" },
-        { "Surgical \xc2\xb7 Rumble Cut", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 60.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 5.0f } }, "Tahor Surgical" },
-        { "Surgical \xc2\xb7 Clean Highs", { { "t4On", 1.0f }, { "t4Type", 4.0f }, { "t4Hz", 16000.0f }, { "t4Gain", 0.0f }, { "t4Q", 1.0f }, { "t4Slope", 3.0f } }, "Tahor Surgical" },
-        { "Surgical \xc2\xb7 Hum Remover 60 Hz", { { "t0On", 1.0f }, { "t0Type", 5.0f }, { "t0Hz", 60.0f }, { "t0Gain", 0.0f }, { "t0Q", 12.0f }, { "t1On", 1.0f }, { "t1Type", 5.0f }, { "t1Hz", 120.0f }, { "t1Gain", 0.0f }, { "t1Q", 12.0f }, { "t2On", 1.0f }, { "t2Type", 5.0f }, { "t2Hz", 180.0f }, { "t2Gain", 0.0f }, { "t2Q", 12.0f }, { "t3On", 1.0f }, { "t3Type", 5.0f }, { "t3Hz", 240.0f }, { "t3Gain", 0.0f }, { "t3Q", 12.0f } }, "Tahor Surgical" },
-        { "Reso \xc2\xb7 De-ess", { { "rsDepth", 6.0f }, { "rsLow", 4000.0f }, { "rsHigh", 12000.0f }, { "rsMode", 1.0f }, { "rn0On", 0.0f }, { "rn1On", 0.0f }, { "rn2On", 0.0f }, { "rn3On", 1.0f }, { "rn3Shape", 0.0f }, { "rn3Hz", 7000.0f }, { "rn3Amt", 3.0f }, { "rn3Q", 1.0f } }, "Reso Clean-up" },
-        { "Reso \xc2\xb7 Harsh Vocal", { { "rsDepth", 5.0f }, { "rsDetail", 60.0f }, { "rsLow", 1500.0f }, { "rsHigh", 8000.0f }, { "rn1On", 1.0f }, { "rn1Shape", 0.0f }, { "rn1Hz", 3000.0f }, { "rn1Amt", 3.0f }, { "rn1Q", 1.2f } }, "Reso Clean-up" },
-        { "Reso \xc2\xb7 Boomy Room", { { "rsDepth", 5.0f }, { "rsLow", 80.0f }, { "rsHigh", 600.0f }, { "rn0On", 0.0f }, { "rn1On", 0.0f }, { "rn2On", 0.0f }, { "rn3On", 1.0f }, { "rn3Shape", 0.0f }, { "rn3Hz", 200.0f }, { "rn3Amt", 3.0f }, { "rn3Q", 1.0f } }, "Reso Clean-up" },
-        { "Reso \xc2\xb7 Gentle Polish", { { "rsDepth", 3.0f }, { "rsDetail", 40.0f } }, "Reso Clean-up" },
-        { "Reso \xc2\xb7 Guitar Fizz", { { "rsDepth", 5.0f }, { "rsLow", 3000.0f }, { "rsHigh", 10000.0f } }, "Reso Clean-up" },
-        { "Reso \xc2\xb7 Sharp Resonances", { { "rsDepth", 6.0f }, { "rsDetail", 75.0f }, { "rsMode", 1.0f } }, "Reso Clean-up" },
-        { "Character \xc2\xb7 Pultec Lift", { { "chain0", 1.0f }, { "u0v0", 0.6667f }, { "u0v1", 0.5f }, { "u0v2", 0.35f }, { "u0v3", 0.6667f }, { "u0v4", 0.4f }, { "u0v5", 0.5f } }, "Character" },
-        { "Character \xc2\xb7 British Console", { { "chain0", 3.0f }, { "chain1", 5.0f }, { "charMode", 2.0f }, { "u2v4", 0.5667f }, { "u4v1", 0.5625f } }, "Character" },
-        { "Character \xc2\xb7 Fire & Silk", { { "chain0", 12.0f }, { "chain1", 13.0f }, { "u11v1", 0.3f }, { "u11v6", 0.3f }, { "u12v6", 0.5625f }, { "charMode", 2.0f }, { "charThd", 60.0f } }, "Character" },
-        { "Character \xc2\xb7 Passive Weight", { { "chain0", 15.0f }, { "chain1", 16.0f }, { "u14v1", 0.35f }, { "u15v9", 0.575f } }, "Character" },
-        { "Character \xc2\xb7 Helios Grit", { { "chain0", 8.0f }, { "u7v2", 0.65f }, { "charMode", 2.0f }, { "charThd", 80.0f } }, "Character" },
-        { "Character \xc2\xb7 Tube Stack", { { "chain0", 1.0f }, { "chain1", 2.0f }, { "chain2", 11.0f }, { "charMode", 2.0f }, { "charThd", 55.0f }, { "u0v4", 0.3f }, { "u1v3", 0.3f } }, "Character" },
-        { "FX \xc2\xb7 Telephone", { { "resoOn", 0.0f }, { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 400.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 4.0f }, { "t1Hz", 3400.0f }, { "t1Gain", 0.0f }, { "t1Q", 1.0f }, { "t1Slope", 3.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 1500.0f }, { "t2Gain", 4.0f }, { "t2Q", 1.0f }, { "chain0", 3.0f }, { "charMode", 2.0f }, { "charThd", 80.0f } }, "Effects" },
-        { "FX \xc2\xb7 AM Radio", { { "resoOn", 0.0f }, { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 200.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 3.0f }, { "t1On", 1.0f }, { "t1Type", 4.0f }, { "t1Hz", 4500.0f }, { "t1Gain", 0.0f }, { "t1Q", 1.0f }, { "t1Slope", 3.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 1200.0f }, { "t2Gain", 3.0f }, { "t2Q", 1.0f }, { "chain0", 4.0f }, { "charMode", 2.0f }, { "charThd", 70.0f } }, "Effects" },
-        { "FX \xc2\xb7 Walkie-Talkie", { { "resoOn", 0.0f }, { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 600.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 4.0f }, { "t1On", 1.0f }, { "t1Type", 4.0f }, { "t1Hz", 2800.0f }, { "t1Gain", 0.0f }, { "t1Q", 1.0f }, { "t1Slope", 4.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 1800.0f }, { "t2Gain", 6.0f }, { "t2Q", 1.5f }, { "chain0", 6.0f }, { "charMode", 2.0f }, { "charThd", 100.0f } }, "Effects" },
-        { "FX \xc2\xb7 Lo-Fi", { { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 120.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 2.0f }, { "t1On", 1.0f }, { "t1Type", 4.0f }, { "t1Hz", 6000.0f }, { "t1Gain", 0.0f }, { "t1Q", 1.0f }, { "t1Slope", 2.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 900.0f }, { "t2Gain", 2.0f }, { "t2Q", 1.0f }, { "chain0", 8.0f }, { "charMode", 2.0f }, { "charThd", 90.0f } }, "Effects" },
-        { "FX \xc2\xb7 Megaphone", { { "resoOn", 0.0f }, { "t0On", 1.0f }, { "t0Type", 3.0f }, { "t0Hz", 500.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 4.0f }, { "t1On", 1.0f }, { "t1Type", 4.0f }, { "t1Hz", 3500.0f }, { "t1Gain", 0.0f }, { "t1Q", 1.0f }, { "t1Slope", 4.0f }, { "t2On", 1.0f }, { "t2Type", 0.0f }, { "t2Hz", 1500.0f }, { "t2Gain", 8.0f }, { "t2Q", 2.0f }, { "chain0", 4.0f }, { "chain1", 6.0f }, { "charMode", 2.0f }, { "charThd", 100.0f } }, "Effects" },
-        { "FX \xc2\xb7 Underwater", { { "resoOn", 0.0f }, { "t0On", 1.0f }, { "t0Type", 4.0f }, { "t0Hz", 500.0f }, { "t0Gain", 0.0f }, { "t0Q", 1.0f }, { "t0Slope", 5.0f }, { "t1On", 1.0f }, { "t1Type", 1.0f }, { "t1Hz", 150.0f }, { "t1Gain", 4.0f }, { "t1Q", 0.7f } }, "Effects" },
+        { "Init \xc2\xb7 Default", {  }, "Utility" },
+        { "Vocal \xc2\xb7 Smooth Leveler", { { "cEngine", 0.0f }, { "cThresh", -22.0f }, { "cRatio", 3.0f }, { "cKnee", 8.0f }, { "cAttack", 6.0f }, { "cRelease", 140.0f }, { "cAutoRel", 1.0f }, { "cMakeup", 4.0f } }, "Vocals" },
+        { "Vocal \xc2\xb7 One-Knob Vox", { { "cEngine", 1.0f }, { "cVoxComp", -18.0f }, { "cVoxGate", -50.0f } }, "Vocals" },
+        { "Vocal \xc2\xb7 Upfront Pop", { { "cEngine", 4.0f }, { "cProStyle", 3.0f }, { "cThresh", -26.0f }, { "cRatio", 4.0f }, { "cAttack", 3.0f }, { "cRelease", 90.0f }, { "cMakeup", 5.0f } }, "Vocals" },
+        { "Mix Bus \xc2\xb7 Glue", { { "cEngine", 4.0f }, { "cProStyle", 5.0f }, { "cThresh", -18.0f }, { "cRatio", 2.0f }, { "cAttack", 30.0f }, { "cRelease", 300.0f }, { "cKnee", 6.0f }, { "cMakeup", 2.0f } }, "Mix Bus" },
+        { "Mastering \xc2\xb7 Transparent DS1", { { "cEngine", 2.0f }, { "cThresh", -14.0f }, { "cRatio", 2.0f }, { "cDsKnee", 0.6f }, { "cAttack", 3.0f }, { "cMakeup", 1.5f } }, "Mastering" },
+        { "Mastering \xc2\xb7 Gentle MLA", { { "cEngine", 3.0f }, { "cMlaIn", 6.0f }, { "cMlaRatio", 2.0f }, { "cMakeup", 1.5f } }, "Mastering" },
+        { "Drums \xc2\xb7 Punch", { { "cEngine", 4.0f }, { "cProStyle", 6.0f }, { "cThresh", -20.0f }, { "cRatio", 4.0f }, { "cAttack", 25.0f }, { "cRelease", 80.0f }, { "cMakeup", 4.0f } }, "Drums" },
     };
     return list;
 }
@@ -124,98 +64,64 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     C ("analyzer", "Analyzer", { "Pre + Post", "Post", "Pre", "Off" }, 0);
     C ("range", "Range", { juce::String::fromUTF8 ("\xc2\xb1" "3 dB"), juce::String::fromUTF8 ("\xc2\xb1" "6 dB"),
                            juce::String::fromUTF8 ("\xc2\xb1" "12 dB"), juce::String::fromUTF8 ("\xc2\xb1" "30 dB") }, 2);
-    B ("resoOn", "Reso On", true);
-    B ("tahorOn", "Tahor On", true);
-    B ("charOn", "Character On", true);
+    B ("resoOn", "Helpers On", true);
+    B ("tahorOn", "Clean On", true);
+    B ("charOn", "Vintage On", true);
 
-    // RESO
-    F ("rsDepth", "Reso Depth", R (0.0f, 10.0f, 0.1f), 2.0f);   // V5: starts at nine o'clock
-    F ("rsDetail", "Reso Detail", R (0.0f, 100.0f, 1.0f), 50.0f, "%");
-    { R r (0.5f, 50.0f, 0.1f); r.setSkewForCentre (5.0f); F ("rsAttack", "Reso Attack", r, 5.0f, "ms"); }
-    { R r (5.0f, 500.0f, 1.0f); r.setSkewForCentre (80.0f); F ("rsRelease", "Reso Release", r, 80.0f, "ms"); }
-    F ("rsMaxCut", "Reso Max Cut", R (0.0f, 24.0f, 0.5f), 12.0f, "dB");
-    F ("rsMix", "Reso Mix", R (0.0f, 100.0f, 1.0f), 100.0f, "%");
-    F ("rsTrim", "Reso Trim", R (-12.0f, 12.0f, 0.1f), 0.0f, "dB");
-    C ("rsMode", "Reso Soft/Hard", { "Soft", "Hard" }, 0);
-    B ("rsLowLat", "Reso Low Latency", false);
-    C ("rsMs", "Reso Stereo", { "Stereo", "Mid", "Side" }, 0);
-    B ("rsDelta", "Reso Delta", false);
-    B ("rsKey", "Reso Sidechain", false);
-    F ("rsLink", "Reso Stereo Link", R (0.0f, 100.0f, 1.0f), 100.0f, "%");
-    F ("rsDTilt", "Reso Detail Tilt", R (-100.0f, 100.0f, 1.0f), 10.0f, "%");
-    F ("rsATilt", "Reso Attack Tilt", R (-100.0f, 100.0f, 1.0f), 0.0f, "%");
-    F ("rsRTilt", "Reso Release Tilt", R (-100.0f, 100.0f, 1.0f), -15.0f, "%");
-    C ("rsPhase", "Reso Phase", { "Minimum", "Linear" }, 0);
-    F ("rsLow", "Reso Focus Low", hz (20.0f, 20000.0f), 47.5f, "Hz");
-    F ("rsHigh", "Reso Focus High", hz (20.0f, 20000.0f), 12000.0f, "Hz");
-    struct ND { bool on; int shape; float hz, amt, q; };
-    const ND nd[maxResoNodes] { { true, 1, 167.0f, 2.0f, 0.8f }, { true, 0, 970.0f, 3.0f, 1.2f }, { true, 4, 4500.0f, 1.5f, 0.5f },
-                                { false, 0, 300.0f, 0.0f, 1.0f }, { false, 0, 2000.0f, 0.0f, 1.0f }, { false, 0, 8000.0f, 0.0f, 1.0f } };
-    const juce::StringArray shapes { "Bell", "Bandpass", "Low shelf", "High shelf", "Tilt", "Notch", "Low cut", "High cut" };
-    for (int i = 0; i < maxResoNodes; ++i)
-    {
-        const auto n = "Reso Band " + juce::String (i + 1) + " ";
-        B (nid (i, "On"), n + "On", nd[i].on);
-        C (nid (i, "Shape"), n + "Shape", shapes, nd[i].shape);
-        F (nid (i, "Hz"), n + "Freq", hz (20.0f, 20000.0f), nd[i].hz, "Hz");
-        F (nid (i, "Amt"), n + "Amount", R (-6.0f, 6.0f, 0.1f), nd[i].amt, "dB");
-        { R r (0.2f, 6.0f, 0.01f); r.setSkewForCentre (1.0f); F (nid (i, "Q"), n + "Width", r, nd[i].q); }
-        C (nid (i, "Place"), n + "Side", { "ST", "L", "R" }, 0);                                   // V9
-        C (nid (i, "Pair"), n + "Partner", { "-", "1", "2", "3", "4", "5", "6" }, 0);              // V9: its other side
-        B (nid (i, "Byp"), n + "Disabled", false);                                                 // V12: off, settings kept
-    }
-
-    // TAHOR
-    struct TB { bool on; int type; float hz, db, q; int slope, place; bool dyn, sc; };
-    // V3: Tahor starts flat - every band off (they keep their places for when you switch one on)
-    const TB td[numBands] { { false, 3, 40.0f, 0.0f, 0.71f, 1, 0, false, false },
-                            { false, 0, 280.0f, 0.0f, 1.4f, 1, 0, false, false },
-                            { false, 0, 2800.0f, 0.0f, 1.0f, 1, 0, false, false },
-                            { false, 0, 3800.0f, 0.0f, 1.0f, 1, 0, false, false },
-                            { false, 4, 17000.0f, 0.0f, 0.71f, 2, 0, false, false },
-                            { false, 0, 600.0f, 0.0f, 1.0f, 1, 0, false, false },
-                            { false, 0, 1200.0f, 0.0f, 1.0f, 1, 0, false, false },
-                            { false, 0, 6000.0f, 0.0f, 1.0f, 1, 0, false, false } };
-    for (int b = 0; b < numBands; ++b)
-    {
-        const auto n = "Band " + juce::String (b + 1) + " ";
-        B (bid (b, "On"), n + "On", td[b].on);
-        C (bid (b, "Type"), n + "Shape", { "Bell", "Low shelf", "High shelf", "Low cut", "High cut", "Notch" }, td[b].type);
-        F (bid (b, "Hz"), n + "Freq", hz (10.0f, 30000.0f), td[b].hz, "Hz");
-        F (bid (b, "Gain"), n + "Gain", R (-30.0f, 30.0f, 0.1f), td[b].db, "dB");
-        { R r (0.1f, 30.0f, 0.01f); r.setSkewForCentre (1.0f); F (bid (b, "Q"), n + "Q", r, td[b].q); }
-        C (bid (b, "Slope"), n + "Slope", { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct" }, td[b].slope);
-        C (bid (b, "Place"), n + "Stereo", { "ST", "M", "S", "L", "R" }, td[b].place);
-        B (bid (b, "Dyn"), n + "Dynamic", td[b].dyn);
-        F (bid (b, "Thr"), n + "Threshold", R (-60.0f, 0.0f, 0.1f), -30.0f, "dB");
-        F (bid (b, "Rng"), n + "Range", R (-24.0f, 24.0f, 0.1f), -6.0f, "dB");
-        B (bid (b, "Spec"), n + "Spectral", false);
-        B (bid (b, "Sc"), n + "Sidechain", td[b].sc);
-        B (bid (b, "Solo"), n + "Solo", false);
-        { R r (0.1f, 200.0f, 0.1f); r.setSkewForCentre (10.0f); F (bid (b, "Att"), n + "Attack", r, 5.0f, "ms"); }      // V9
-        { R r (5.0f, 2000.0f, 1.0f); r.setSkewForCentre (120.0f); F (bid (b, "Rel"), n + "Release", r, 120.0f, "ms"); }  // V9
-        F (bid (b, "Sel"), n + "Selectivity", R (1.0f, 8.0f, 0.1f), 3.0f, "x");                                         // V9: spectral
-        C (bid (b, "Pair"), n + "Partner", { "-", "1", "2", "3", "4", "5", "6", "7", "8" }, 0);                         // V9: its other side
-        B (bid (b, "Byp"), n + "Disabled", false);                                                                      // V12: off, settings kept
-    }
-
-    // CHARACTER
-    C ("charMode", "Character Colour", { "Clean", "Subtle", "Warm" }, 1);
-    F ("charThd", "Character THD", R (0.0f, 100.0f, 0.1f), 50.0f, "%");   // V7: how much colour (50% = as before)
-    juce::StringArray unitNames { "Empty" };
-    for (auto& u : units()) unitNames.add (u.name);
-    const int cdef[maxChain] { 0, 0, 0, 0 };   // V11: Character starts empty
-    for (int s = 0; s < maxChain; ++s) C ("chain" + juce::String (s), "Character Slot " + juce::String (s + 1), unitNames, cdef[s]);
-    for (int u = 0; u < numUnits; ++u)
-        for (int v = 0; v < unitValues; ++v)
-            F (uid (u, v), juce::String (units()[(size_t) u].name) + " " + juce::String (v + 1), R (0.0f, 1.0f, 0.0001f), units()[(size_t) u].defaults[(size_t) v]);
-    // V9: each unit can split into left and right, the right side with its own values
-    for (int u = 0; u < numUnits; ++u)
-    {
-        B ("u" + juce::String (u) + "split", juce::String (units()[(size_t) u].name) + " L/R Split", false);
-        for (int v = 0; v < unitValues; ++v)
-            F ("u" + juce::String (u) + "r" + juce::String (v), juce::String (units()[(size_t) u].name) + " R " + juce::String (v + 1), R (0.0f, 1.0f, 0.0001f), units()[(size_t) u].defaults[(size_t) v]);
-    }
+    // ===== PRESSURE =====
+    // (the three tabs' power buttons keep their old ids: resoOn = HELPERS, tahorOn = CLEAN, charOn = VINTAGE)
+    // CLEAN
+    C ("cEngine", "Clean Engine", { "LE-11/25E", "LE-755C", "LE-DS1", "LE-MLA", "LE-580E" }, 0);
+    F ("cThresh", "Threshold", R (-60.0f, 0.0f, 0.1f), -24.0f, "dB");
+    { R r (1.0f, 20.0f, 0.01f); r.setSkewForCentre (4.0f); F ("cRatio", "Ratio", r, 4.0f, ":1"); }
+    F ("cKnee", "Knee", R (0.0f, 24.0f, 0.1f), 6.0f, "dB");
+    F ("cDsKnee", "DS1 Soft Knee", R (0.0f, 1.0f, 0.01f), 0.6f);
+    { R r (0.05f, 250.0f, 0.01f); r.setSkewForCentre (8.0f); F ("cAttack", "Attack", r, 8.0f, "ms"); }
+    { R r (5.0f, 3000.0f, 1.0f); r.setSkewForCentre (150.0f); F ("cRelease", "Release", r, 120.0f, "ms"); }
+    B ("cAutoRel", "Auto Release", false);
+    B ("cAutoAtk", "Auto Attack", false);
+    C ("cGlide", "Glide / Snap", { "Glide", "Snap" }, 0);
+    C ("cColor", "Color / Pure", { "Color", "Pure" }, 0);
+    C ("cPeak", "Peak / RMS", { "Peak", "RMS" }, 0);
+    B ("cDelta", "Delta", false);
+    { R r (10.0f, 1000.0f, 1.0f); r.setSkewForCentre (200.0f); F ("cDsRelF", "DS1 Release Fast", r, 200.0f, "ms"); }
+    { R r (100.0f, 5000.0f, 1.0f); r.setSkewForCentre (1200.0f); F ("cDsRelS", "DS1 Release Slow", r, 1200.0f, "ms"); }
+    { R r (1.0f, 300.0f, 0.1f); r.setSkewForCentre (30.0f); F ("cDsAvg", "DS1 Average", r, 30.0f, "ms"); }
+    C ("cDsBand", "DS1 Full / Band", { "Full Range", "Band" }, 0);
+    F ("cMakeup", "Make-up", R (-12.0f, 24.0f, 0.1f), 4.0f, "dB");
+    F ("cMix", "Mix", R (0.0f, 100.0f, 1.0f), 100.0f, "%");
+    B ("cAutoGain", "Clean Auto Gain", false);
+    F ("cRange", "Range", R (0.0f, 60.0f, 0.5f), 24.0f, "dB");
+    F ("cHold", "Hold", R (0.0f, 500.0f, 1.0f), 0.0f, "ms");
+    F ("cVoxComp", "755C Compress", R (-40.0f, 0.0f, 0.1f), 0.0f, "dB");
+    F ("cVoxGate", "755C Gate", R (-80.0f, -20.0f, 0.5f), -80.0f, "dB");
+    F ("cVoxGain", "755C Gain", R (-24.0f, 24.0f, 0.1f), 0.0f, "dB");
+    B ("cVoxMatch", "755C Level Match", false);
+    F ("cMlaIn", "MLA Input Gain", R (0.0f, 20.0f, 1.0f), 8.0f, "dB");
+    C ("cMlaRatio", "MLA Ratio", { "1.2", "1.4", "1.7", "2", "2.5", "3", "5", "8", "INF" }, 3);
+    C ("cMlaAtk", "MLA Attack", { "0.005", "0.01", "0.015", "0.02", "0.03", "0.05", "0.1", "0.2", "0.5" }, 3);
+    C ("cMlaRel", "MLA Release", { "0.02", "0.03", "0.05", "0.07", "0.10", "0.15", "0.2", "0.3", "0.5" }, 4);
+    B ("cMlaLink", "MLA ImageLink", true);
+    C ("cMlaMeter", "MLA Meter", { "GR", "VU" }, 0);
+    { juce::StringArray st; for (auto* n : pressure::proStyles) st.add (n); C ("cProStyle", "580E Style", st, 0); }
+    C ("cProChar", "580E Character", { "Tube", "Diode", "Bright" }, 0);
+    B ("cProCharOn", "580E Drive On", true);
+    F ("cProDrive", "580E Drive", R (0.0f, 100.0f, 1.0f), 30.0f, "%");
+    C ("cProPre", "580E Pre / Post", { "Pre", "Post" }, 0);
+    B ("cProAutoThr", "580E Auto Threshold", false);
+    F ("cProDry", "580E Dry", R (-60.0f, 0.0f, 0.1f), -60.0f, "dB");
+    F ("cProWet", "580E Wet", R (-24.0f, 12.0f, 0.1f), 0.0f, "dB");
+    // the sidechain
+    C ("cScSrc", "Sidechain Source", { "Internal", "External" }, 0);
+    B ("cScListen", "Sidechain Listen", false);
+    F ("cScGain", "Sidechain Gain", R (-24.0f, 24.0f, 0.1f), 0.0f, "dB");
+    F ("cScLink", "Stereo Link", R (0.0f, 100.0f, 1.0f), 100.0f, "%");
+    C ("cScMs", "Sidechain M / S", { "Stereo", "Mid", "Side" }, 0);
+    F ("cLook", "Look-ahead", R (0.0f, 10.0f, 0.1f), 2.0f, "ms");
+    F ("cScHp", "Sidechain High Pass", hz (20.0f, 500.0f), 80.0f, "Hz");
+    F ("cScBellHz", "Sidechain Bell Freq", hz (200.0f, 12000.0f), 3000.0f, "Hz");
+    F ("cScBellDb", "Sidechain Bell Gain", R (-12.0f, 12.0f, 0.1f), 3.0f, "dB");
+    F ("cScLp", "Sidechain Low Pass", hz (2000.0f, 20000.0f), 14000.0f, "Hz");
     B ("autoGain", "Auto Gain", false);   // V9
     return L;
 }
@@ -327,6 +233,7 @@ void TahorProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     for (auto& s : charSat) s.prepare (sampleRate);
     charWas.fill (-1);
     prepareOs (maxBlock);
+    clean.prepare (sampleRate, maxBlock);
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) maxBlock, 1 };
     for (auto& st : soloC) for (auto& f : st) { f.coefficients = new juce::dsp::IIR::Coefficients<float> (1, 0, 0, 1, 0, 0); f.prepare (spec); }
     for (auto& st : soloF) for (auto& f : st) { f.coefficients = new juce::dsp::IIR::Coefficients<float> (1, 0, 0, 1, 0, 0); f.prepare (spec); }
@@ -353,11 +260,31 @@ bool TahorProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 
 int TahorProcessor::latencyNow() const
 {
-    const int osIdx = isNonRealtime() && (int) param ("osRender") > 0 ? (int) param ("osRender") : (int) param ("os");
-    int lat = (param ("rsLowLat") > 0.5f ? resoLow : reso).getLatencySamples();
-    lat += tahorStage.latencyFor ((int) param ("phase"), juce::jmin (2, osIdx));
-    if (osIdx > 0 && os[(size_t) osIdx - 1]) lat += (int) std::round (os[(size_t) osIdx - 1]->getLatencyInSamples());
-    return lat;
+    // Pressure V1: only CLEAN's look-ahead delays the sound
+    return param ("tahorOn") > 0.5f ? pressure::CleanCompressor::lookSamples (cleanSettings(), preparedRate) : 0;
+}
+
+pressure::CleanSettings TahorProcessor::cleanSettings() const
+{
+    pressure::CleanSettings s;
+    s.engine = (int) param ("cEngine");
+    s.threshDb = param ("cThresh"); s.ratio = param ("cRatio"); s.kneeDb = param ("cKnee"); s.ds1Knee = param ("cDsKnee");
+    s.attackMs = param ("cAttack"); s.releaseMs = param ("cRelease");
+    s.autoRelease = param ("cAutoRel") > 0.5f; s.autoAttack = param ("cAutoAtk") > 0.5f; s.rms = (int) param ("cPeak") == 1;
+    s.behavior = (int) param ("cGlide"); s.colour = (int) param ("cColor");
+    s.dsRelFastMs = param ("cDsRelF"); s.dsRelSlowMs = param ("cDsRelS"); s.dsAvgMs = param ("cDsAvg"); s.dsBand = (int) param ("cDsBand");
+    s.makeupDb = param ("cMakeup"); s.mix = param ("cMix") * 0.01f; s.autoGain = param ("cAutoGain") > 0.5f; s.delta = param ("cDelta") > 0.5f;
+    s.rangeDb = param ("cRange"); s.holdMs = param ("cHold");
+    s.voxComp = param ("cVoxComp"); s.voxGateDb = param ("cVoxGate"); s.voxGainDb = param ("cVoxGain"); s.voxMatch = param ("cVoxMatch") > 0.5f;
+    s.mlaIn = (int) param ("cMlaIn"); s.mlaRatio = (int) param ("cMlaRatio"); s.mlaAtk = (int) param ("cMlaAtk"); s.mlaRel = (int) param ("cMlaRel");
+    s.mlaLink = param ("cMlaLink") > 0.5f;
+    s.proStyle = (int) param ("cProStyle"); s.proChar = (int) param ("cProChar"); s.proCharOn = param ("cProCharOn") > 0.5f; s.proDrive = param ("cProDrive");
+    s.proPost = (int) param ("cProPre") == 1; s.proAutoThr = param ("cProAutoThr") > 0.5f; s.proDryDb = param ("cProDry"); s.proWetDb = param ("cProWet");
+    s.external = (int) param ("cScSrc") == 1; s.listen = param ("cScListen") > 0.5f; s.scGainDb = param ("cScGain"); s.link = param ("cScLink") * 0.01f;
+    s.ms = (int) param ("cScMs"); s.lookMs = param ("cLook");
+    s.hpHz = param ("cScHp"); s.bellHz = param ("cScBellHz"); s.bellDb = param ("cScBellDb"); s.lpHz = param ("cScLp");
+    if (s.engine == pressure::EMla || s.engine == pressure::E755) s.rangeDb = 60.0f;   // (their own timing / range)
+    return s;
 }
 
 void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -370,7 +297,7 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     if (n > maxBlock) { prepareToPlay (preparedRate, n); }
 
     // the sidechain (key) input
-    const bool scOn = param ("scExt") > 0.5f && hasSidechain();
+    const bool scOn = (int) param ("cScSrc") == 1 && hasSidechain();
     if (scOn)
     {
         auto key = getBusBuffer (buffer, true, 1);
@@ -409,141 +336,21 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     inMeterR.store (main.getMagnitude (nc - 1, 0, n));
     { float r2 = 0; for (int c = 0; c < nc; ++c) r2 = juce::jmax (r2, main.getRMSLevel (c, 0, n)); inRms.store (r2); }   // V10: for the readouts
 
-    // RESO
+    // ===== PRESSURE: HELPERS > CLEAN > VINTAGE =====
+    // HELPERS (V1: passes the sound through - wired up in the next version)
+    // CLEAN
     {
-        bool split = false;   // V9: a node on one side only - left and right each get their own Reso
-        if (nc == 2) for (int i = 0; i < maxResoNodes; ++i) if (param (nid (i, "On")) > 0.5f && (int) param (nid (i, "Place")) != 0) split = true;
-        resoIsSplit.store (split);
-        if (! split)
+        const auto cs = cleanSettings();
+        float gr = 0.0f;
+        if (param ("tahorOn") > 0.5f)
         {
-            auto rs = resoSettings();
-            auto& r = param ("rsLowLat") > 0.5f ? resoLow : reso;
-            r.process (main, rs, scOn ? &keyBuf : nullptr);
+            const bool ext = cs.external && hasSidechain();
+            gr = clean.process (main, nc, n, ext ? &keyBuf : nullptr, cs);
         }
-        else
-        {
-            const int li = param ("rsLowLat") > 0.5f ? 1 : 0;
-            for (int side = 0; side < 2; ++side)
-            {
-                juce::AudioBuffer<float> one (main.getArrayOfWritePointers() + side, 1, n);
-                juce::AudioBuffer<float> key1 (keyBuf.getArrayOfWritePointers() + side, 1, n);
-                auto rs = resoSettings (side);
-                rs.msMode = 0;
-                resoSplit[(size_t) li][(size_t) side].process (one, rs, scOn ? &key1 : nullptr);
-            }
-        }
+        grDb.store (gr);
+        cleanAvgGr.store (0.98f * cleanAvgGr.load() + 0.02f * gr);
     }
-
-    // TAHOR (L / R bands run in their own Natural EQ)
-    const int osIdx = isNonRealtime() && (int) param ("osRender") > 0 ? (int) param ("osRender") : (int) param ("os");
-    auto bands = tahorBands();
-    vox::CleanBands lr = bands;
-    bool anyLr = false, anySolo = false; int soloBand = -1;
-    for (int b = 0; b < numBands; ++b)
-    {
-        const bool isLr = bands[(size_t) b].place >= 3;
-        if (isLr && nc > 1) { bands[(size_t) b].on = false; anyLr = anyLr || lr[(size_t) b].on; }
-        else lr[(size_t) b].on = false;
-        if (bands[(size_t) b].place >= 3 && nc < 2) bands[(size_t) b].place = 0;
-        if (param (bid (b, "Solo")) > 0.5f && param (bid (b, "On")) > 0.5f && ! anySolo) { anySolo = true; soloBand = b; }
-    }
-    const bool tahorOn = param ("tahorOn") > 0.5f;
-    tahorStage.keyL = scOn ? keyBuf.getReadPointer (0) : nullptr;
-    tahorStage.keyR = scOn ? keyBuf.getReadPointer (1) : nullptr;
-    tahorStage.keyLen = n;
-    lrEq.keyL = tahorStage.keyL; lrEq.keyR = tahorStage.keyR; lrEq.keyLen = n;
-    tahorStage.process (main, bands, tahorOn, (int) param ("phase"), juce::jmin (2, osIdx));
-    if (tahorOn && anyLr) lrEq.process (main, lr);
-    for (int b = 0; b < numBands; ++b)
-        dynDb[(size_t) b].store (bands[(size_t) b].on ? tahorStage.dynOffsetDb[(size_t) b].load() : lrEq.dynOffsetDb[(size_t) b].load());
-
-    // SOLO: listen to just the band
-    if (anySolo)
-    {
-        const float f = juce::jlimit (20.0f, (float) (preparedRate * 0.45), param (bid (soloBand, "Hz")));
-        const float q = juce::jlimit (0.3f, 12.0f, param (bid (soloBand, "Q")));
-        const auto bp = juce::dsp::IIR::ArrayCoefficients<float>::makeBandPass (preparedRate, f, q);
-        for (int c = 0; c < nc; ++c)
-            for (int st = 0; st < 2; ++st)
-            {
-                *soloF[(size_t) c][(size_t) st].coefficients = bp;
-                auto* x = main.getWritePointer (c);
-                for (int i = 0; i < n; ++i) x[i] = soloF[(size_t) c][(size_t) st].processSample (x[i]);
-            }
-    }
-
-    // CHARACTER: the units' EQs, then their colour (oversampled)
-    const bool charOn = param ("charOn") > 0.5f && ! anySolo;
-    const int mode = (int) param ("charMode");
-    const auto ch = chain();
-    std::array<int, maxChain> active { -1, -1, -1, -1 };
-    if (charOn)
-        for (int s = 0; s < (int) ch.size(); ++s)
-        {
-            const int u = ch[(size_t) s];
-            float v[unitValues]; getUnitValues (u, v);
-            if (u == 5 && v[10] < 0.5f) continue;   // the 550B's IN switch
-            auto& e = charEq[(size_t) s];
-            auto& er = charEqR[(size_t) s];
-            if (charWas[(size_t) s] != u) { e.reset(); er.reset(); charSat[(size_t) s].reset(); charWas[(size_t) s] = u; }
-            e.update (unitSettings (u, v), units()[(size_t) u].type);
-            e.place = 0;
-            if (nc == 2 && unitSplit (u))   // V9: left and right with their own settings
-            {
-                float vr[unitValues]; getUnitValues (u, vr, 1);
-                er.update (unitSettings (u, vr), units()[(size_t) u].type);
-                er.place = 0;
-                juce::AudioBuffer<float> l (main.getArrayOfWritePointers(), 1, n), rr (main.getArrayOfWritePointers() + 1, 1, n);
-                e.process (l); er.process (rr);
-            }
-            else e.process (main);
-            active[(size_t) s] = u;
-        }
-    if (osIdx != osWas) { for (auto& o : os) if (o) o->reset(); osWas = osIdx; }
-    auto colour = [&] (juce::dsp::AudioBlock<float> blk)
-    {
-        if (! charOn || mode == 0) return;
-        const float thd = param ("charThd") / 50.0f;   // V7: 0 .. 2, 1 = as before
-        const float mul = (mode == 2 ? 2.2f : 1.0f) * thd, dmul = (mode == 2 ? 1.35f : 1.0f) * (0.6f + 0.4f * thd);
-        for (int s = 0; s < maxChain; ++s)
-        {
-            if (active[(size_t) s] < 0) continue;
-            float drive, bias, mix;
-            vox::VocalEQ::colourFor (units()[(size_t) active[(size_t) s]].type, drive, bias, mix);
-            mix = juce::jmin (1.0f, mix * mul); drive *= dmul;
-            if (mix <= 0.0f) continue;
-            for (size_t c = 0; c < blk.getNumChannels(); ++c)
-            {
-                auto* x = blk.getChannelPointer (c);
-                for (size_t i = 0; i < blk.getNumSamples(); ++i) x[i] = charSat[(size_t) s].processSample ((int) c, x[i], drive, bias, mix);
-            }
-        }
-    };
-    {
-        juce::dsp::AudioBlock<float> block (main.getArrayOfWritePointers(), (size_t) nc, (size_t) n);
-        if (osIdx > 0 && os[(size_t) osIdx - 1])
-        {
-            auto up = os[(size_t) osIdx - 1]->processSamplesUp (block);
-            colour (up);
-            os[(size_t) osIdx - 1]->processSamplesDown (block);
-        }
-        else colour (block);
-    }
-
-    // V8: SOLO a Character node - just its range, after the units' EQ and colour
-    if (const float sh = charSoloHz.load(); sh > 0.0f && ! anySolo)
-    {
-        const float f = juce::jlimit (20.0f, (float) (preparedRate * 0.45), sh);
-        const float q = juce::jlimit (0.3f, 12.0f, charSoloQ.load());
-        const auto bp = juce::dsp::IIR::ArrayCoefficients<float>::makeBandPass (preparedRate, f, q);
-        for (int c = 0; c < nc; ++c)
-            for (int st = 0; st < 2; ++st)
-            {
-                *soloC[(size_t) c][(size_t) st].coefficients = bp;
-                auto* x = main.getWritePointer (c);
-                for (int i = 0; i < n; ++i) x[i] = soloC[(size_t) c][(size_t) st].processSample (x[i]);
-            }
-    }
+    // VINTAGE (V1: passes the sound through - wired up in a later version)
 
     // output: MATCH (equal loudness with the input), OUT, BYPASS
     double msOut = 0.0;
@@ -632,7 +439,7 @@ bool TahorProcessor::saveUserPreset (const juce::String& name, const juce::Strin
 
 juce::File TahorProcessor::userPresetFolder()
 {
-    return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Audio/Presets/Mishkal Audio/Tahor");
+    return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Audio/Presets/Mishkal Audio/Pressure");
 }
 
 juce::Array<juce::File> TahorProcessor::userPresets() const
@@ -775,32 +582,8 @@ void TahorProcessor::switchAB (int slot)
 void TahorProcessor::timerCallback()
 {
     if (! loadingPreset) recordHistory();
-    // V9: AUTO GAIN - how much louder or quieter the EQs make things (weighted to where the ear lives), undone at the output
-    {
-        const double sr = juce::jmax (44100.0, preparedRate);
-        const auto bands = tahorBands();
-        const bool tOn = param ("tahorOn") > 0.5f, cOn = param ("charOn") > 0.5f;
-        std::vector<vox::VocalEQ::Design> designs;
-        if (cOn)
-            for (int u : chain())
-            {
-                float v[unitValues]; getUnitValues (u, v);
-                designs.push_back (vox::VocalEQ::design (unitSettings (u, v), units()[(size_t) u].type, sr));
-            }
-        double sum = 0.0, wsum = 0.0;
-        for (int i = 0; i < 40; ++i)
-        {
-            const double hz = 30.0 * std::pow (14000.0 / 30.0, i / 39.0);
-            double db = 0.0;
-            if (tOn)
-                for (auto& b : bands)
-                    if (b.on && ! b.isCut()) db += (b.place >= 3 ? 0.5 : 1.0) * vox::tahorAnalogBandDb (b, b.freq, b.gain, b.q, hz);
-            for (auto& d : designs) db += vox::VocalEQ::magnitudeDb (d, hz, sr);
-            const double w = (hz >= 80.0 && hz <= 6000.0) ? 1.0 : 0.4;
-            sum += w * db; wsum += w;
-        }
-        autoGainDb.store (juce::jlimit (-24.0f, 24.0f, (float) (-sum / juce::jmax (1.0e-9, wsum))));
-    }
+    // AUTO GAIN (header): gives back about half of what CLEAN takes on average
+    autoGainDb.store (juce::jlimit (0.0f, 24.0f, cleanAvgGr.load() * 0.5f));
     const int lat = latencyNow();
     if (lat != reportedLatency) { reportedLatency = lat; setLatencySamples (lat); }
     // AUTO: listen for ~3 seconds, then set IN so the level sits around -18 dBFS RMS

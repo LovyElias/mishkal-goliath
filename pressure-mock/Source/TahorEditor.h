@@ -42,8 +42,13 @@ enum class Hit
     TahorNode, TahorType, TahorPlace, TahorKnob, TahorChip, TahorBand, AddBand, TahorBg,
     UnitPrev, UnitNext, UnitAdd, UnitKnob, UnitSwitch, PageDot, ChainChip, ChainRemove, CharMode, PeakDot, Glass, FullScreen, CharNode, Hardware, TabCycle, Size, CharKnob, Thd, AddEq, PresetStep, BandSolo, AddPick, AddClose,
     History, Browse, BrowseTag, BrowsePick, BrowseClose, AutoGain, CharSide, ResoPlace, TahorMode,
-    BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano, BubbleEdit
+    BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano, BubbleEdit,
+    PCtl, PEngine, PDrawer   // PRESSURE: a control (knob / button / bar), the engine arrows, a drawer handle
 };
+
+// PRESSURE: the mock's look switches (PRESS_DS1, PRESS_KNEE ...) - in the plug-in they come from the parameters and the
+// UI state; in the snapshot harness (PRESSURE_MOCK) from the environment, as before
+const char* penv (const char* name);
 
 class Canvas : public juce::Component, private juce::Timer
 {
@@ -70,6 +75,7 @@ public:
     int selBand = 2, selNode = 1, preview = 0, hoverUnit = -1, selCharNode = -1;
     bool fullScreen = false;
     bool stripOpen = true, advOpen = false;
+    const char* flagFor (const char* name);   // PRESSURE: penv's answer in the plug-in
 
 private:
     TahorProcessor& proc;
@@ -114,6 +120,15 @@ private:
     void paintEngineSlide (juce::Graphics&);
     void valueBar (juce::Graphics&, ui::R, const char* label, const juce::String& value, float pos);
     bool kneeOn = false;   // the knee window, opened from its tab on the left panel
+    // PRESSURE: drawers and controls
+    bool scOn = false, topOff = false;
+    std::vector<juce::String> pz;                       // the controls' parameter ids, rebuilt on every paint
+    void dz (ui::R displayRect, Hit k, int a = 0, int b = 0) { zone (displayRect.translated (ui::display.getX(), ui::display.getY()), k, a, b); }
+    int pctl (ui::R displayRect, const juce::String& pid, int kind = 0);   // kind: 0 drag, 1 click: next, 2 click: previous, 3 drag inverted
+    float pn (const juce::String& pid) const;           // normalised 0..1
+    juce::String pfmt (const juce::String& pid) const;  // the value as the screen shows it
+    bool pon (const juce::String& pid) const { return proc.param (pid) > 0.5f; }
+    juce::String pchoice (const juce::String& pid) const;
     double kneeTouch = -1.0e9;   // when Threshold / Ratio / Knee was last touched (the knee display shows for 4 s)
     void paintSidechainDrawer (juce::Graphics&, ui::R unit);
     void paintLevelTab (juce::Graphics&);
