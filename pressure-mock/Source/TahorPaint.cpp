@@ -2719,7 +2719,7 @@ void Canvas::paintMeters (juce::Graphics& g)
                 g.saveState(); juce::Path cl; cl.addRoundedRectangle (bar, 2); g.reduceClipRegion (cl);
                 juce::ColourGradient gr (col ("#4ade80"), 0, fill.getBottom(), col ("#ef4444"), 0, fill.getY(), false);
                 gr.addColour (0.7, col ("#4ade80")); gr.addColour (0.92, col ("#f3a93c"));
-                if (dsM) { gr = mlaM ? juce::ColourGradient (col ("#1f5fae"), 0, fill.getBottom(), col ("#cfeaff"), 0, fill.getY(), false)
+                if (dsM) { gr = mlaM ? juce::ColourGradient (col ("#8a7a55"), 0, fill.getBottom(), col ("#f3ead6"), 0, fill.getY(), false)
                                 : juce::ColourGradient (col ("#6c7076"), 0, fill.getBottom(), col ("#e6e8eb"), 0, fill.getY(), false); }
                 g.setGradientFill (gr); g.fillRect (fill);
                 if (dsM && db > -6.0f)   // LE-DS1: grey, but the last 6 dB to 0 dBFS light red, like any peak
@@ -2752,15 +2752,15 @@ void Canvas::paintGrMeter (juce::Graphics& g)
         g.saveState(); juce::Path cl; cl.addRoundedRectangle (bar, 2); g.reduceClipRegion (cl);
         const bool ds = tab == 1 && std::getenv ("PRESS_DS1") != nullptr;   // LE-DS1: grey on black, like its display
         const bool ml = tab == 1 && std::getenv ("PRESS_MLA") != nullptr;   // LE-MLA: blue light on black
-        g.setGradientFill (juce::ColourGradient (ml ? col ("#cfeaff") : ds ? col ("#c9ccd1") : col ("#ff8a8a"), 0, bar.getY(), ml ? col ("#2b6fc4") : ds ? col ("#6c7076") : col ("#e0303f"), 0, yOf (grn), false));
+        g.setGradientFill (juce::ColourGradient (ml ? col ("#f3ead6") : ds ? col ("#c9ccd1") : col ("#ff8a8a"), 0, bar.getY(), ml ? col ("#b39a5e") : ds ? col ("#6c7076") : col ("#e0303f"), 0, yOf (grn), false));
         g.fillRect (R (bar.getX(), bar.getY(), bar.getWidth(), yOf (grn) - bar.getY()));
         g.restoreState();
     }
     const bool dsG = tab == 1 && std::getenv ("PRESS_DS1") != nullptr, mlG = tab == 1 && std::getenv ("PRESS_MLA") != nullptr;
-    g.setColour (mlG ? col ("#dff1ff") : dsG ? col ("#e6e8eb") : col ("#ffb3b3")); g.fillRect (bar.getX(), yOf (hold) - 1.0f, bar.getWidth(), 2.0f);
+    g.setColour (mlG ? col ("#fbf5e6") : dsG ? col ("#e6e8eb") : col ("#ffb3b3")); g.fillRect (bar.getX(), yOf (hold) - 1.0f, bar.getWidth(), 2.0f);
     // ticks every 6 dB
     for (int db = 6; db < 30; db += 6) { g.setColour (juce::Colours::black.withAlpha (0.6f)); g.fillRect (bar.getX(), std::round (yOf ((float) db)), bar.getWidth(), 1.0f); }
-    text (g, "GR", font (Face::CondMedium, 8, 1.2f), mlG ? col ("#8fcaff") : dsG ? col ("#ef4444") : col ("#ff8a8a"), R (bar.getX() - 6, 56, 19, 10), juce::Justification::centred);
+    text (g, "GR", font (Face::CondMedium, 8, 1.2f), mlG ? col ("#ecd59c") : dsG ? col ("#ef4444") : col ("#ff8a8a"), R (bar.getX() - 6, 56, 19, 10), juce::Justification::centred);
     if (dsG)   // LE-DS1: how much it's taking off, in red beside the meter
         text (g, (hold > 0.05f ? MINUS : juce::String()) + juce::String (hold, 1), font (Face::Medium, 9), col ("#ef4444"), R (bar.getRight() + 4, 56, 40, 10), juce::Justification::centredLeft);
 }
