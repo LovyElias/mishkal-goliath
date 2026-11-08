@@ -183,6 +183,8 @@ private:
     float reveal = 0.0f;                 // V3: the tab's controls fade in when the mouse touches a dot or their home
     std::vector<ui::R> revealRects;                                     // V2: the background's slow movement
     void paintBackground (juce::Graphics&);
+    void paintBackgroundInner (juce::Graphics&);
+    juce::Image bgCache; float bgScale = 0.0f; int bgKey = -1, bgDrift = -1;   // V14: the background, drawn once and reused
     std::vector<float> preCol, postCol;                     // V2: the smoothed analyzer, per display column
     std::map<int, juce::Image> metal;   // V10: keyed by unit * 1000 + height (1U / 2U)
     std::unique_ptr<juce::FileChooser> chooser;

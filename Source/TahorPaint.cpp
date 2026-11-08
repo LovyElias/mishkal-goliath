@@ -13,6 +13,36 @@ constexpr float pi = juce::MathConstants<float>::pi;
 juce::String U8 (const char* s) { return juce::String::fromUTF8 (s); }
 const juce::String MINUS = U8 ("\xe2\x88\x92"), DOT = U8 (" \xc2\xb7 ");
 
+// V14: soft shadows are blurred once and kept (they were re-blurred every frame, which made clicks and drags feel heavy)
+void cachedShadow (juce::Graphics& g, const juce::DropShadow& ds, const juce::Path& path)
+{
+    const auto b = path.getBounds();
+    if (b.isEmpty()) return;
+    const float k = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    juce::Path rel (path);
+    rel.applyTransform (juce::AffineTransform::translation (-b.getX(), -b.getY()));
+    juce::MemoryOutputStream mo; rel.writePathToStream (mo);
+    mo << (int) ds.colour.getARGB() << ds.radius << ds.offset.x << ds.offset.y << juce::roundToInt (k * 1000.0f);
+    juce::uint64 h = 1469598103934665603ull;   // FNV-1a over the shape and the shadow's settings
+    for (size_t i = 0; i < mo.getDataSize(); ++i) { h ^= (juce::uint8) static_cast<const char*> (mo.getData())[i]; h *= 1099511628211ull; }
+    const auto key = (juce::int64) h;
+    static std::unordered_map<juce::int64, juce::Image> cache;
+    auto it = cache.find (key);
+    const float pad = (float) ds.radius + (float) juce::jmax (std::abs (ds.offset.x), std::abs (ds.offset.y)) + 2.0f;
+    if (it == cache.end())
+    {
+        if (cache.size() > 400) cache.clear();
+        juce::Image im (juce::Image::ARGB, juce::jmax (1, (int) std::ceil ((b.getWidth() + 2 * pad) * k)), juce::jmax (1, (int) std::ceil ((b.getHeight() + 2 * pad) * k)), true);
+        {
+            juce::Graphics ig (im);
+            ig.addTransform (juce::AffineTransform::translation (pad, pad).scaled (k));
+            ds.drawForPath (ig, rel);
+        }
+        it = cache.emplace (key, im).first;
+    }
+    g.drawImageTransformed (it->second, juce::AffineTransform::scale (1.0f / k).translated (b.getX() - pad, b.getY() - pad));
+}
+
 void fillRound (juce::Graphics& g, R r, float rad, juce::Colour c) { g.setColour (c); g.fillRoundedRectangle (r, rad); }
 void strokeRound (juce::Graphics& g, R r, float rad, juce::Colour c, float w = 1.0f) { g.setColour (c); g.drawRoundedRectangle (r.reduced (w * 0.5f), rad, w); }
 
@@ -43,7 +73,7 @@ void bandPanel (juce::Graphics& g, R b, float peakX, juce::Colour c)
     body.quadraticTo (x0 + ch * 0.25f, y1, x0 + ch * 0.4f, y1 - ch * 0.4f);
     body.quadraticTo (x0, y1 - ch * 0.25f, x0, y1 - ch);
     body.closeSubPath();
-    juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 22, { 0, 8 }).drawForPath (g, body);
+    cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 22, { 0, 8 }), body);
     g.setGradientFill (juce::ColourGradient (juce::Colour (0xcc17181d), 0, y0 - rise, juce::Colour (0xcc0f1013), 0, y1, false));   // 80% solid
     g.fillPath (body);
     {
@@ -66,7 +96,7 @@ void bandPanel (juce::Graphics& g, R b, float peakX, juce::Colour c)
 void shadow (juce::Graphics& g, R r, float rad, float dy, float blur, juce::Colour c)
 {
     juce::Path p; p.addRoundedRectangle (r.translated (0, dy), rad);
-    juce::DropShadow (c, juce::roundToInt (blur), {}).drawForPath (g, p);
+    cachedShadow (g, juce::DropShadow (c, juce::roundToInt (blur), {}), p);
 }
 
 // little vector icons for the symbols the fonts don't carry
@@ -390,7 +420,7 @@ void Canvas::paintBrowser (juce::Graphics& g)
     const R panel (presetRect.getX() - 30, 52, pw, ph);
     {
         juce::Path p; p.addRoundedRectangle (panel, 12);
-        juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 24, { 0, 10 }).drawForPath (g, p);
+        cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 24, { 0, 10 }), p);
         g.setColour (col ("#121215", 0.96f)); g.fillPath (p);
         g.setColour (juce::Colours::white.withAlpha (0.1f)); g.strokePath (p, juce::PathStrokeType (1.0f));
     }
@@ -696,7 +726,32 @@ void Canvas::paintDisplay (juce::Graphics& g)
 }
 
 // V2: a livelier display - the design's dark gradient, two slow, soft glows drifting behind, a dB grid and a vignette
+// V14: the background (glows, grid, grain, vignette) is drawn once into an image at the screen's real pixel size and
+// reused - redrawn only when the size, tab or range changes, or every third of a second as the glows drift
 void Canvas::paintBackground (juce::Graphics& g)
+{
+    const R d (-display.getX(), -70.0f, W, 800.0f);
+    const float k = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int dq = (int) (drift * 180.0f);
+    const int key = tab * 1000 + (int) proc.param ("range") * 10;
+    if (! bgCache.isValid() || std::abs (bgScale - k) > 0.001f || bgKey != key || bgDrift != dq)
+    {
+        const int iw = juce::roundToInt (W * k), ih = juce::roundToInt (800.0f * k);
+        if (! bgCache.isValid() || bgCache.getWidth() != iw || bgCache.getHeight() != ih) bgCache = juce::Image (juce::Image::ARGB, iw, ih, true);
+        else bgCache.clear (bgCache.getBounds());
+        juce::Graphics ig (bgCache);
+        ig.addTransform (juce::AffineTransform::translation (-d.getX(), -d.getY()).scaled (k));
+        const float keep = drift; drift = (float) dq / 180.0f;
+        paintBackgroundInner (ig);
+        drift = keep;
+        bgScale = k; bgKey = key; bgDrift = dq;
+    }
+    g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
+    g.drawImageTransformed (bgCache, juce::AffineTransform::scale (1.0f / k).translated (d.getX(), d.getY()));
+    g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
+}
+
+void Canvas::paintBackgroundInner (juce::Graphics& g)
 {
     const R d (-display.getX(), -70.0f, W, 800.0f);   // V5: under the arches too   // V3: the whole screen between the header and the bottom bar
     fillEllipseGrad (g, d, PW * 0.5f, -40, d.getWidth() * 0.5f * 1.4142f, 760 * 1.4142f, { { 0.0f, col ("#1c1826") }, { 0.7f, col ("#0f0f13") }, { 1.0f, col ("#0d0d10") } });
@@ -1274,7 +1329,7 @@ void Canvas::neonKnob (juce::Graphics& g, P tl, float pos, float size)
     }
     // the disc (inset 11): shadow, radial body, a faint top highlight
     const R disc (tl.x + 11, tl.y + 11, 30, 30);
-    { juce::Path p; p.addEllipse (disc.translated (0, 2)); juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 4, {}).drawForPath (g, p); }
+    { juce::Path p; p.addEllipse (disc.translated (0, 2)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 4, {}), p); }
     g.setGradientFill (juce::ColourGradient (col ("#34343a"), disc.getX() + 0.45f * 30, disc.getY() + 0.35f * 30, col ("#222226"),
                                              disc.getX() + 0.45f * 30 + 30 * 0.7f * 0.95f, disc.getY() + 0.35f * 30, true));
     g.fillEllipse (disc);
@@ -1295,7 +1350,7 @@ void Canvas::bandKnob (juce::Graphics& g, R b, float pos, juce::Colour c)
     if (a > 0.3f) { juce::Path on; on.addPieSegment (b, a0, a0 + a * pi / 180.0f, 0.0f); g.setColour (c); g.fillPath (on); }
     const float i = std::round (s * 0.1f);
     const R disc = b.reduced (i);
-    { juce::Path p; p.addEllipse (disc.translated (0, 2)); juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 4, {}).drawForPath (g, p); }
+    { juce::Path p; p.addEllipse (disc.translated (0, 2)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 4, {}), p); }
     g.setGradientFill (juce::ColourGradient (col ("#2c2d33"), disc.getX() + disc.getWidth() * 0.4f, disc.getY() + disc.getHeight() * 0.35f,
                                              col ("#141518"), disc.getX() + disc.getWidth() * 0.4f + disc.getWidth() * 0.7f * 0.9f, disc.getY() + disc.getHeight() * 0.35f, true));
     g.fillEllipse (disc);
@@ -1377,7 +1432,7 @@ void Canvas::paintResoTabInner (juce::Graphics& g)
         {
             const auto red = resoShade (n.shape);
             g.setColour (red.withAlpha (0.2f)); g.fillEllipse (x - 21, y - 21, 42, 42);
-            { juce::Path p; p.addEllipse (x - 14, y - 12, 28, 28); juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 8, {}).drawForPath (g, p); }
+            { juce::Path p; p.addEllipse (x - 14, y - 12, 28, 28); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 8, {}), p); }
             g.setColour (juce::Colours::white); g.fillEllipse (x - 14, y - 14, 28, 28);
             g.setColour (red); g.fillEllipse (x - 11, y - 11, 22, 22);
             const std::vector<BubSeg> segs { { juce::String (i + 1), -1 }, { shapeNames[n.shape], 3 }, { hzText (n.hz), 0 }, { num (n.amount) + " dB", 1 },
@@ -1498,7 +1553,7 @@ void Canvas::paintResoStrip (juce::Graphics& g)
     {
         {
             juce::Path p; p.addRoundedRectangle (s.getX(), s.getY(), s.getWidth(), s.getHeight(), 10, 10, false, true, false, true);
-            juce::DropShadow (juce::Colours::black.withAlpha (0.2f), 18, { 6, 0 }).drawForPath (g, p);
+            cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.2f), 18, { 6, 0 }), p);
             g.setColour (col ("#1d1d20", 0.4f)); g.fillPath (p);   // V12: 60% see-through
             g.setColour (juce::Colours::white.withAlpha (0.07f)); g.strokePath (p, juce::PathStrokeType (1.0f));
         }
@@ -1616,7 +1671,7 @@ void Canvas::paintAdvanced (juce::Graphics& g)
     const R s (display.getRight() - pw, display.getY() + (display.getHeight() - ph) * 0.5f, pw, ph);
     {
         juce::Path p; p.addRoundedRectangle (s.getX(), s.getY(), s.getWidth(), s.getHeight(), 10, 10, true, false, true, false);
-        juce::DropShadow (juce::Colours::black.withAlpha (0.2f), 18, { -6, 0 }).drawForPath (g, p);
+        cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.2f), 18, { -6, 0 }), p);
         g.setColour (col ("#1d1d20", 0.4f)); g.fillPath (p);   // V12: 60% see-through
         g.setColour (juce::Colours::white.withAlpha (0.07f)); g.strokePath (p, juce::PathStrokeType (1.0f));
     }
@@ -2128,7 +2183,7 @@ void Canvas::vintageKnob (juce::Graphics& g, P tl, int unit, int knob, float pos
     if (U.kind == KnobKind::Stack)
     {
         const R ob (tl.x + 7, tl.y + 7, s, s);
-        { juce::Path p; p.addEllipse (ob.translated (0, 5)); juce::DropShadow (juce::Colours::black.withAlpha (0.85f), 6, {}).drawForPath (g, p); }
+        { juce::Path p; p.addEllipse (ob.translated (0, 5)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.85f), 6, {}), p); }
         g.saveState(); juce::Path cl; cl.addEllipse (ob); g.reduceClipRegion (cl);
         for (int k = 0; k < 72; ++k)
         {
@@ -2141,7 +2196,7 @@ void Canvas::vintageKnob (juce::Graphics& g, P tl, int unit, int knob, float pos
         g.restoreState();
         rim (ob);
     }
-    { juce::Path p; p.addEllipse (body.translated (0, 6)); juce::DropShadow (juce::Colours::black.withAlpha (0.85f), 6, {}).drawForPath (g, p); }
+    { juce::Path p; p.addEllipse (body.translated (0, 6)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.85f), 6, {}), p); }
     g.saveState();
     g.addTransform (rot);
     const juce::String capCol = U.caps[knob] != nullptr ? U.caps[knob] : (U.cap[0] != nullptr ? U.cap[0] : "#888888");

@@ -7,13 +7,14 @@
 #include "TahorModel.h"
 
 #ifndef TAHOR_VERSION
- #define TAHOR_VERSION 14
+ #define TAHOR_VERSION 15
 #endif
 #define TAHOR_V1 (TAHOR_VERSION >= 1)   // the first Tahor: RESO > TAHOR > CHARACTER, exactly the Claude Design canvas
 #define TAHOR_V2 (TAHOR_VERSION >= 2)   // input meter left / output right, Pro-Q-style analyzer, flat vintage units, nodes on
                                         // the Character curves, smaller see-through hardware, full screen, a livelier background
 #define TAHOR_V6 (TAHOR_VERSION >= 6)   // Reso's controls slide from the left, ADV from the right, dropdowns in the band panels,
                                         // colour shadows on Character, Reso's shades, centred arches, grain, smoother analyzer
+#define TAHOR_V15 (TAHOR_VERSION >= 15)  // smoother: background and shadows cached, 60 redraws a second
 #define TAHOR_V14 (TAHOR_VERSION >= 14)  // grab the dynamic range anywhere on its outline
 #define TAHOR_V13 (TAHOR_VERSION >= 13)  // the piano strip has an on / off button (starts off)
 #define TAHOR_V12 (TAHOR_VERSION >= 12)  // modern panels, right-click menus, band power, range drag, grab, multi-select, piano, EQ Match

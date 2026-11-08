@@ -70,7 +70,7 @@ Canvas::Canvas (TahorProcessor& p) : proc (p)
     hann.resize (8192);
     for (int i = 0; i < 8192; ++i) hann[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / 8192.0f);
     resoShown.assign ((size_t) PW + 1, 0.0f);
-    startTimerHz (45);   // V6: smoother movement
+    startTimerHz (60);   // V6: smoother movement; V14: 60 a second now the drawing is lighter
 }
 
 Canvas::~Canvas()
