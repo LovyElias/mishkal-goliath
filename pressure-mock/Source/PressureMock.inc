@@ -11,6 +11,27 @@ namespace
     // each CLEAN engine wears the colour of the original it comes from
     juce::Colour engineColour()
     {
+        if (gCompMode)   // VINTAGE: jewel tones - classy, each from its original
+        {
+            static const char* vc[15] { "#8a3a3f",    // LE-76: oxblood          (leather & wood - the old studio)
+                                       "#b5763e",    // LE-660: cognac
+                                       "#c4a27a",    // LE-STA: saddle tan
+                                       "#6b4a3a",    // LE-2500: walnut
+                                       "#5f6b4e",    // LE-G: olive
+                                       "#2f4a6b",    // LE-IRON: navy leather
+                                       "#7a5a8a",    // LE-336: aubergine
+                                       "#3f7a5e",    // LE-8X: racing green
+                                       "#c9a227",    // LE-160: mustard
+                                       "#3d8a8a",    // LE-7: teal
+                                       "#7d8590",    // LE-760: slate
+                                       "#e6d6b8",    // LE-SHM: cream
+                                       "#b9767a",    // LE-2A: dusty rose
+                                       "#5677ab",    // LE-1B: denim
+                                       "#d0682f" };  // LE-VSC: burnt orange  // LE-336: slate blue (the Neve's blue-grey)
+            const int vi = juce::jlimit (0, 14, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : 0);
+            if (auto* vs = std::getenv ("PRESS_VCOLS")) { auto t = juce::StringArray::fromTokens (vs, ",", ""); if (vi < t.size()) return col (t[vi].toRawUTF8()); }   // (mock: try a palette)
+            return col (vc[vi]);
+        }
         if (std::getenv ("PRESS_RVOX") != nullptr) return col ("#e8a98f");   // LE-755C: rose gold
         if (std::getenv ("PRESS_DS1")  != nullptr) { if (auto* c = std::getenv ("PRESS_DS1_COL")) return col (c); return col ("#efe5cf"); }   // LE-DS1: white gold (the DS1-MK3's white face, in the gold family)
         if (std::getenv ("PRESS_MLA")  != nullptr) return col ("#ecd59c");   // LE-MLA: pale gold over an ivory wave - Maselec MLA-2: silver and black, like the DS1 look - its blue light is in the meters and the reduction
@@ -60,7 +81,8 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
     if (kind == 1 && std::getenv ("PRESS_PRO") != nullptr) tc = col ("#b8a57f");    // LE-PRO: a bronze-tinted wave under the brass
     if (kind == 1 && std::getenv ("PRESS_MLA") != nullptr) tc = col ("#ebe7de");    // LE-MLA: ivory wave
     if (kind == 1 && std::getenv ("PRESS_DS1") != nullptr) tc = col ("#6e6a63");    // LE-DS1: a black wave (its black display)
-    if (kind == 1 && std::getenv ("PRESS_RVOX") == nullptr && std::getenv ("PRESS_DS1") == nullptr && std::getenv ("PRESS_MLA") == nullptr && std::getenv ("PRESS_PRO") == nullptr)
+    if (kind == 1 && gCompMode) tc = cleanC.interpolatedWith (col ("#77777c"), 0.55f);   // VINTAGE: a wave tinted by the unit's jewel colour
+    else if (kind == 1 && std::getenv ("PRESS_RVOX") == nullptr && std::getenv ("PRESS_DS1") == nullptr && std::getenv ("PRESS_MLA") == nullptr && std::getenv ("PRESS_PRO") == nullptr)
         tc = col ("#7e7567");                                                     // LE-RC: a slate wave under the smoked gold
     if (kind == 1) if (auto* w = std::getenv ("PRESS_WAVE_COL")) tc = col (w);   // (mock: try a separate waveform colour)
     auto at = [&] (const std::vector<float>& h, int age) { return h[(size_t) ((hPos - 1 - age + 2 * n) % n)]; };
@@ -215,7 +237,9 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
 }
 
 // a modern hardware knob: matte body with a knurled rim, a scale of ticks, the value as a glowing arc, a white index
+static constexpr int kVinUnits = 15;   // VINTAGE units in the mock (the first seven + LE-8X + seven more)
 static int gKnobSteps = 0;   // > 0: a stepped knob (like the Maselec's precision switches) - detent dots, not ticks
+static const char* const* gKnobLabels = nullptr;   // optional: a name at each step, like the markings round a rotary switch
 static void modernKnob (juce::Graphics& g, R b, float pos, juce::Colour c)
 {
     pos = juce::jlimit (0.0f, 1.0f, pos);
@@ -230,6 +254,12 @@ static void modernKnob (juce::Graphics& g, R b, float pos, juce::Colour c)
             g.setColour (sel ? c.interpolatedWith (juce::Colours::white, 0.3f) : juce::Colours::white.withAlpha (f <= pos ? 0.45f : 0.2f));
             const float d = sel ? 3.4f : 2.2f;
             g.fillEllipse (ctr.x + rr * std::sin (t) - d * 0.5f, ctr.y - rr * std::cos (t) - d * 0.5f, d, d);
+            if (gKnobLabels != nullptr)
+            {
+                const float rl = r + 17.0f;
+                text (g, gKnobLabels[i], font (Face::CondMedium, 8.5f, 0.6f), sel ? c.interpolatedWith (juce::Colours::white, 0.4f) : juce::Colours::white.withAlpha (0.42f),
+                      R (ctr.x + rl * std::sin (t) - 16, ctr.y - rl * std::cos (t) - 5, 32, 10), juce::Justification::centred);
+            }
         }
     }
     // ticks
@@ -587,6 +617,400 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         text (g, val, font (Face::Light, sz > 90 ? 20.0f : 16.0f, 0.5f), ink, R (cx - 80, y + 24 + sz + 12, 160, 22), juce::Justification::centred);
         return y + 24 + sz + 12 + 22;
     };
+    // ---- VINTAGE (glass): the unit's controls on the glass panels, its faceplate small at the bottom
+    if (gCompMode)
+    {
+        const int unit = juce::jlimit (0, kVinUnits - 1, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : preview);
+        // each unit's own controls - the real panel's knobs, rotary switches, push buttons and toggles, in glass
+        mThr = -18.0f; mRatio = 4.0f; mKnee = unit == 1 || unit == 5 || unit == 12 || unit == 13 ? 14.0f : unit == 2 || unit == 11 ? 10.0f : unit == 8 ? 8.0f : 4.0f;   // vari-mu and tube units: soft knees
+        auto stepped = [&] (float cx, float y, float sz, const char* lab, const char* val, int n, int at, const char* const* labs)
+        {
+            title (R (cx - 80, y, 160, 12), lab);   // the title sits higher, so the switch's markings have room
+            gKnobSteps = n; gKnobLabels = labs;
+            const float yy = bigKnob (cx, y + 14, sz, "", U8 (val), n > 1 ? (float) at / (float) (n - 1) : 0.5f);
+            gKnobSteps = 0; gKnobLabels = nullptr;
+            return yy;
+        };
+        // push buttons: little square caps with a light (1176 ratio and meter, SSL / Neve IN)
+        auto pushRow = [&] (R area, const char* tl, std::initializer_list<const char*> labs, int lit, bool all = false, int mask = 0)
+        {
+            if (tl != nullptr) title (R (area.getX(), area.getY(), area.getWidth(), 12), tl);
+            const int n = (int) labs.size();
+            const float gp = 6, w = (area.getWidth() - gp * (float) (n - 1)) / (float) n, y = area.getY() + (tl != nullptr ? 18.0f : 0.0f);
+            int i = 0;
+            for (auto* l : labs)
+            {
+                const R b (area.getX() + (float) i * (w + gp), y, w, 30);
+                const bool on = all || i == lit || ((mask >> i) & 1) != 0;
+                g.setGradientFill (juce::ColourGradient (col (on ? "#2c2c33" : "#1d1d22", 0.95f), 0, b.getY(), col ("#121216", 0.95f), 0, b.getBottom(), false));
+                g.fillRoundedRectangle (b, 4);
+                g.setColour (on ? cleanC.withAlpha (0.8f) : juce::Colours::white.withAlpha (0.14f)); g.drawRoundedRectangle (b.reduced (0.5f), 4, 1.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.08f)); g.fillRect (b.getX() + 3, b.getY() + 1.5f, b.getWidth() - 6, 1.0f);   // the cap's top edge catching light
+                const P led (b.getCentreX(), b.getY() + 7);
+                if (on) { g.setColour (cleanC.withAlpha (0.35f)); g.fillEllipse (led.x - 5, led.y - 5, 10, 10); }
+                g.setColour (on ? cleanC.interpolatedWith (juce::Colours::white, 0.35f) : juce::Colours::white.withAlpha (0.15f)); g.fillEllipse (led.x - 2, led.y - 2, 4, 4);
+                text (g, l, font (Face::CondMedium, 9.5f, 0.8f), on ? ink : grey, R (b.getX(), b.getY() + 13, b.getWidth(), 13), juce::Justification::centred);
+                ++i;
+            }
+            return y + 30;
+        };
+        // a bat toggle: a metal lever that leans towards the position it's in (API, Neve, Manley, Gates)
+        auto batToggle = [&] (R area, const char* tl, std::initializer_list<const char*> labs, int at)
+        {
+            title (R (area.getX(), area.getY(), area.getWidth(), 12), tl);
+            const int n = (int) labs.size();
+            const float y = area.getY() + 18, w = area.getWidth() / (float) n;
+            int i = 0;
+            for (auto* l : labs)
+            {
+                text (g, l, font (Face::CondMedium, 9, 1.0f), i == at ? cleanC.interpolatedWith (juce::Colours::white, 0.35f) : grey, R (area.getX() + w * (float) i, y, w, 11), juce::Justification::centred);
+                ++i;
+            }
+            const P nut (area.getCentreX(), y + 34);
+            const float target = area.getX() + w * ((float) at + 0.5f);
+            const float ang = std::atan2 (target - nut.x, 22.0f);
+            const P tip (nut.x + 20.0f * std::sin (ang), nut.y - 20.0f * std::cos (ang));
+            g.setGradientFill (juce::ColourGradient (col ("#3a3a42"), nut.x, nut.y - 9, col ("#141418"), nut.x, nut.y + 9, false));
+            g.fillEllipse (nut.x - 9, nut.y - 9, 18, 18);
+            g.setColour (juce::Colours::white.withAlpha (0.18f)); g.drawEllipse (nut.x - 9, nut.y - 9, 18, 18, 1.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.5f)); g.drawLine (nut.x + 1, nut.y + 1, tip.x + 1, tip.y + 1, 5.0f);
+            g.setGradientFill (juce::ColourGradient (col ("#f2f2f4"), nut.x - 3, 0, col ("#8a8c92"), nut.x + 3, 0, false));
+            g.drawLine (nut.x, nut.y, tip.x, tip.y, 3.6f);
+            g.setColour (col ("#e8e9ec")); g.fillEllipse (tip.x - 3.2f, tip.y - 3.2f, 6.4f, 6.4f);
+            g.setColour (cleanC.withAlpha (0.6f)); g.fillEllipse (tip.x - 1.2f, tip.y - 1.2f, 2.4f, 2.4f);
+            return nut.y + 14;
+        };
+        auto smallPair = [&] (float cx, float y, const char* l1, const char* v1, float p1, const char* l2, const char* v2, float p2)
+        {
+            const float sz = 56;
+            const char* labs[2] { l1, l2 }; const char* vals[2] { v1, v2 }; const float ps[2] { p1, p2 };
+            for (int i = 0; i < 2; ++i)
+            {
+                const float kx = cx + (i == 0 ? -46.0f : 46.0f);
+                title (R (kx - 46, y, 92, 12), labs[i]);
+                modernKnob (g, R (kx - sz * 0.5f, y + 20, sz, sz), ps[i], cleanC);
+                text (g, U8 (vals[i]), font (Face::Light, 14, 0.5f), ink, R (kx - 46, y + 20 + sz + 8, 92, 18), juce::Justification::centred);
+            }
+            return y + 20 + sz + 8 + 18;
+        };
+        const R sL (0, top, pw, ph), sR (PW - pw, top, pw, ph);
+        panel (sL, false); panel (sR, true);
+        const float cxL = sL.getCentreX(), cxR = sR.getCentreX();
+        float yL = sL.getY() + 62, yR = sR.getY() + 62;
+        const R rowL (sL.getX() + 16, 0, pw - 32, 0), rowR (sR.getX() + 16, 0, pw - 32, 0);
+        auto atY = [] (R r, float y, float h) { return r.withY (y).withHeight (h); };
+        switch (unit)
+        {
+            case 0:   // LE-76 (1176): Input and Output knobs, Attack and Release, the ratio push buttons and the meter buttons
+            {
+                yL = bigKnob (cxL, yL, 104, "INPUT", "+22 dB", 0.55f) + 26;
+                yL = pushRow (atY (rowL, yL, 48), "RATIO", { "4", "8", "12", "20" }, 0) + 10;
+                glassButton (g, atY (rowL, yL, 22), "ALL BUTTONS IN", false);
+                text (g, "the famous all-buttons smash", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 28, 12), juce::Justification::centred);
+                yL += 56;
+                // REVISION: every 1176 there was, one button - each click steps to the next (A, B, C, D, E, F, G, H, LN)
+                {
+                    static const char* rv[9] { "A", "B", "C", "D", "E", "F", "G", "H", "LN" };
+                    static const char* rn[9] { "BLUE STRIPE", "EARLY BLACK", "CLASS A", "BLACKFACE", "LOW NOISE", "BLACKFACE", "SILVER", "SILVER LN", "REISSUE" };
+                    const int r = std::getenv ("PRESS_REV") ? juce::jlimit (0, 8, std::atoi (std::getenv ("PRESS_REV"))) : 0;
+                    // each revision lights in its own colour - the look of that version
+                    static const char* rc[9] { "#4f8dff",    // A: blue stripe
+                                               "#e9e6df",    // B: early black - a plain white light
+                                               "#ffb347",    // C: class A - warm amber
+                                               "#f2ead8",    // D: blackface - soft ivory
+                                               "#5fd38a",    // E: low noise - green
+                                               "#d9c9a3",    // F: blackface - champagne
+                                               "#c9d1da",    // G: silver
+                                               "#a9d8ff",    // H: silver LN - ice blue
+                                               "#ff5a4f" };  // LN: the reissue - red
+                    const auto revC = col (rc[r]);
+                    title (atY (rowL, yL, 12), "REVISION");
+                    const R rb = atY (rowL, yL + 18, 26);
+                    glassButton (g, rb, (juce::String ("REV ") + rv[r] + "  /  " + rn[r]).toRawUTF8(), true, true);
+                    {   // its light, glowing the revision's colour (drawn over the button's own dot)
+                        const P d (rb.getX() + 12, rb.getCentreY());
+                        g.setColour (col ("#1a1a1f")); g.fillEllipse (d.x - 4, d.y - 4, 8, 8);
+                        g.setGradientFill (juce::ColourGradient (revC.withAlpha (0.65f), d.x, d.y, revC.withAlpha (0.0f), d.x + 11, d.y, true));
+                        g.fillEllipse (d.x - 11, d.y - 11, 22, 22);
+                        g.setColour (revC.interpolatedWith (juce::Colours::white, 0.25f)); g.fillEllipse (d.x - 3, d.y - 3, 6, 6);
+                        g.setColour (revC.withAlpha (0.5f)); g.drawRoundedRectangle (rb.reduced (0.5f), 6, 1.0f);
+                    }
+                    for (int i = 0; i < 9; ++i)
+                    {
+                        const P d (cxL - 32 + (float) i * 8, yL + 54);
+                        g.setColour (i == r ? revC : juce::Colours::white.withAlpha (0.2f)); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
+                    }
+                }
+                yR = bigKnob (cxR, yR, 76, "ATTACK", "0.25 ms", 0.4f) + 8;
+                yR = bigKnob (cxR, yR, 76, "RELEASE", "250 ms", 0.45f) + 12;
+                yR = smallPair (cxR, yR, "OUTPUT", "+9.0 dB", 0.45f, "MIX", "100%", 1.0f) + 14;
+                pushRow (atY (rowR, yR, 48), "METER", { "GR", "+8", "+4", "OFF" }, 0);
+                break;
+            }
+            case 1:   // LE-660 (Fairchild): Input Gain (stepped), Threshold, the 6-position Time Constant switch
+            {
+                static const char* ig[6] { "-12", "-8", "-4", "0", "+4", "+8" };
+                static const char* tcl[6] { "1", "2", "3", "4", "5", "6" };
+                yL = stepped (cxL, yL, 104, "INPUT GAIN", "0 dB", 6, 3, ig) + 26;
+                yL = bigKnob (cxL, yL, 80, "THRESHOLD", "4.0", 0.6f) + 20;
+                yR = stepped (cxR, yR, 80, "TIME CONSTANT", "2  -  0.8 s", 6, 1, tcl) + 14;
+                yR = bigKnob (cxR, yR, 64, "OUTPUT", "+6.0 dB", 0.5f) + 12;
+                yR = smallPair (cxR, yR, "DC THRESH", "0", 0.5f, "MIX", "100%", 1.0f);
+                break;
+            }
+            case 2:   // LE-STA (Gates Sta-Level): Input and Output, the Single / Double / Triple mode switch, the 6-position release
+            {
+                static const char* rl[6] { "1", "2", "3", "4", "5", "6" };
+                yL = bigKnob (cxL, yL, 104, "INPUT", "+10 dB", 0.45f) + 26;
+                yL = batToggle (atY (rowL, yL, 60), "MODE", { "SINGLE", "DOUBLE", "TRIPLE" }, 1);
+                yR = stepped (cxR, yR, 80, "RELEASE", "3", 6, 2, rl) + 18;
+                yR = bigKnob (cxR, yR, 72, "OUTPUT", "+4.0 dB", 0.5f) + 12;
+                yR = bigKnob (cxR, yR, 56, "MIX", "100%", 1.0f);
+                break;
+            }
+            case 3:   // LE-2500 (API 2500): stepped Threshold / Ratio / Attack / Release, Make-up, and its three toggles
+            {
+                static const char* ra[7] { "1.5", "2", "3", "4", "6", "10", "INF" };
+                static const char* at[6] { ".03", ".1", ".3", "1", "3", "10" };
+                static const char* re[6] { ".05", ".1", ".2", ".5", "1", "2" };
+                yL = bigKnob (cxL, yL - 8, 88, "THRESHOLD", U8 ("\xe2\x88\x92" "18 dB"), 0.55f) + 8;
+                yL = stepped (cxL, yL, 60, "RATIO", "4 : 1", 7, 3, ra) + 20;
+                yL = batToggle (atY (rowL, yL, 60), "KNEE", { "HARD", "MED", "SOFT" }, 1) + 4;
+                // THRUST: like the API's - one click steps NORM > MED > LOUD, and its little curve shows what the detector hears
+                // (MED and LOUD lean the detector away from the lows, so the bass pumps less)
+                {
+                    const int th = std::getenv ("PRESS_THRUST") ? juce::jlimit (0, 2, std::atoi (std::getenv ("PRESS_THRUST"))) : 0;
+                    const R tile = atY (rowL, yL, 74);
+                    // each setting has its own colour: NORM a calm ivory, MED warm amber, LOUD hot ember
+                    const juce::Colour tc = th == 0 ? col ("#d8d0c2") : th == 1 ? col ("#e8a24f") : col ("#ff5f3c");
+                    title (R (tile.getX(), tile.getY(), tile.getWidth(), 12), "THRUST");
+                    const R b = tile.withTrimmedTop (18);
+                    g.setGradientFill (juce::ColourGradient (col ("#1d1d22", 0.95f), 0, b.getY(), col ("#121216", 0.95f), 0, b.getBottom(), false));
+                    g.fillRoundedRectangle (b, 6);
+                    g.setColour (tc.withAlpha (0.55f)); g.drawRoundedRectangle (b.reduced (0.5f), 6, 1.0f);
+                    g.setColour (tc.withAlpha (0.10f)); g.fillRoundedRectangle (b.reduced (1), 5);   // the tile takes on the setting's colour
+                    // the three positions, the lit one bright (click anywhere on it to step on)
+                    const char* tl[3] { "NORM", "MED", "LOUD" };
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        const R c (b.getX() + 6 + (float) i * (b.getWidth() - 12) / 3.0f, b.getY() + 4, (b.getWidth() - 12) / 3.0f, 12);
+                        if (i == th) { g.setColour (tc.withAlpha (0.35f)); g.fillRoundedRectangle (c.reduced (4, 0), 6); }
+                        text (g, tl[i], font (Face::CondMedium, 9, 1.2f), i == th ? ink : grey, c, juce::Justification::centred);
+                    }
+                    // the curve: frequency across (20 Hz to 20 kHz), how much the detector hears up and down
+                    const R gr (b.getX() + 10, b.getY() + 20, b.getWidth() - 20, b.getHeight() - 26);
+                    g.setColour (juce::Colours::white.withAlpha (0.06f));
+                    for (float hz : { 100.0f, 1000.0f, 10000.0f }) { const float x = gr.getX() + std::log10 (hz / 20.0f) / 3.0f * gr.getWidth(); g.fillRect (x, gr.getY(), 1.0f, gr.getHeight()); }
+                    auto ptAt = [&] (float u)
+                    {
+                        const float hz = 20.0f * std::pow (1000.0f, u);
+                        // NORM: flat; MED: a gentle lean up; LOUD: a steeper lean, lows well down
+                        const float oct = std::log2 (hz / 1000.0f);
+                        const float db = th == 0 ? 0.0f : th == 1 ? juce::jlimit (-9.0f, 3.0f, 1.5f * oct) : juce::jlimit (-15.0f, 5.0f, 3.0f * oct);
+                        return P (gr.getX() + u * gr.getWidth(), gr.getY() + gr.getHeight() * 0.3f - db / 15.0f * gr.getHeight() * 0.68f);   // flat sits high; the lows lean down
+                    };
+                    juce::Path cv;
+                    for (int i = 0; i <= 60; ++i) { const P pt = ptAt ((float) i / 60.0f); if (i == 0) cv.startNewSubPath (pt); else cv.lineTo (pt); }
+                    g.setColour (tc.withAlpha (0.3f)); g.strokePath (cv, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                    g.setColour (tc.interpolatedWith (juce::Colours::white, 0.35f)); g.strokePath (cv, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                    // a dot running back and forth along it, up and down the lean, with a short glowing trail
+                    {
+                        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+                        const float u = std::getenv ("PRESS_THRUST_U") ? (float) std::atof (std::getenv ("PRESS_THRUST_U")) : 0.5f + 0.5f * (float) std::sin (tms / 1200.0);
+                        const float dir = std::getenv ("PRESS_THRUST_U") ? 1.0f : ((float) std::cos (tms / 1200.0) >= 0.0f ? 1.0f : -1.0f);
+                        // it leaves a trail of little sparkles behind it, like the knee's dot - drifting off the line and fading
+                        juce::Random rnd (11);
+                        auto star = [&] (P c, float r, juce::Colour cc)
+                        {
+                            juce::Path s;
+                            s.startNewSubPath (c.x, c.y - r); s.quadraticTo (c.x, c.y, c.x + r, c.y); s.quadraticTo (c.x, c.y, c.x, c.y + r);
+                            s.quadraticTo (c.x, c.y, c.x - r, c.y); s.quadraticTo (c.x, c.y, c.x, c.y - r); s.closeSubPath();
+                            g.setColour (cc); g.fillPath (s);
+                        };
+                        for (int i = 28; i >= 1; --i)
+                        {
+                            const float age = (float) i / 28.0f;
+                            const P c0 = ptAt (juce::jlimit (0.0f, 1.0f, u - dir * (float) i * 0.011f));
+                            const P c = c0.translated ((rnd.nextFloat() - 0.5f) * 10.0f * age, (rnd.nextFloat() - 0.5f) * 12.0f * age);
+                            const auto sc = tc.interpolatedWith (juce::Colour::fromHSV (std::fmod ((float) i * 0.05f, 1.0f), 0.6f, 1.0f, 1.0f), 0.35f);
+                            if (i % 2 == 0) star (c, 3.6f * (1.0f - age) + 1.0f, sc.withAlpha (0.85f * (1.0f - age)));
+                            else { g.setColour (sc.withAlpha (0.55f * (1.0f - age))); g.fillEllipse (c.x - 1.1f, c.y - 1.1f, 2.2f, 2.2f); }
+                        }
+                        const P c = ptAt (u);
+                        g.setGradientFill (juce::ColourGradient (tc.withAlpha (0.6f), c.x, c.y, tc.withAlpha (0.0f), c.x + 10, c.y, true));
+                        g.fillEllipse (c.x - 10, c.y - 10, 20, 20);
+                        g.setColour (tc.interpolatedWith (juce::Colours::white, 0.5f)); g.fillEllipse (c.x - 3.2f, c.y - 3.2f, 6.4f, 6.4f);
+                        g.setColour (juce::Colours::white); g.fillEllipse (c.x - 1.4f, c.y - 1.4f, 2.8f, 2.8f);
+                    }
+                    yL = tile.getBottom();
+                }
+                yR = stepped (cxR, yR, 64, "ATTACK", "1 ms", 6, 3, at) + 6;
+                yR = stepped (cxR, yR, 64, "RELEASE", ".2 s", 6, 2, re) + 2;
+                valueBar (g, atY (rowR, yR, 36), "VAR RELEASE", "1.4 s", 0.55f); yR += 44;   // the variable release beside the stepped one
+                valueBar (g, atY (rowR, yR, 36), "LINK", U8 ("100%  \xc2\xb7  shape HPF"), 1.0f); yR += 46;   // how much the two sides share, and its filter
+                yR = smallPair (cxR, yR, "MAKE-UP", "+4.0 dB", 0.2f, "MIX", "100%", 1.0f) + 8;
+                pushRow (atY (rowR, yR, 30), nullptr, { "COMP IN" }, 0);
+                break;
+            }
+            case 4:   // LE-G (SSL G bus): Threshold, the 3-step Ratio, 6-step Attack, 5-step Release with Auto, Make-up, the IN button
+            {
+                static const char* ra[3] { "2", "4", "10" };
+                static const char* at[6] { ".1", ".3", "1", "3", "10", "30" };
+                static const char* re[5] { ".1", ".3", ".6", "1.2", "AUTO" };
+                yL = bigKnob (cxL, yL, 104, "THRESHOLD", U8 ("\xe2\x88\x92" "12 dB"), 0.5f) + 22;
+                yL = stepped (cxL, yL, 72, "RATIO", "4 : 1", 3, 1, ra) + 18;
+                pushRow (atY (rowL, yL, 30), nullptr, { "COMP IN" }, 0);
+                yR = stepped (cxR, yR, 72, "ATTACK", "10 ms", 6, 4, at) + 8;
+                yR = stepped (cxR, yR, 72, "RELEASE", "AUTO", 5, 4, re) + 12;
+                yR = smallPair (cxR, yR, "MAKE-UP", "+3.0 dB", 0.15f, "MIX", "100%", 1.0f);
+                break;
+            }
+            case 5:   // LE-IRON (Manley Vari-Mu): Threshold, Compress / Limit, the HP sidechain, Attack 25-70 ms, 5-step Recovery, Output
+            {
+                static const char* rc[5] { ".2", ".4", ".6", "4", "8" };
+                static const char* in[7] { "-12", "-8", "-4", "0", "+4", "+8", "+12" };
+                yL = stepped (cxL, yL - 6, 64, "INPUT", "0 dB", 7, 3, in) + 6;   // the stepped input attenuator
+                yL = bigKnob (cxL, yL, 84, "THRESHOLD", U8 ("\xe2\x88\x92" "20 dB"), 0.5f) + 12;
+                yL = batToggle (atY (rowL, yL, 60), "MODE", { "COMPRESS", "LIMIT" }, 0) + 2;
+                yL = batToggle (atY (rowL, yL, 60), "HP SIDECHAIN", { "OFF", "100 Hz" }, 1);
+                yR = bigKnob (cxR, yR, 72, "ATTACK", "35 ms", 0.25f) + 8;
+                yR = stepped (cxR, yR, 72, "RECOVERY", "0.6 s", 5, 2, rc) + 12;
+                yR = smallPair (cxR, yR, "OUTPUT", "+4.0 dB", 0.5f, "MIX", "100%", 1.0f);
+                break;
+            }
+            case 7:   // LE-8X (Empirical Labs Distressor EL8-X): four knobs, and everything else on its buttons
+            {
+                yL = bigKnob (cxL, yL, 104, "INPUT", "4.5", 0.45f) + 24;
+                // RATIO: one button steps through them all, a light for each (Nuke is the brick wall)
+                yL = pushRow (atY (rowL, yL, 48), "RATIO", { "1:1", "2:1", "3:1", "4:1" }, 3) + 6;
+                yL = pushRow (atY (rowL, yL, 30), nullptr, { "6:1", "10:1", "20:1", "NUKE" }, -1) + 12;
+                // the X: British mode (the all-buttons sound, at any ratio)
+                glassButton (g, atY (rowL, yL, 22), "BRIT MODE", false);
+                text (g, "the all-buttons smash, at any ratio", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 28, 12), juce::Justification::centred);
+                yR = bigKnob (cxR, yR, 68, "ATTACK", "5.0", 0.5f) + 6;
+                yR = bigKnob (cxR, yR, 68, "RELEASE", "5.0", 0.5f) + 10;
+                yR = smallPair (cxR, yR, "OUTPUT", "4.0", 0.4f, "MIX", "100%", 1.0f) + 10;
+                // DETECTOR: what it listens with - each can be on (HP filter, band emphasis, stereo link)
+                yR = pushRow (atY (rowR, yR, 48), "DETECTOR", { "HP", "BAND", "LINK" }, -1, false, 0b001) + 8;
+                // AUDIO: what it adds - Dist 2 (tape-like, even), Dist 3 (tube-like, odd), and a gentle HP on the audio
+                pushRow (atY (rowR, yR, 48), "AUDIO", { "DIST 2", "DIST 3", "HP" }, 0);
+                break;
+            }
+            case 8:   // LE-160 (dbx 160): Threshold, Compression (ratio), Output; OverEasy; the meter's In / Out / GR
+            {
+                yL = bigKnob (cxL, yL, 104, "THRESHOLD", U8 ("\xe2\x88\x92" "10 dB"), 0.5f) + 22;
+                yL = bigKnob (cxL, yL, 80, "COMPRESSION", "4 : 1", 0.45f) + 20;
+                glassButton (g, atY (rowL, yL, 22), "OVEREASY", false);
+                text (g, "the soft knee dbx made famous", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 28, 12), juce::Justification::centred);
+                yR = bigKnob (cxR, yR, 84, "OUTPUT GAIN", "+6.0 dB", 0.55f) + 14;
+                yR = bigKnob (cxR, yR, 60, "MIX", "100%", 1.0f) + 18;
+                pushRow (atY (rowR, yR, 48), "METER", { "IN", "OUT", "GR" }, 2);
+                break;
+            }
+            case 9:   // LE-7 (Empirical Labs FATSO): Input drives it, Warmth tames the top, Output; the four compressor modes; Tranny
+            {
+                yL = bigKnob (cxL, yL, 104, "INPUT", "6.0", 0.6f) + 22;
+                yL = bigKnob (cxL, yL, 80, "WARMTH", "4.0", 0.4f) + 20;
+                pushRow (atY (rowL, yL, 30), nullptr, { "TRANNY" }, 0);
+                text (g, "low-end weight from the transformer", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 36, 12), juce::Justification::centred);
+                yR = bigKnob (cxR, yR, 84, "OUTPUT", "5.0", 0.5f) + 14;
+                yR = bigKnob (cxR, yR, 60, "MIX", "100%", 1.0f) + 18;
+                yR = pushRow (atY (rowR, yR, 48), "COMPRESSOR", { "BUSS", "G.P.", "TRACK" }, 0) + 6;
+                pushRow (atY (rowR, yR, 30), nullptr, { "SPANK" }, -1);
+                break;
+            }
+            case 10:  // LE-760 (Compex F760X-RS): stepped Threshold / Ratio, attack toggle, 9 releases + Auto; the limiter and expander / gate
+            {
+                static const char* th[6] { "-20", "-16", "-12", "-8", "-4", "0" };
+                static const char* ra[6] { "1", "2", "3", "5", "10", "20" };
+                static const char* re[6] { "25ms", ".1", ".4", "1.6", "3.2", "AUTO" };
+                yL = stepped (cxL, yL, 80, "THRESHOLD", "\xe2\x88\x92" "12 dB", 6, 2, th) + 10;
+                yL = stepped (cxL, yL, 64, "RATIO", "3 : 1", 6, 2, ra) + 12;
+                yL = batToggle (atY (rowL, yL, 60), "ATTACK", { "250us", "2.5ms", "25ms" }, 1);
+                yR = stepped (cxR, yR, 64, "RELEASE", "AUTO", 6, 5, re) + 8;
+                yR = batToggle (atY (rowR, yR, 60), "LIMITER", { "OFF", "ON", "PRE-EMP" }, 1) + 2;
+                yR = batToggle (atY (rowR, yR, 60), "EXPANDER", { "OFF", "EXP", "GATE" }, 0) + 6;
+                yR = smallPair (cxR, yR, "OUTPUT", "+3.0 dB", 0.5f, "MIX", "100%", 1.0f);
+                break;
+            }
+            case 11:  // LE-SHM (Shadow Hills Mastering Compressor): the optical stage on the left, the discrete stage on the right, the transformers
+            {
+                title (atY (rowL, yL - 16, 12), "OPTICAL");
+                yL = bigKnob (cxL, yL + 4, 88, "THRESHOLD", "4.0", 0.4f) + 12;
+                yL = bigKnob (cxL, yL, 64, "GAIN", "+2.0 dB", 0.3f) + 18;
+                yL = pushRow (atY (rowL, yL, 48), "TRANSFORMER", { "NICKEL", "IRON", "STEEL" }, 1) + 8;
+                text (g, "clean  /  thick  /  bright", font (Face::Regular, 9.5f), grey, atY (rowL, yL, 12), juce::Justification::centred);
+                title (atY (rowR, yR - 16, 12), "DISCRETE");
+                yR = smallPair (cxR, yR + 4, "THRESHOLD", "5.0", 0.5f, "RATIO", "2 : 1", 0.3f) + 14;
+                yR = smallPair (cxR, yR, "ATTACK", "3", 0.4f, "RECOVERY", "DUAL", 1.0f) + 14;
+                yR = smallPair (cxR, yR, "GAIN", "+1.5 dB", 0.3f, "MIX", "100%", 1.0f) + 10;
+                pushRow (atY (rowR, yR, 30), nullptr, { "OPTO IN", "DISCRETE IN" }, 0, true);
+                break;
+            }
+            case 12:  // LE-2A (LA-2A): Peak Reduction and Gain - that's it; Compress / Limit; the meter's GR / +10 / +4
+            {
+                yL = bigKnob (cxL, yL, 110, "PEAK REDUCTION", "45", 0.45f) + 26;
+                yL = batToggle (atY (rowL, yL, 60), "MODE", { "COMPRESS", "LIMIT" }, 0);
+                yR = bigKnob (cxR, yR, 96, "GAIN", "50", 0.5f) + 18;
+                yR = bigKnob (cxR, yR, 60, "MIX", "100%", 1.0f) + 18;
+                pushRow (atY (rowR, yR, 48), "METER", { "GR", "+10", "+4" }, 0);
+                break;
+            }
+            case 13:  // LE-1B (Tube-Tech CL 1B): Threshold, Ratio, Attack, Release, Gain; Fixed / Manual / Fixed-Manual timing
+            {
+                yL = bigKnob (cxL, yL, 104, "THRESHOLD", U8 ("\xe2\x88\x92" "16 dB"), 0.5f) + 22;
+                yL = bigKnob (cxL, yL, 80, "RATIO", "4 : 1", 0.4f) + 16;
+                yL = batToggle (atY (rowL, yL, 60), "TIMING", { "FIXED", "MANUAL", "F + M" }, 1);
+                yR = bigKnob (cxR, yR, 72, "ATTACK", "25 ms", 0.45f) + 8;
+                yR = bigKnob (cxR, yR, 72, "RELEASE", "0.5 s", 0.4f) + 12;
+                yR = smallPair (cxR, yR, "GAIN", "+6 dB", 0.4f, "MIX", "100%", 1.0f);
+                break;
+            }
+            case 14:  // LE-VSC (Vertigo VSC-3): Threshold, ratio 2-10 plus Soft and Brick, 10 attacks, 10 releases plus Auto Fast / Slow, Make-up, Peak / RMS
+            {
+                static const char* ra[8] { "SOFT", "2", "3", "4", "6", "8", "10", "BRICK" };
+                static const char* at[6] { ".1", ".3", "1", "3", "10", "40" };
+                static const char* re[6] { ".05", ".1", ".3", "1.2", "A.F", "A.S" };
+                yL = bigKnob (cxL, yL, 96, "THRESHOLD", "+2 dBu", 0.5f) + 14;
+                yL = stepped (cxL, yL, 72, "RATIO", "4 : 1", 8, 3, ra) + 14;
+                yL = batToggle (atY (rowL, yL, 60), "DETECTOR", { "PEAK", "RMS" }, 0);
+                yR = stepped (cxR, yR, 64, "ATTACK", "3 ms", 6, 3, at) + 6;
+                yR = stepped (cxR, yR, 64, "RELEASE", "AUTO SLOW", 6, 5, re) + 10;
+                yR = smallPair (cxR, yR, "MAKE-UP", "+4 dB", 0.2f, "MIX", "100%", 1.0f) + 10;
+                pushRow (atY (rowR, yR, 30), nullptr, { "BYPASS" }, -1);
+                break;
+            }
+            case 6:   // LE-336 (Neve 33609): compressor - Threshold, 5-step Ratio, Fast / Slow, 6-step Recovery; the limiter, Gain
+            {
+                static const char* ra[5] { "1.5", "2", "3", "4", "6" };
+                static const char* rc[6] { "100", "400", "800", "1.5k", "A1", "A2" };
+                yL = bigKnob (cxL, yL, 96, "THRESHOLD", U8 ("\xe2\x88\x92" "14 dB"), 0.5f) + 14;
+                yL = stepped (cxL, yL, 72, "RATIO", "3 : 1", 5, 2, ra) + 14;
+                yL = batToggle (atY (rowL, yL, 60), "ATTACK", { "FAST", "SLOW" }, 1);
+                yR = stepped (cxR, yR, 72, "RECOVERY", "A1", 6, 4, rc) + 8;
+                yR = smallPair (cxR, yR, "GAIN", "+6 dB", 0.3f, "LIMIT", "+12 dB", 0.6f) + 4;
+                static const char* lr[5] { "50", "100", "200", "A1", "A2" };
+                yR = stepped (cxR, yR, 56, "LIMIT RECOVERY", "100 ms", 5, 1, lr) + 8;   // the limiter's own recovery
+                pushRow (atY (rowR, yR, 30), nullptr, { "COMP IN", "LIMIT IN" }, 0, true);
+                break;
+            }
+        }
+        {
+            const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
+            const float alpha = (kneeOn || std::getenv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+            if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
+            paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
+        }
+        {   // on the right: the CHARACTER drawer (what the unit does to the tone), in place of the envelope
+            const bool eo = envOn || std::getenv ("PRESS_CHAR") != nullptr;
+            if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
+            paintEnvEdge (g, eo);
+        }
+        juce::ignoreUnused (unit);   // (no faceplate: the glass panels carry the unit)
+        paintTopStrip (g, std::getenv ("PRESS_TOPOFF") == nullptr);
+        paintScDrawer (g, std::getenv ("PRESS_SC") != nullptr);
+        return;
+    }
     // RVox: Goliath's one-knob vocal leveler - pushing COMPRESS levels the vocal and turns it up (like RVox);
     // LEVEL MATCH holds the level even instead, so you hear the compression, not the volume
     if (std::getenv ("PRESS_RVOX") != nullptr)
@@ -1069,7 +1493,7 @@ void Canvas::paintKneeContent (juce::Graphics& g, R k)
     else
     text (g, MINUS + juce::String (-mThr, 1) + U8 (" dB  \xc2\xb7  ") + juce::String (mRatio, 1).trimCharactersAtEnd (".0") + U8 (":1  \xc2\xb7  ") + (std::getenv ("PRESS_DS1") != nullptr ? juce::String ("soft knee 0.6") : mKnee < 0.5f ? juce::String ("hard knee") : "knee " + juce::String (mKnee, 0) + " dB"),
           font (Face::Regular, 10.5f), ink, R (a.getRight() - 214, a.getY() - 31, 214, 13), juce::Justification::centredRight);
-    if (std::getenv ("PRESS_RVOX") != nullptr || std::getenv ("PRESS_MLA") != nullptr)
+    if (std::getenv ("PRESS_RVOX") != nullptr || std::getenv ("PRESS_MLA") != nullptr || gCompMode)
         text (g, "FIXED", font (Face::CondMedium, 9, 1.6f), cleanC, R (a.getX() + 40, a.getY() - 30, 60, 12));
     text (g, "IN", font (Face::CondMedium, 9, 1.6f), grey, R (a.getRight() - 20, a.getBottom() + 16, 20, 10), juce::Justification::centredRight);
     text (g, "OUT", font (Face::CondMedium, 9, 1.6f), grey, R (a.getX() + 6, a.getY() + 4, 30, 10), juce::Justification::centredLeft);
@@ -1174,6 +1598,37 @@ void Canvas::paintTopStrip (juce::Graphics& g, bool open)
     auto flip = [&] (R r, const char* now, const char*) { glassButton (g, r, now, true, true); };
     auto toggle = [&] (R r, const char* t, bool on) { glassButton (g, r, t, on); };
     const float bw = 96, gap = 14;
+    if (gCompMode)   // VINTAGE: each unit's own switches, then Delta
+    {
+        const int u = std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : 0;
+        std::vector<std::pair<const char*, float>> fl;
+        switch (u)
+        {
+            // (SC HPF: the "bass doesn't pump it" filter, added to the units whose originals have none)
+            case 0:  fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-76: its buttons are on the panels
+            case 1:  fl = { { "LAT / VERT  OFF", 140 }, { "SC HPF  OFF", 104 } }; break;          // LE-660: mid-side ("lateral / vertical")
+            case 2:  fl = { { "METER  GR", 110 }, { "SC HPF  OFF", 104 } }; break;                // LE-STA
+            case 3:  fl = { { "TYPE  NEW", 104 } }; break;                                        // LE-2500: feed-forward (new) or feedback (old)
+            case 4:  fl = { { "AUTO FADE  OFF", 130 } }; break;                                   // LE-G
+            case 5:  fl = { { "LINK", 76 } }; break;                                              // LE-IRON
+            case 6:  fl = { { "LINK", 76 }, { "SC HPF  OFF", 104 } }; break;                      // LE-336
+            case 7:  fl = { { "IMAGE LINK", 104 } }; break;                                       // LE-8X: the X's image link
+            case 8:  fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-160
+            case 9:  fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-7
+            case 10: fl = { { "LINK", 76 } }; break;                                              // LE-760
+            case 11: fl = { { "LINK", 76 }, { "SC FILTER  90 Hz", 140 } }; break;                 // LE-SHM
+            case 12: fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-2A
+            case 13: fl = { { "SC  INTERNAL", 120 } }; break;                                     // LE-1B
+            default: fl = { { "STEREO SC", 110 }, { "SC FILTER  60 Hz", 140 } }; break;           // LE-VSC
+        }
+        float total = 76;
+        for (auto& f : fl) total += f.second + gap;
+        float x = (x0 + x1) * 0.5f - total * 0.5f;
+        for (auto& f : fl) { flip (R (x, cy - 11, f.second, 22), f.first, ""); x += f.second + gap; }
+        toggle (R (x, cy - 11, 76, 22), "DELTA", false);
+        paintArrowHandle (g, R ((x0 + x1) * 0.5f - 22, 31, 44, 14), 0, {});
+        return;
+    }
     if (std::getenv ("PRESS_PRO") != nullptr)   // LE-PRO: Character (off / warm / punchy) with its drive, Peak / RMS, Delta
     {
         // Character: Tube / Diode / Bright, its Drive, and whether it colours before or after the compressor;
@@ -1449,6 +1904,31 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
     const bool ds = std::getenv ("PRESS_DS1") != nullptr;
     const bool ml = std::getenv ("PRESS_MLA") != nullptr;
     const bool pr = std::getenv ("PRESS_PRO") != nullptr;
+    if (gCompMode)
+    {
+        const int unit = juce::jlimit (0, kVinUnits - 1, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : preview);
+        static const char* extra[8] { "LE-8X", "LE-160", "LE-7", "LE-760", "LE-SHM", "LE-2A", "LE-1B", "LE-VSC" };
+        const juce::String nm = unit < numCompUnits ? juce::String (units()[(size_t) unit].name) : juce::String (extra[unit - numCompUnits]);
+        text (g, nm, font (Face::Light, 15, 2.6f), ink, R (cx - 80, cy - 10, 160, 18), juce::Justification::centred);
+        static const char* subs[15] { "VINTAGE FET", "VARI-MU TUBE", "TUBE LEVELER", "BUS COMPRESSOR", "CONSOLE GLUE", "TUBE MASTERING", "DIODE BRIDGE", "DISTRESSOR",
+                                     "VCA PUNCH", "TAPE SIMULATOR", "COMP / LIMIT / GATE", "MASTERING DUAL", "OPTICAL TUBE", "TUBE OPTICAL", "DISCRETE VCA" };
+        text (g, subs[unit], font (Face::CondMedium, 8.5f, 2.2f), juce::Colours::white.withAlpha (0.9f), R (cx - 90, cy + 9, 180, 11), juce::Justification::centred);
+        const float half = textWidth (font (Face::Light, 15, 2.6f), nm) * 0.5f + 12.0f;
+        auto chv = [&] (float x, bool left)
+        {
+            juce::Path c;
+            if (left) { c.startNewSubPath (x + 3, cy - 5); c.lineTo (x - 2, cy); c.lineTo (x + 3, cy + 5); }
+            else      { c.startNewSubPath (x - 3, cy - 5); c.lineTo (x + 2, cy); c.lineTo (x - 3, cy + 5); }
+            g.setColour (cleanC.withAlpha (0.8f)); g.strokePath (c, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        };
+        chv (cx - half, true); chv (cx + half, false);
+        for (int i = 0; i < kVinUnits; ++i)
+        {
+            const P d (cx - (float) (kVinUnits - 1) * 4.0f + (float) i * 8, cy + 26);
+            g.setColour (i == unit ? cleanC : juce::Colours::white.withAlpha (0.2f)); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
+        }
+        return;
+    }
     const juce::String nm = rv ? "LE-755C" : ds ? "LE-DS1" : ml ? "LE-MLA" : pr ? "LE-580E" : "LE-11/25E";
     // what each one is for, under its name
     const juce::String sub = rv ? "VOCAL GRADE" : (ds || ml || pr) ? "MASTERING GRADE" : "MIX GRADE";
@@ -1460,7 +1940,7 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
         else      { c.startNewSubPath (x - 3, cy - 5); c.lineTo (x + 2, cy); c.lineTo (x - 3, cy + 5); }
         g.setColour (cleanC.withAlpha (0.8f)); g.strokePath (c, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     };
-    text (g, sub, font (Face::CondMedium, 8.5f, 2.2f), cleanC.withAlpha (0.85f), R (cx - 90, cy + 9, 180, 11), juce::Justification::centred);
+    text (g, sub, font (Face::CondMedium, 8.5f, 2.2f), juce::Colours::white.withAlpha (0.9f), R (cx - 90, cy + 9, 180, 11), juce::Justification::centred);
     const float half = textWidth (font (Face::Light, 15, 2.6f), nm) * 0.5f + 12.0f;   // the arrows sit just outside the name, however long
     chev (cx - half, true); chev (cx + half, false);
     for (int i = 0; i < 5; ++i)   // LE-RC, RVox, LE-DS1, LE-MLA, LE-PRO
@@ -1479,7 +1959,7 @@ void Canvas::paintEnvOverlay (juce::Graphics& g, R k, float alpha)
     {
         juce::Graphics ig (im);
         ig.addTransform (juce::AffineTransform::translation (-k.getX(), -k.getY()).scaled (sc));
-        paintEnvContent (ig, k);
+        if (gCompMode) paintCharContent (ig, k); else paintEnvContent (ig, k);
     }
     {
         juce::Image::BitmapData bd (im, juce::Image::BitmapData::readWrite);
@@ -1659,4 +2139,95 @@ void Canvas::paintEnvEdge (juce::Graphics& g, bool open)
         }
         g.endTransparencyLayer();
     }
+}
+
+// ---- the CHARACTER drawer (VINTAGE): what the unit does to the tone - its saturation curve and the harmonics it adds
+void Canvas::paintCharContent (juce::Graphics& g, R k)
+{
+    const R a = k.reduced (44, 96);
+    const float thd = std::getenv ("PRESS_THD") ? (float) std::atof (std::getenv ("PRESS_THD")) / 100.0f : 0.35f;
+    const float drive = 0.15f + 0.85f * thd;   // THD bends the curve and grows the harmonics
+    const R tc (a.getX(), a.getY() + 10, a.getWidth(), a.getHeight() * 0.5f);
+    // THD lives here, with what it does: a slim slider whose fill glows brighter amber the further it goes (like the EQs')
+    {
+        const float v = thd, cyT = tc.getBottom() + 34.0f;
+        auto fm = font (Face::CondMedium, 10, 1.2f);
+        const R box (a.getX() + a.getWidth() * 0.5f - 110, cyT - 12, 220, 24);
+        g.setColour (juce::Colours::black.withAlpha (0.35f)); g.fillRoundedRectangle (box, 12);
+        g.setColour (juce::Colours::white.withAlpha (0.14f)); g.drawRoundedRectangle (box.reduced (0.5f), 12, 1.0f);
+        text (g, "THD", fm, col ("#b9b3a7"), R (box.getX() + 14, box.getY(), 30, 24));
+        const R tr (box.getX() + 48, cyT - 1.5f, 120, 3);
+        fillRound (g, tr, 1.5f, juce::Colours::white.withAlpha (0.1f));
+        const auto glow = col ("#7a5418").interpolatedWith (col ("#ffcf7a"), v);
+        if (v > 0.001f)
+        {
+            const R on = tr.withWidth (tr.getWidth() * v);
+            g.setColour (glow.withAlpha (0.12f + 0.3f * v)); g.fillRoundedRectangle (on.expanded (1.5f + 2.5f * v), 3.5f);
+            fillRound (g, on, 1.5f, glow);
+        }
+        const float kx = tr.getX() + tr.getWidth() * v;
+        g.setColour (glow.withAlpha (0.25f * v)); g.fillEllipse (kx - 8, cyT - 8, 16, 16);
+        g.setColour (col ("#f4ede0")); g.fillEllipse (kx - 4.5f, cyT - 4.5f, 9, 9);
+        g.setColour (glow); g.fillEllipse (kx - 2, cyT - 2, 4, 4);
+        text (g, juce::String ((int) std::round (v * 100.0f)) + "%", font (Face::Regular, 10.5f), v > 0.5f ? col ("#ffcf7a") : col ("#b9b3a7"), R (tr.getRight() + 10, box.getY(), 40, 24));
+    }
+    auto fs = font (Face::Regular, 9);
+    for (int i = 0; i <= 4; ++i)
+    {
+        g.setColour (juce::Colours::white.withAlpha (i == 2 ? 0.1f : 0.05f));
+        g.fillRect (tc.getX() + tc.getWidth() * (float) i / 4.0f, tc.getY(), 1.0f, tc.getHeight());
+        g.fillRect (tc.getX(), tc.getY() + tc.getHeight() * (float) i / 4.0f, tc.getWidth(), 1.0f);
+    }
+    g.setColour (juce::Colours::white.withAlpha (0.14f)); g.drawLine (tc.getX(), tc.getBottom(), tc.getRight(), tc.getY(), 1.0f);   // a clean, straight line
+    auto curveY = [&] (float x) { const float k2 = 1.0f + 3.0f * drive; return juce::jlimit (-1.05f, 1.05f, std::tanh (k2 * x) / std::tanh (k2) + 0.06f * drive * x * x); };
+    auto at = [&] (float x) { return P (tc.getX() + (x + 1.0f) * 0.5f * tc.getWidth(), tc.getCentreY() - curveY (x) * 0.5f * tc.getHeight()); };
+    juce::Path cv;
+    for (int i = 0; i <= 200; ++i) { const P pt = at (-1.0f + 2.0f * (float) i / 200.0f); if (i == 0) cv.startNewSubPath (pt); else cv.lineTo (pt); }
+    g.setColour (juce::Colours::black.withAlpha (0.4f)); g.strokePath (cv, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (juce::Colours::white.withAlpha (0.95f)); g.strokePath (cv, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    {
+        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        const float ph = std::getenv ("PRESS_CHAR_X") ? (float) std::atof (std::getenv ("PRESS_CHAR_X")) : (float) std::sin (tms / 900.0) * 0.78f;
+        juce::Random rnd (3);
+        for (int i = 24; i >= 1; --i)
+        {
+            const float age = (float) i / 24.0f;
+            const P c = at (ph - (float) i * 0.012f);
+            const auto rc = juce::Colour::fromHSV (std::fmod ((float) i * 0.05f, 1.0f), 0.7f, 1.0f, 1.0f);
+            g.setColour (rc.withAlpha (0.7f * (1.0f - age)));
+            const float r = 1.2f + 3.0f * (1.0f - age), jx = (rnd.nextFloat() - 0.5f) * 16.0f * age, jy = (rnd.nextFloat() - 0.5f) * 16.0f * age;
+            g.fillEllipse (c.x + jx - r * 0.5f, c.y + jy - r * 0.5f, r, r);
+        }
+        const P c = at (ph);
+        const auto gold = col ("#ffd27a");
+        g.setGradientFill (juce::ColourGradient (gold.withAlpha (0.6f), c.x, c.y, gold.withAlpha (0.0f), c.x + 16, c.y, true));
+        g.fillEllipse (c.x - 16, c.y - 16, 32, 32);
+        g.setColour (gold.interpolatedWith (juce::Colours::white, 0.45f)); g.fillEllipse (c.x - 4.5f, c.y - 4.5f, 9, 9);
+        g.setColour (juce::Colours::white); g.fillEllipse (c.x - 2, c.y - 2, 4, 4);
+    }
+    text (g, "IN", font (Face::CondMedium, 9, 1.6f), grey, R (tc.getRight() - 20, tc.getBottom() + 4, 20, 10), juce::Justification::centredRight);
+    text (g, "OUT", font (Face::CondMedium, 9, 1.6f), grey, R (tc.getX() + 6, tc.getY() + 4, 30, 10), juce::Justification::centredLeft);
+    {
+        const R hb (a.getX(), tc.getBottom() + 84, a.getWidth(), a.getBottom() - tc.getBottom() - 96);
+        const float base[7] { 0.0f, 0.62f, 0.48f, 0.22f, 0.16f, 0.08f, 0.05f };   // (mock: the FET's mix - more 2nd and 3rd)
+        float lv[7]; for (int i = 0; i < 7; ++i) lv[i] = base[i] * (0.25f + 1.2f * thd) * (i > 2 ? 0.6f + thd : 1.0f);
+        const char* nm[7] { "", "2nd", "3rd", "4th", "5th", "6th", "7th" };
+        const float bwid = hb.getWidth() / 6.0f;
+        for (int i = 1; i < 7; ++i)
+        {
+            const float h = hb.getHeight() * lv[i];
+            const R bar (hb.getX() + bwid * (float) (i - 1) + 8, hb.getBottom() - h, bwid - 16, h);
+            g.setGradientFill (juce::ColourGradient (cleanC.withAlpha (0.75f), 0, bar.getY(), cleanC.withAlpha (0.12f), 0, bar.getBottom(), false));
+            g.fillRoundedRectangle (bar, 3);
+            g.setColour (juce::Colours::white.withAlpha (0.5f)); g.fillRect (bar.getX(), bar.getY(), bar.getWidth(), 1.0f);
+            text (g, nm[i], fs, i <= 2 ? ink : grey, R (bar.getCentreX() - 20, hb.getBottom() + 6, 40, 10), juce::Justification::centred);
+        }
+        text (g, "HARMONICS", font (Face::CondMedium, 9, 1.6f), grey, R (hb.getX(), hb.getY() - 14, 100, 10));
+        text (g, U8 ("even = warm  \xc2\xb7  odd = edge"), fs, grey, R (hb.getRight() - 160, hb.getY() - 14, 160, 10), juce::Justification::centredRight);
+    }
+    text (g, "CHARACTER", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
+    static const char* cr[15] { "FET colour", "vari-mu tube colour", "tube colour", "transformer punch", "console sheen", "tube & iron colour", "diode & iron colour", "Dist 2 / Dist 3 colour",
+                                "VCA bite", "tape & tranny colour", "discrete colour", "transformer colour", "opto tube colour", "tube colour", "discrete VCA colour" };
+    const int cu = juce::jlimit (0, kVinUnits - 1, std::getenv ("PRESS_VUNIT") ? std::atoi (std::getenv ("PRESS_VUNIT")) : 0);
+    text (g, juce::String (cr[cu]) + U8 ("  \xc2\xb7  THD ") + juce::String ((int) std::round (thd * 100.0f)) + "%", font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
 }

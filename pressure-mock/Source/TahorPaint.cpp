@@ -266,7 +266,7 @@ void Canvas::paint (juce::Graphics& g)
     paintMeters (g);
     paintGrMeter (g);
     paintGateMeter (g);
-    if (tab == 1) paintEngineSlide (g);
+    if (tab == 1 || tab == 2) paintEngineSlide (g);
     if (tab == 0)
     {
         const bool off = proc.param ("resoOn") < 0.5f;   // V9: the panels dim too (still adjustable)
@@ -704,7 +704,7 @@ void Canvas::paintDisplay (juce::Graphics& g)
     g.reduceClipRegion (shape);   // V5: the arched screen
     g.addTransform (juce::AffineTransform::translation (d.getX(), d.getY()));
     paintBackground (g);
-    paintDynScreen (g, tab);
+    paintDynScreen (g, tab == 2 ? 1 : tab);   // (VINTAGE uses the same glass screen as CLEAN now)
     if (false)   // (Pressure: no frequency labels)
     {
         auto f = font (Face::Regular, 11);
@@ -714,7 +714,7 @@ void Canvas::paintDisplay (juce::Graphics& g)
     }
     if (tab == 0) paintLevelTab (g);
     if (tab == 1) paintCleanTab (g);
-    if (tab == 2) paintCharTab (g);
+    if (tab == 2) paintCleanTab (g);   // VINTAGE in glass: panels + faceplate (the old chain view: paintCharTab)
     g.restoreState();
     // V4: the screen fades softly into the header and the bottom bar
     {

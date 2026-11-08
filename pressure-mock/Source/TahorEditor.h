@@ -104,6 +104,7 @@ private:
     void paintEnvOverlay (juce::Graphics&, ui::R, float alpha);   // the envelope drawer: the right panel's twin of the knee
     void paintEnvContent (juce::Graphics&, ui::R);
     void paintEnvEdge (juce::Graphics&, bool open);
+    void paintCharContent (juce::Graphics&, ui::R);   // VINTAGE: the character drawer
     bool envOn = false;   // opened from its glass edge on the right panel, or while Attack / Release is touched
     void paintArrowHandle (juce::Graphics&, ui::R, int dir, const juce::String& label);
     void paintTopStrip (juce::Graphics&, bool open);
