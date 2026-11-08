@@ -2584,6 +2584,12 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
     const bool ds = penv ("PRESS_DS1") != nullptr;
     const bool ml = penv ("PRESS_MLA") != nullptr;
     const bool pr = penv ("PRESS_PRO") != nullptr;
+    if (tab == 0)   // HELPERS: one set of four tools - its name, and what's inside under it (no arrows, nothing to switch)
+    {
+        text (g, "LE-4", font (Face::Light, 15, 2.6f), ink, R (cx - 80, cy - 10, 160, 18), juce::Justification::centred);
+        text (g, U8 ("PEAK  \xc2\xb7  RIDE  \xc2\xb7  LIFT  \xc2\xb7  BREATH"), font (Face::CondMedium, 8.5f, 2.2f), juce::Colours::white.withAlpha (0.9f), R (cx - 120, cy + 9, 240, 11), juce::Justification::centred);
+        return;
+    }
     if (gCompMode)
     {
         const int unit = juce::jlimit (0, kVinUnits - 1, penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : preview);

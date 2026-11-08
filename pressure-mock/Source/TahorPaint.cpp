@@ -274,7 +274,7 @@ void Canvas::paint (juce::Graphics& g)
     paintMeters (g);
     paintGrMeter (g);
     paintGateMeter (g);
-    if (tab == 1 || tab == 2) paintEngineSlide (g);
+    paintEngineSlide (g);   // CLEAN / VINTAGE: the unit and its arrows; HELPERS: LE-4
     if (tab == 0)
     {
         const bool off = proc.param ("resoOn") < 0.5f;   // V9: the panels dim too (still adjustable)
@@ -629,7 +629,7 @@ void Canvas::paintHeader (juce::Graphics& g)
     {
         auto f = font (Face::CondMedium, 10, 1.3f);
         const char* names[3] { "HELPERS", "CLEAN", "VINTAGE" };
-        const juce::Colour cols[3] { col ("#2bc2b0"), engineColour(), amber };   // CLEAN: the engine's colour
+        const juce::Colour cols[3] { col ("#b08d57"), engineColour(), amber };   // HELPERS: its bronze; CLEAN: the engine's colour
         const char* pw[3] { "resoOn", "tahorOn", "charOn" };
         const float labW = textWidth (f, "VINTAGE");
         const float w = 16 + 6 + 5 + 5 + labW + 7 + 9 + 6 + 16;
