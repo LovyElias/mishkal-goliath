@@ -521,6 +521,8 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
         const bool moved = e.position.getDistanceFrom (downAt) > 3.0f;
         if (! moved)
         {
+            if (down.kind == Hit::PCtl && down.b >= 100 && juce::isPositiveAndBelow (down.a, (int) pz.size()))   // a segment: pick it
+                proc.setParam (pz[(size_t) down.a], (float) (down.b - 100));
             if (down.kind == Hit::PCtl && (down.b == 1 || down.b == 2) && juce::isPositiveAndBelow (down.a, (int) pz.size()))
                 if (auto* p = proc.apvts.getParameter (pz[(size_t) down.a]))   // click: the next setting (or the one before)
                 {

@@ -25,8 +25,49 @@ const char* Canvas::flagFor (const char* name)
     if (is ("PRESS_DS1_BAND")) return (int) proc.param ("cDsBand") == 1 ? yes : nullptr;
     if (is ("PRESS_RVOX_DEMO")) return tab == 1 && eng == 1 && proc.param ("cVoxComp") < -0.5f ? yes : nullptr;
     if (is ("PRESS_MLA_LAMPOFF")) return proc.grDb.load() < 0.3f ? yes : nullptr;   // green while it isn't compressing
+    if (is ("PRESS_LIFTMODE")) return (int) proc.param ("hLiftMode") == 1 ? yes : nullptr;
     if (is ("PRESS_VUNIT")) { static char b[8]; std::snprintf (b, sizeof (b), "%d", juce::jlimit (0, 14, preview)); return b; }
     return nullptr;
+}
+
+// PRESSURE: everything that goes away fades out over 3 seconds (drawers, the knee display, controls that sit back)
+float Canvas::fadeOut (int key, bool on)
+{
+   #if PRESSURE_MOCK
+    return on ? 1.0f : 0.0f;   // (snapshots: no fading)
+   #else
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (on) { fadeAt[key] = now; return 1.0f; }
+    const auto it = fadeAt.find (key);
+    if (it == fadeAt.end()) return 0.0f;
+    return (float) juce::jlimit (0.0, 1.0, 1.0 - (now - it->second) / 3000.0);
+   #endif
+}
+void Canvas::paintTopStripFaded (juce::Graphics& g)
+{
+    const bool open = penv ("PRESS_TOPOFF") == nullptr;
+    const float a = fadeOut (2, open);
+    if (open) { paintTopStrip (g, true); return; }
+    if (a > 0.01f)   // tucking away: the strip fades out (its buttons no longer answer)
+    {
+        const auto nz = zones.size(); const auto np = pz.size();
+        g.beginTransparencyLayer (a); paintTopStrip (g, true); g.endTransparencyLayer();
+        zones.resize (nz); pz.resize (np);
+    }
+    paintTopStrip (g, false);
+}
+void Canvas::paintScDrawerFaded (juce::Graphics& g)
+{
+    const bool open = penv ("PRESS_SC") != nullptr;
+    const float a = fadeOut (3, open);
+    if (open) { paintScDrawer (g, true); return; }
+    if (a > 0.01f)   // closing: the detector EQ and its controls fade out
+    {
+        const auto nz = zones.size(); const auto np = pz.size();
+        g.beginTransparencyLayer (a); paintScDrawer (g, true); g.endTransparencyLayer();
+        zones.resize (nz); pz.resize (np);
+    }
+    paintScDrawer (g, false);
 }
 
 int Canvas::pctl (R r, const juce::String& pid, int kind)
@@ -63,6 +104,18 @@ juce::String Canvas::pfmt (const juce::String& pid) const
         if (x < 10.0f) return juce::String (x, 1) + " ms";
         return juce::String ((int) std::round (x)) + " ms";
     };
+    // HELPERS
+    if (pid == "hLowHz" || pid == "hHighHz") return v >= 1000.0f ? juce::String (v / 1000.0f, v < 10000.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " kHz" : juce::String ((int) std::round (v)) + " Hz";
+    if (pid == "hLowThr" || pid == "hHighThr" || pid == "hBreath") return minus + juce::String ((int) std::round (std::abs (v))) + " dB";
+    if (pid == "hLowLift" || pid == "hHighLift") return "+" + juce::String (v, v < 10.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " dB";
+    if (pid == "hRideRange") return juce::String::fromUTF8 ("\xc2\xb1") + juce::String (v, 1).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " dB";
+    if (pid == "hRideTarget") return minus + juce::String (std::abs (v), 0);
+    if (pid == "hRideSpeed") return pchoice (pid).toUpperCase();
+    if (pid == "hBreathSense") return juce::String ((int) std::round (v)) + " %";
+    if (pid == "hBreathFade") return juce::String ((int) std::round (v)) + " ms";
+    if (pid == "hPkIn" || pid == "hPkOut") return (v < -0.05f ? minus : v > 0.05f ? juce::String ("+") : juce::String()) + juce::String (std::abs (v), 0) + " dBu";
+    if (pid == "hPkSlope") return (v >= 99.5f ? juce::String ("100") : juce::String (v, v < 10.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")) + " : 1";
+    if (pid == "hPkRel") return juce::String (v, 1).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
     if (pid == "cThresh") return db (v, 1, false);
     if (pid == "cRatio")  return (v >= 19.95f ? juce::String ("INF") : juce::String (v, v < 10.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")) + " : 1";
     if (pid == "cKnee")   return juce::String (v, 0) + " dB";
@@ -165,9 +218,9 @@ void Canvas::pushHistory()
    #else
     // the real thing: CLEAN's reduction and what comes out (HELPERS and VINTAGE pass the sound through in V1)
     const float out = juce::Decibels::gainToDecibels (juce::jmax (proc.meterL.load(), proc.meterR.load()), -90.0f);
-    hGr[(size_t) hPos] = tab == 1 && proc.param ("tahorOn") > 0.5f ? proc.grDb.load() : 0.0f;
-    hRide[(size_t) hPos] = 0.0f;
-    hBreath[(size_t) hPos] = 0.0f;
+    hGr[(size_t) hPos] = tab == 1 && proc.param ("tahorOn") > 0.5f ? proc.grDb.load() : tab == 0 ? proc.helpers.peakGr.load() : 0.0f;
+    hRide[(size_t) hPos] = proc.helpers.rideDb.load();
+    hBreath[(size_t) hPos] = -proc.helpers.breathRed.load();
     hOut[(size_t) hPos] = out;
     juce::ignoreUnused (ride);
    #endif
@@ -267,8 +320,14 @@ void Canvas::paintDynScreen (juce::Graphics& g, int kind)
         }
         const float ride = at (hRide, 0);
         pill (x1 - 10, mid - ride * 10.0f - 18, "RIDER  " + juce::String (ride > 0 ? "+" : ride < 0 ? MINUS : juce::String()) + juce::String (std::abs (ride), 1) + " dB", helperC);
+       #if PRESSURE_MOCK
         pill (x1 - 10, py - 14, U8 ("1964  \xe2\x88\x92") + "6.0 dB", peakC);
         pill (x1 - 10, 600, U8 ("BREATHS  \xe2\x88\x92") + "8 dB", helperC);
+       #else
+        { const float pg = proc.helpers.peakGr.load();   // what the 1964 is taking off right now, and the breath dip
+          pill (x1 - 10, py - 14, "1964  " + (pg > 0.05f ? MINUS + juce::String (pg, 1) : juce::String ("0.0")) + " dB", peakC);
+          pill (x1 - 10, 600, "BREATHS  " + MINUS + juce::String (std::abs (proc.param ("hBreath")), 0) + " dB", helperC); }
+       #endif
         return;
     }
     // gain reduction, hanging from the top (1 dB = 9 px)
@@ -1238,18 +1297,18 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         }
         {
             const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-            const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+            const float alpha = juce::jmax ((kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : 0.0f, fadeOut (0, kneeOn), (float) (since < 4000.0 ? 1.0 : juce::jlimit (0.0, 1.0, 1.0 - (since - 4000.0) / 3000.0)));
             if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
             paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
         }
         {   // on the right: the CHARACTER drawer (what the unit does to the tone), in place of the envelope
             const bool eo = envOn || penv ("PRESS_CHAR") != nullptr;
-            if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
+            { const float ea = juce::jmax (eo ? 1.0f : 0.0f, fadeOut (1, envOn)); if (ea > 0.01f) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), ea); }
             paintEnvEdge (g, eo);
         }
         juce::ignoreUnused (unit);   // (no faceplate: the glass panels carry the unit)
-        paintTopStrip (g, penv ("PRESS_TOPOFF") == nullptr);
-        paintScDrawer (g, penv ("PRESS_SC") != nullptr);
+        paintTopStripFaded (g);
+        paintScDrawerFaded (g);
         return;
     }
     // RVox: Goliath's one-knob vocal leveler - pushing COMPRESS levels the vocal and turns it up (like RVox);
@@ -1288,18 +1347,18 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             const float keepT = mThr, keepR = mRatio, keepK = mKnee;
             mThr = proc.param ("cVoxComp"); mRatio = 3.0f; mKnee = 10.0f;
             const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-            const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+            const float alpha = juce::jmax ((kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : 0.0f, fadeOut (0, kneeOn), (float) (since < 4000.0 ? 1.0 : juce::jlimit (0.0, 1.0, 1.0 - (since - 4000.0) / 3000.0)));
             if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
             paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
             mThr = keepT; mRatio = keepR; mKnee = keepK;
             {   // the envelope drawer: the right panel's twin of the knee
                 const bool eo = envOn || penv ("PRESS_ENV") != nullptr;
-                if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
+                { const float ea = juce::jmax (eo ? 1.0f : 0.0f, fadeOut (1, envOn)); if (ea > 0.01f) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), ea); }
                 paintEnvEdge (g, eo);
             }
         }
-        paintTopStrip (g, penv ("PRESS_TOPOFF") == nullptr);
-        paintScDrawer (g, penv ("PRESS_SC") != nullptr);
+        paintTopStripFaded (g);
+        paintScDrawerFaded (g);
         return;
     }
     // left: threshold, ratio, and the knee with its little graph
@@ -1390,12 +1449,12 @@ void Canvas::paintCleanTab (juce::Graphics& g)
     // Pro-C 3 style knee display: big, over the waveform, while Threshold, Ratio or Knee is touched - fades 4 s after
     {
         const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-        const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+        const float alpha = juce::jmax ((kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : 0.0f, fadeOut (0, kneeOn), (float) (since < 4000.0 ? 1.0 : juce::jlimit (0.0, 1.0, 1.0 - (since - 4000.0) / 3000.0)));
         if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);   // the Figma size
         paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
         {   // the envelope drawer: the right panel's twin of the knee
             const bool eo = envOn || penv ("PRESS_ENV") != nullptr;
-            if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
+            { const float ea = juce::jmax (eo ? 1.0f : 0.0f, fadeOut (1, envOn)); if (ea > 0.01f) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), ea); }
             paintEnvEdge (g, eo);
         }
     }
@@ -1437,7 +1496,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             // faint until the mouse comes over it (like Range and Hold) - but always clear when it's on
             const R br (s.getX() + 18, yy, pw - 36, 22);
             const bool near = br.expanded (8).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_RH") != nullptr || pon (pid);
-            g.beginTransparencyLayer (near ? 1.0f : 0.14f);
+            g.beginTransparencyLayer (0.14f + (1.0f - 0.14f) * fadeOut (__LINE__, near));
             glassButton (g, br, t, pon (pid));
             g.endTransparencyLayer();
             pctl (br, pid, 1);
@@ -1476,15 +1535,15 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             const float bw = (pw - 36 - 10) * 0.5f, ry = 650.0f - 21.0f;
             const R both (s.getX() + 18, ry, pw - 36, 42);
             const bool near = both.expanded (10).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_RH") != nullptr;
-            g.beginTransparencyLayer (near ? 1.0f : 0.14f);
+            g.beginTransparencyLayer (0.14f + (1.0f - 0.14f) * fadeOut (__LINE__, near));
             valueBar (g, R (s.getX() + 18, ry, bw, 42), "RANGE", pfmt ("cRange"), pn ("cRange"));
             valueBar (g, R (s.getX() + 18 + bw + 10, ry, bw, 42), "HOLD", pfmt ("cHold"), pn ("cHold"));
             pctl (R (s.getX() + 18, ry, bw, 42), "cRange", 0); pctl (R (s.getX() + 18 + bw + 10, ry, bw, 42), "cHold", 0);
             g.endTransparencyLayer();
         }
     }
-    paintTopStrip (g, penv ("PRESS_TOPOFF") == nullptr);
-    paintScDrawer (g, penv ("PRESS_SC") != nullptr);
+    paintTopStripFaded (g);
+    paintScDrawerFaded (g);
     // the strip along the bottom: off for now (Lovy is deciding where its controls go)
     if (false)
     {
@@ -1566,8 +1625,10 @@ void Canvas::paintLevelTab (juce::Graphics& g)
     // a card's title: a coloured dot (lit when on) and the tool's name, a hairline under it
     bool cardOn = true;   // the card being drawn is on (its controls dim when it's off)
     // a card's title: a coloured dot (lit when on), the tool's name, its on / off button at the right end, a hairline under it
-    auto card = [&] (R s, float& y, const char* name, juce::Colour c, bool on)
+    auto card = [&] (R s, float& y, const char* name, juce::Colour c, const char* pid)
     {
+        const bool on = pon (pid);
+        pctl (R (s.getX() + 18 + s.getWidth() - 36 - 18, y - 5, 22, 22), pid, 1);   // its power button
         cardOn = on;
         const float x = s.getX() + 18, w = s.getWidth() - 36;
         g.setColour (on ? c : juce::Colours::white.withAlpha (0.2f)); g.fillEllipse (x, y + 3, 5, 5);
@@ -1581,8 +1642,14 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         y += 28;
     };
     // a row of small knobs: label above, value under
-    auto knobs = [&] (R s, float& y, std::initializer_list<std::tuple<const char*, juce::String, float>> ks, juce::Colour c)
+    auto knobs = [&] (R s, float& y, std::initializer_list<std::pair<const char*, const char*>> kp, juce::Colour c)
     {
+        std::vector<std::tuple<const char*, juce::String, float>> ks;
+        for (auto& k : kp) ks.push_back ({ k.first, pfmt (k.second), pn (k.second) });
+        {
+            const int n0 = (int) kp.size(); const float w0 = (s.getWidth() - 36) / (float) n0, sz0 = n0 >= 3 ? 48.0f : n0 == 2 ? 64.0f : 76.0f; int i0 = 0;
+            for (auto& k : kp) { const float cx = s.getX() + 18 + w0 * ((float) i0++ + 0.5f); pctl (R (cx - sz0 * 0.5f - 4, y + 13, sz0 + 8, sz0 + 8), k.second, 0); }
+        }
         const int n = (int) ks.size();
         const float w = (s.getWidth() - 36) / (float) n, sz = n >= 3 ? 48.0f : n == 2 ? 64.0f : 76.0f;
         const bool ring = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
@@ -1601,8 +1668,10 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         if (! cardOn) g.endTransparencyLayer();
         y += 17 + sz + (ring ? 12.0f : 6.0f + 16.0f + 10.0f);
     };
-    auto seg = [&] (R r, std::initializer_list<const char*> labs, int at, juce::Colour c)
+    auto seg = [&] (R r, std::initializer_list<const char*> labs, const char* pid, juce::Colour c)
     {
+        const int at = (int) proc.param (pid);
+        { const int n0 = (int) labs.size(); for (int i0 = 0; i0 < n0; ++i0) pctl (R (r.getX() + r.getWidth() * (float) i0 / (float) n0, r.getY() - 3, r.getWidth() / (float) n0, r.getHeight() + 6), pid, 100 + i0); }
         g.setColour (juce::Colours::black.withAlpha (0.3f)); g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
         g.setColour (juce::Colours::white.withAlpha (0.12f)); g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() * 0.5f, 1.0f);
         const int n = (int) labs.size(); int i = 0;
@@ -1616,8 +1685,11 @@ void Canvas::paintLevelTab (juce::Graphics& g)
     };
     const auto teal = helperC, hpC = col ("#7fd3ff"), brC = helperC, flC = col ("#c08bff"), liC = helperC;
     // a column of knobs, one under another (Lift's bands): label above, value under
-    auto knobCol = [&] (float cx, float y, float colW, std::initializer_list<std::tuple<const char*, juce::String, float>> ks, juce::Colour c, float sz)
+    auto knobCol = [&] (float cx, float y, float colW, std::initializer_list<std::pair<const char*, const char*>> kp, juce::Colour c, float sz)
     {
+        std::vector<std::tuple<const char*, juce::String, float>> ks;
+        { float yy = y; const bool ring0 = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
+          for (auto& k : kp) { ks.push_back ({ k.first, pfmt (k.second), pn (k.second) }); pctl (R (cx - sz * 0.5f - 4, yy + 12, sz + 8, sz + 8), k.second, 0); yy += 16 + sz + (ring0 ? 14.0f : 5.0f + 16.0f + 12.0f); } }
         const bool ring = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
         if (! cardOn) g.beginTransparencyLayer (0.3f);
         for (auto& k : ks)
@@ -1635,20 +1707,24 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         const R s (PW - pw, top, pw, ph);
         panel (s, true);
         float y = s.getY() + 36;
-        card (s, y, "LIFT  /  2-BAND", liC, true);
-        seg (R (s.getX() + 18, y, s.getWidth() - 36, 18), { "UPWARD", "DYN EQ" }, liftDynEq() ? 1 : 0, liC);
+        card (s, y, "LIFT  /  2-BAND", liC, "hLiftOn");
+        seg (R (s.getX() + 18, y, s.getWidth() - 36, 18), { "UPWARD", "DYN EQ" }, "hLiftMode", liC);
         y += 30;
         const float colW = (s.getWidth() - 36) * 0.5f, cL = s.getX() + 18 + colW * 0.5f, cR = cL + colW;
         text (g, "LOW", font (Face::CondMedium, 9.5f, 2.0f), ink, R (cL - colW * 0.5f, y, colW, 11), juce::Justification::centred);
         text (g, "HIGH", font (Face::CondMedium, 9.5f, 2.0f), ink, R (cR - colW * 0.5f, y, colW, 11), juce::Justification::centred);
         g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (cL + colW * 0.5f - 0.5f, y + 18, 1.0f, 290.0f);
         y += 20;
-        knobCol (cL, y, colW, { { "FREQ", "120 Hz", 0.25f }, { "THRESH", U8 ("\xe2\x88\x92" "30 dB"), 0.4f }, { "LIFT", "+4 dB", 0.6f } }, liC, 54.0f);
-        y = knobCol (cR, y, colW, { { "FREQ", "6 kHz", 0.7f }, { "THRESH", U8 ("\xe2\x88\x92" "34 dB"), 0.35f }, { "LIFT", "+3 dB", 0.55f } }, liC, 54.0f) + 4;
+        knobCol (cL, y, colW, { { "FREQ", "hLowHz" }, { "THRESH", "hLowThr" }, { "LIFT", "hLowLift" } }, liC, 54.0f);
+        y = knobCol (cR, y, colW, { { "FREQ", "hHighHz" }, { "THRESH", "hHighThr" }, { "LIFT", "hHighLift" } }, liC, 54.0f) + 4;
         {   // Breath's light: blinks each time it catches a breath, and how many it has caught
             const int n = (int) hBreath.size();
             auto bAt = [&] (int age) { return hBreath[(size_t) ((hPos - 1 - age + 2 * n) % n)]; };
+           #if PRESSURE_MOCK
             const bool lit = bAt (0) < -3.0f;
+           #else
+            const bool lit = proc.helpers.breathRed.load() > 1.0f;   // it's dipping a breath right now
+           #endif
             int caught = 0; for (int a = 1; a < n; ++a) if (bAt (a - 1) < -3.0f && bAt (a) >= -3.0f) ++caught;
             const float lx = s.getRight() - 18 - 14 - 24, ly = y + 1.5f;
             if (lit) { g.setGradientFill (juce::ColourGradient (brC.withAlpha (0.7f), lx + 4, ly + 4, brC.withAlpha (0.0f), lx + 14, ly + 4, true)); g.fillEllipse (lx - 6, ly - 6, 20, 20); }
@@ -1656,12 +1732,16 @@ void Canvas::paintLevelTab (juce::Graphics& g)
             g.setColour (juce::Colours::black.withAlpha (0.5f)); g.drawEllipse (lx, ly, 8, 8, 0.8f);
             juce::ignoreUnused (caught);
         }
-        card (s, y, "BREATH", brC, penv ("PRESS_HOFF") == nullptr);
-        knobs (s, y, { { "AMOUNT", U8 ("\xe2\x88\x92" "8 dB"), 0.33f }, { "SENSE", "55 %", 0.55f }, { "FADE", "40 ms", 0.4f } }, brC);
+        card (s, y, "BREATH", brC, "hBreathOn");
+        knobs (s, y, { { "AMOUNT", "hBreath" }, { "SENSE", "hBreathSense" }, { "FADE", "hBreathFade" } }, brC);
         {   // the breaths it has caught lately: each one a soft bronze dip, scrolling with the music
             const int n = (int) hBreath.size();
             auto bAt = [&] (int age) { return hBreath[(size_t) ((hPos - 1 - age + 2 * n) % n)]; };
+           #if PRESSURE_MOCK
             int caught = 0; for (int a = 1; a < n; ++a) if (bAt (a - 1) < -3.0f && bAt (a) >= -3.0f) ++caught;
+           #else
+            const int caught = proc.helpers.breaths.load();   // since the session started
+           #endif
             const float x = s.getX() + 18, w = s.getWidth() - 36;
             y += 2;
             text (g, "CAUGHT", font (Face::CondMedium, 8.5f, 1.6f), col ("#b9b3a7"), R (x, y, 80, 10));
@@ -1688,7 +1768,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         panel (s, false);
         float y = s.getY() + 36;
         const float ty = y;
-        card (s, y, "1964 PEAK", peakC, true);
+        card (s, y, "1964 PEAK", peakC, "hPeakOn");
         {   // its two lights: white when peaks cross the threshold, red on overload
             auto led = [&] (float x, juce::Colour c, bool on, const char* l)
             {
@@ -1697,24 +1777,33 @@ void Canvas::paintLevelTab (juce::Graphics& g)
                 g.setColour (on ? c : c.withAlpha (0.25f)); g.fillEllipse (d.x - 2.6f, d.y - 2.6f, 5.2f, 5.2f);
                 text (g, l, font (Face::CondMedium, 7.5f, 1.0f), grey, R (d.x - 16, d.y + 5, 32, 9), juce::Justification::centred);
             };
+           #if PRESSURE_MOCK
             led (s.getRight() - 86, col ("#f4f1ea"), true, "THR");
             led (s.getRight() - 62, col ("#ff4a3d"), false, "OVER");
+           #else
+            led (s.getRight() - 86, col ("#f4f1ea"), proc.helpers.peakGr.load() > 0.3f, "THR");      // peaks crossing the threshold
+            led (s.getRight() - 62, col ("#ff4a3d"), proc.helpers.outPeak.load() > 0.98f, "OVER");   // the output at the top
+           #endif
         }
         // BUILD NOTE: the 1964 must be super clean, like the Spectra 1964 610 - no saturation, no distortion, no colour stage of any kind.
         text (g, "TRANSPARENT  /  NO COLOUR", font (Face::CondMedium, 7.5f, 1.4f), grey, R (s.getX() + 30, y - 9, s.getWidth() - 50, 9));
         y += 4;
-        knobs (s, y, { { "INPUT", U8 ("\xe2\x88\x92" "40 dBu"), 0.55f }, { "OUTPUT", "+4 dBu", 0.5f } }, peakC);
-        knobs (s, y, { { "SLOPE", "2 : 1", 0.5f }, { "RELEASE", "3", 0.3f } }, peakC);
-        seg (R (s.getX() + 18, y, (s.getWidth() - 36) * 0.48f, 18), { "GR", "+4", "+8" }, 0, peakC);
-        seg (R (s.getX() + 18 + (s.getWidth() - 36) * 0.52f, y, (s.getWidth() - 36) * 0.48f, 18), { "OFF", "10", "20" }, 0, peakC);   // the pad: off, 10 or 20 dB
+        knobs (s, y, { { "INPUT", "hPkIn" }, { "OUTPUT", "hPkOut" } }, peakC);
+        knobs (s, y, { { "SLOPE", "hPkSlope" }, { "RELEASE", "hPkRel" } }, peakC);
+        seg (R (s.getX() + 18, y, (s.getWidth() - 36) * 0.48f, 18), { "GR", "+4", "+8" }, "hPkMeter", peakC);
+        seg (R (s.getX() + 18 + (s.getWidth() - 36) * 0.52f, y, (s.getWidth() - 36) * 0.48f, 18), { "OFF", "10", "20" }, "hPkPad", peakC);   // the pad: off, 10 or 20 dB
         text (g, "METER", font (Face::CondMedium, 7.5f, 1.0f), grey, R (s.getX() + 18, y + 20, 80, 9));
         text (g, "PAD", font (Face::CondMedium, 7.5f, 1.0f), grey, R (s.getX() + 18 + (s.getWidth() - 36) * 0.52f, y + 20, 40, 9));
         y += 46;
-        card (s, y, "RIDER", teal, true);
-        knobs (s, y, { { "RANGE", U8 ("\xc2\xb1" "6 dB"), 0.5f }, { "TARGET", U8 ("\xe2\x88\x92" "16"), 0.6f }, { "SPEED", "MED", 0.5f } }, teal);
+        card (s, y, "RIDER", teal, "hRideOn");
+        knobs (s, y, { { "RANGE", "hRideRange" }, { "TARGET", "hRideTarget" }, { "SPEED", "hRideSpeed" } }, teal);
         {   // the Rider's meter: how far it is riding right now (+/-6 dB from the centre), and the loudness in vs its target
             const int n = (int) hRide.size();
+           #if PRESSURE_MOCK
             const float ride = hRide[(size_t) ((hPos - 1 + n) % n)];
+           #else
+            const float ride = proc.helpers.rideDb.load();
+           #endif
             const float x = s.getX() + 18, w = s.getWidth() - 36;
             y += 4;
             text (g, "RIDING", font (Face::CondMedium, 8.5f, 1.6f), col ("#b9b3a7"), R (x, y, 80, 10));
@@ -1722,17 +1811,18 @@ void Canvas::paintLevelTab (juce::Graphics& g)
                   font (Face::CondMedium, 9.5f, 1.0f), teal.interpolatedWith (juce::Colours::white, 0.3f), R (x + w - 80, y - 1, 80, 11), juce::Justification::centredRight);
             const R bar (x, y + 17, w, 8);
             fillRound (g, bar, 4, col ("#000000", 0.4f)); strokeRound (g, bar, 4, juce::Colours::white.withAlpha (0.1f));
-            const float cx = bar.getCentreX(), ex = cx + ride / 6.0f * (w * 0.5f - 4);
+            const float rng = juce::jmax (1.0f, proc.param ("hRideRange")), cx = bar.getCentreX(), ex = cx + juce::jlimit (-1.0f, 1.0f, ride / rng) * (w * 0.5f - 4);
             const R fillR (juce::jmin (cx, ex), bar.getY() + 2, std::abs (ex - cx), 4);
             g.setGradientFill (juce::ColourGradient (teal.withAlpha (0.25f), cx, 0, teal.withAlpha (0.9f), ex, 0, false)); g.fillRoundedRectangle (fillR, 2.0f);
             g.setGradientFill (juce::ColourGradient (teal.withAlpha (0.6f), ex, bar.getCentreY(), teal.withAlpha (0.0f), ex + 10, bar.getCentreY(), true)); g.fillEllipse (ex - 10, bar.getCentreY() - 10, 20, 20);
             g.setColour (juce::Colours::white); g.fillEllipse (ex - 2.5f, bar.getCentreY() - 2.5f, 5, 5);
-            const char* tl[] { "\xe2\x88\x92" "6", "\xe2\x88\x92" "3", "0", "+3", "+6" };
+            const juce::String rf = juce::String (rng, 0), rh = juce::String (rng * 0.5f, rng < 4.0f ? 1 : 0);
+            const juce::String tlS[] { MINUS + rf, MINUS + rh, "0", "+" + rh, "+" + rf };
             for (int i = 0; i < 5; ++i)
             {
                 const float tx = bar.getX() + 4 + (w - 8) * (float) i / 4.0f;
                 g.setColour (juce::Colours::white.withAlpha (i == 2 ? 0.35f : 0.15f)); g.fillRect (tx - 0.5f, bar.getBottom() + 2, 1.0f, i == 2 ? 5.0f : 3.0f);
-                text (g, juce::String::fromUTF8 (tl[i]), font (Face::Regular, 8), grey, R (tx - 12, bar.getBottom() + 7, 24, 9), juce::Justification::centred);
+                text (g, tlS[i], font (Face::Regular, 8), grey, R (tx - 12, bar.getBottom() + 7, 24, 9), juce::Justification::centred);
             }
             // loudness: what's coming in, and where the Rider is bringing it (its target)
             const float yl = bar.getBottom() + 26;
@@ -1742,8 +1832,13 @@ void Canvas::paintLevelTab (juce::Graphics& g)
                 text (g, l, font (Face::CondMedium, 7.5f, 1.4f), grey, R (rx, yl, 60, 9));
                 text (g, MINUS + juce::String (std::abs (v), 1), font (Face::Light, 15.0f, 0.3f), c, R (rx, yl + 10, 60, 18));
             };
+           #if PRESSURE_MOCK
             read (x, "IN", slowLvl, ink);
             read (x + w * 0.42f, "OUT", slowLvl + ride, teal.interpolatedWith (juce::Colours::white, 0.35f));
+           #else
+            read (x, "IN", juce::jmax (-60.0f, proc.helpers.loudIn.load()), ink);
+            read (x + w * 0.42f, "OUT", juce::jmax (-60.0f, proc.helpers.loudOut.load()), teal.interpolatedWith (juce::Colours::white, 0.35f));
+           #endif
             text (g, "LUFS", font (Face::CondMedium, 7.5f, 1.4f), grey, R (x + w - 40, yl + 15, 40, 9), juce::Justification::centredRight);
             g.setColour (teal.withAlpha (0.6f)); g.drawArrow (juce::Line<float> (x + w * 0.27f, yl + 19, x + w * 0.38f, yl + 19), 1.0f, 5.0f, 4.0f);
         }
@@ -1752,9 +1847,9 @@ void Canvas::paintLevelTab (juce::Graphics& g)
     // the left edge: the KNEE drawer back, like the compressors - here it draws the 1964's curve (threshold and slope)
     {
         const float keepT = mThr, keepR = mRatio, keepK = mKnee;
-        mThr = -14.0f; mRatio = 2.0f; mKnee = 6.0f;
+        mThr = pressure::peakThreshold (proc.helperSettings()); mRatio = proc.param ("hPkSlope"); mKnee = 2.0f;   // the 1964's own curve
         const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
-        const float alpha = (kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
+        const float alpha = juce::jmax ((kneeOn || penv ("PRESS_KNEE") != nullptr) ? 1.0f : 0.0f, fadeOut (0, kneeOn), (float) (since < 4000.0 ? 1.0 : juce::jlimit (0.0, 1.0, 1.0 - (since - 4000.0) / 3000.0)));
         if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
         paintKneeEdge (g, kneeOn || penv ("PRESS_KNEE") != nullptr);
         mThr = keepT; mRatio = keepR; mKnee = keepK;
@@ -1762,7 +1857,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
     // the right edge: the TONE drawer - the high pass and the two Lift bands on a frequency graph, moving with the music
     {
         const bool eo = envOn || penv ("PRESS_DYNEQ") != nullptr;
-        if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
+        { const float ea = juce::jmax (eo ? 1.0f : 0.0f, fadeOut (1, envOn)); if (ea > 0.01f) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), ea); }
         paintEnvEdge (g, eo);
     }
     gHelperTab = false;
@@ -1934,7 +2029,7 @@ void Canvas::paintKneeEdge (juce::Graphics& g, bool open)
         const R h (strip.getCentreX() - 12, 310, 24, 60);
         dz (h.expanded (8, 6), Hit::PDrawer, 0);
         const bool near = h.expanded (30, 40).contains (mouse - display.getPosition());
-        g.beginTransparencyLayer (near ? 1.0f : 0.18f);
+        g.beginTransparencyLayer (0.18f + (1.0f - 0.18f) * fadeOut (__LINE__, near));
         juce::Path p; p.addRoundedRectangle (h, 12);
         cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.4f), 10, { 0, 3 }), p);
         g.setGradientFill (juce::ColourGradient (col ("#2c2b38", 0.85f), h.getX(), h.getY(), col ("#17171d", 0.85f), h.getRight(), h.getBottom(), false));
@@ -1957,7 +2052,7 @@ void Canvas::paintKneeEdge (juce::Graphics& g, bool open)
 void Canvas::paintArrowHandle (juce::Graphics& g, R h, int dir, const juce::String& label)
 {
     const bool near = h.expanded (30, 30).contains (mouse - display.getPosition());
-    g.beginTransparencyLayer (near ? 1.0f : 0.2f);
+    g.beginTransparencyLayer (0.2f + 0.8f * fadeOut (__LINE__ * 100000 + (int) h.getX() * 7 + (int) h.getY(), near));
     juce::Path p; p.addRoundedRectangle (h, juce::jmin (h.getWidth(), h.getHeight()) * 0.5f);
     g.setGradientFill (juce::ColourGradient (col ("#2c2b38", 0.85f), h.getX(), h.getY(), col ("#17171d", 0.85f), h.getRight(), h.getBottom(), false));
     g.fillPath (p);
@@ -2364,7 +2459,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         g.fillRect (strip.getX(), strip.getCentreY() - 0.5f, h.getX() - 6 - strip.getX(), 1.0f);
         g.fillRect (h.getRight() + 6, strip.getCentreY() - 0.5f, strip.getRight() - h.getRight() - 6, 1.0f);
         const bool near = h.expanded (40, 30).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_SC") != nullptr;
-        g.beginTransparencyLayer (near ? 1.0f : 0.35f);
+        g.beginTransparencyLayer (0.35f + 0.65f * fadeOut (__LINE__, near));
         for (int i = 0; i < 2; ++i)
         {
             const float cx = h.getX() + 18 + (float) i * 10, cy = h.getCentreY();
@@ -2430,7 +2525,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         auto toggle = [&] (R r, const char* t, bool on) { glassButton (g, r, t, on); };
         const R rowR (PW * 0.5f - 380.0f, cy - 26, 760, 50);
         const bool nearRow = rowR.expanded (10).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_ROW") != nullptr;
-        g.beginTransparencyLayer (nearRow ? 1.0f : 0.14f);
+        g.beginTransparencyLayer (0.14f + 0.86f * fadeOut (__LINE__, nearRow));
         float x = PW * 0.5f - 372.0f;
         const bool pro = penv ("PRESS_PRO") != nullptr, sync = pro && penv ("PRESS_PRO_SYNC") != nullptr;
         // LE-PRO's sources: Internal, External, MIDI, Host Sync (a pump in time with the song)
@@ -2812,7 +2907,7 @@ void Canvas::paintEnvEdge (juce::Graphics& g, bool open)
         const R h (strip.getCentreX() - 12, 310, 24, 60);
         dz (h.expanded (8, 6), Hit::PDrawer, 1);
         const bool near = h.expanded (30, 40).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_ENV") != nullptr;
-        g.beginTransparencyLayer (near ? 1.0f : 0.18f);
+        g.beginTransparencyLayer (0.18f + (1.0f - 0.18f) * fadeOut (__LINE__, near));
         juce::Path p; p.addRoundedRectangle (h, 12);
         cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.4f), 10, { 0, 3 }), p);
         g.setGradientFill (juce::ColourGradient (col ("#2c2b38", 0.85f), h.getX(), h.getY(), col ("#17171d", 0.85f), h.getRight(), h.getBottom(), false));
@@ -2924,14 +3019,17 @@ void Canvas::paintCharContent (juce::Graphics& g, R k)
 // ---- HELPER's TONE drawer: the high pass and Lift's two bands on a frequency graph; the bands rise and settle with the music
 
 // UPWARD mode: each band as a level curve - below its threshold quiet parts are lifted (up to its Lift), above it untouched
-static void paintUpwardCurves (juce::Graphics& g, R a, juce::Colour liC, double tms)
+struct LiftView { float lowHz = 120, lowThr = -30, lowLift = 4, lowLvl = -40, highHz = 6000, highThr = -34, highLift = 3, highLvl = -44; bool live = false; };
+static juce::String liftHzText (float hz) { return hz >= 1000.0f ? juce::String (hz / 1000.0f, hz < 10000.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " kHz" : juce::String ((int) std::round (hz)) + " Hz"; }
+static void paintUpwardCurves (juce::Graphics& g, R a, juce::Colour liC, double tms, const LiftView& lv = {})
 {
     // UPWARD mode: for each band, how much it lifts at every input level - the full Lift on quiet parts, easing to none at its threshold
     const float gap = 36.0f, bw = (a.getWidth() - gap) * 0.5f;
     struct Band { const char* name; const char* hz; float thr, lift, ratio, lvl; double per, ph; };
+    const juce::String hzL = liftHzText (lv.lowHz), hzH = liftHzText (lv.highHz);
     const Band bands[] {
-        { "LOW",  "120 Hz", -30.0f, 4.0f, 1.2f, -40.0f + 9.0f * (float) std::sin (tms / 700.0), 700.0, 0.0 },
-        { "HIGH", "6 kHz",  -34.0f, 3.0f, 1.2f, -44.0f + 10.0f * (float) std::sin (tms / 530.0 + 1.3), 530.0, 1.3 } };
+        { "LOW",  hzL.toRawUTF8(), lv.lowThr, lv.lowLift, 1.2f, lv.live ? juce::jlimit (-60.0f, 0.0f, lv.lowLvl) : -40.0f + 9.0f * (float) std::sin (tms / 700.0), 700.0, 0.0 },
+        { "HIGH", hzH.toRawUTF8(), lv.highThr, lv.highLift, 1.2f, lv.live ? juce::jlimit (-60.0f, 0.0f, lv.highLvl) : -44.0f + 10.0f * (float) std::sin (tms / 530.0 + 1.3), 530.0, 1.3 } };
     auto gainAt = [] (const Band& b, float in)
     {
         const float under = b.thr - in, kn = 6.0f;
@@ -3003,7 +3101,12 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
     if (! liftDynEq())
     {
         const double tms0 = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
-        paintUpwardCurves (g, a, helperC, tms0);
+        LiftView lv;
+       #if ! PRESSURE_MOCK
+        lv = { proc.param ("hLowHz"), proc.param ("hLowThr"), proc.param ("hLowLift"), proc.helpers.lowLvl.load(),
+               proc.param ("hHighHz"), proc.param ("hHighThr"), proc.param ("hHighLift"), proc.helpers.highLvl.load(), true };
+       #endif
+        paintUpwardCurves (g, a, helperC, tms0, lv);
         text (g, "TONE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
         text (g, U8 ("Lift  \xc2\xb7  upward, 2 bands"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
         return;
@@ -3028,7 +3131,13 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
     }
     const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
     // how much each band is lifting right now (mock: breathing with the music)
+   #if PRESSURE_MOCK
     const float l1 = 4.0f * (0.55f + 0.45f * (float) std::sin (tms / 700.0)), l2 = 3.0f * (0.55f + 0.45f * (float) std::sin (tms / 530.0 + 1.3));
+    const float fL = 120.0f, fH = 6000.0f, mL = 4.0f, mH = 3.0f;
+   #else
+    const float l1 = proc.helpers.liftLow.load(), l2 = proc.helpers.liftHigh.load();   // what each band is lifting right now
+    const float fL = proc.param ("hLowHz"), fH = proc.param ("hHighHz"), mL = proc.param ("hLowLift"), mH = proc.param ("hHighLift");
+   #endif
     auto bell = [] (float hz, float f0, float db, float w) { const float o = std::log2 (hz / f0); return db * std::exp (-o * o * w); };
     auto hp = [] (float) { return 0.0f; };   // (the high pass is gone from HELPER)
     auto curve = [&] (std::function<float (float)> f)
@@ -3044,14 +3153,14 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
     };
     // the bands' reach: where each can lift to, faint
     {
-        auto reach = curve ([&] (float hz) { return bell (hz, 120.0f, 4.0f, 1.2f) + bell (hz, 6000.0f, 3.0f, 1.0f); });
+        auto reach = curve ([&] (float hz) { return bell (hz, fL, mL, 1.2f) + bell (hz, fH, mH, 1.0f); });
         const float dl[] { 3.0f, 4.0f };
         juce::Path d; juce::PathStrokeType (1.0f).createDashedStroke (d, reach, dl, 2);
         g.setColour (liC.withAlpha (0.35f)); g.fillPath (d);
     }
     // the whole thing right now: high pass + both bands as they're lifting this moment - bright, with a glow under it
     {
-        auto total = curve ([&] (float hz) { return hp (hz) + bell (hz, 120.0f, l1, 1.2f) + bell (hz, 6000.0f, l2, 1.0f); });
+        auto total = curve ([&] (float hz) { return hp (hz) + bell (hz, fL, l1, 1.2f) + bell (hz, fH, l2, 1.0f); });
         juce::Path fill (total); fill.lineTo (a.getRight(), fy (0)); fill.lineTo (a.getX(), fy (0)); fill.closeSubPath();
         g.setGradientFill (juce::ColourGradient (liC.withAlpha (0.22f), 0, fy (5), liC.withAlpha (0.0f), 0, fy (0), false)); g.fillPath (fill);
         g.setColour (juce::Colours::black.withAlpha (0.4f)); g.strokePath (total, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
@@ -3079,8 +3188,8 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
         text (g, juce::String (name) + "  +" + juce::String (lift, 1) + " dB", font (Face::CondMedium, 9, 1.2f), ink, R (c.x - 60, c.y - 28, 120, 11), juce::Justification::centred);
         juce::ignoreUnused (maxLift);
     };
-    bandDot (120.0f, l1, 4.0f, "LOW");
-    bandDot (6000.0f, l2, 3.0f, "HIGH");
+    bandDot (fL, l1, mL, "LOW");
+    bandDot (fH, l2, mH, "HIGH");
     text (g, "TONE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
     text (g, U8 ("Lift  \xc2\xb7  dynamic EQ, 2 bands"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
 }

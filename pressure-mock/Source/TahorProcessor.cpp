@@ -70,6 +70,27 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
 
     // ===== PRESSURE =====
     // (the three tabs' power buttons keep their old ids: resoOn = HELPERS, tahorOn = CLEAN, charOn = VINTAGE)
+    // HELPERS (LE-4)
+    B ("hLiftOn", "Lift On", true);  B ("hRideOn", "Rider On", true);  B ("hBreathOn", "Breath On", true);  B ("hPeakOn", "1964 On", true);
+    C ("hLiftMode", "Lift Mode", { "Upward", "Dyn EQ" }, 0);
+    F ("hLowHz", "Lift Low Freq", hz (40.0f, 500.0f), 120.0f, "Hz");
+    F ("hLowThr", "Lift Low Thresh", R (-60.0f, 0.0f, 0.1f), -30.0f, "dB");
+    F ("hLowLift", "Lift Low Amount", R (0.0f, 12.0f, 0.1f), 4.0f, "dB");
+    F ("hHighHz", "Lift High Freq", hz (2000.0f, 16000.0f), 6000.0f, "Hz");
+    F ("hHighThr", "Lift High Thresh", R (-60.0f, 0.0f, 0.1f), -34.0f, "dB");
+    F ("hHighLift", "Lift High Amount", R (0.0f, 12.0f, 0.1f), 3.0f, "dB");
+    F ("hRideRange", "Rider Range", R (0.0f, 12.0f, 0.1f), 6.0f, "dB");
+    F ("hRideTarget", "Rider Target", R (-30.0f, -6.0f, 0.1f), -16.0f, "LUFS");
+    C ("hRideSpeed", "Rider Speed", { "Slow", "Med", "Fast" }, 1);
+    F ("hBreath", "Breath Amount", R (-20.0f, 0.0f, 0.1f), -8.0f, "dB");
+    F ("hBreathSense", "Breath Sense", R (0.0f, 100.0f, 1.0f), 55.0f, "%");
+    { R r (5.0f, 200.0f, 1.0f); r.setSkewForCentre (40.0f); F ("hBreathFade", "Breath Fade", r, 40.0f, "ms"); }
+    F ("hPkIn", "1964 Input", R (-40.0f, 10.0f, 0.5f), -40.0f, "dBu");
+    F ("hPkOut", "1964 Output", R (-10.0f, 10.0f, 0.1f), 4.0f, "dBu");
+    { R r (1.1f, 100.0f, 0.01f); r.setSkewForCentre (4.0f); F ("hPkSlope", "1964 Slope", r, 2.0f, ":1"); }
+    F ("hPkRel", "1964 Release", R (0.0f, 10.0f, 0.1f), 3.0f);
+    C ("hPkMeter", "1964 Meter", { "GR", "+4", "+8" }, 0);
+    C ("hPkPad", "1964 Pad", { "Off", "10", "20" }, 0);
     // CLEAN
     C ("cEngine", "Clean Engine", { "LE-11/25E", "LE-755C", "LE-DS1", "LE-MLA", "LE-580E" }, 0);
     F ("cThresh", "Threshold", R (-60.0f, 0.0f, 0.1f), -24.0f, "dB");
@@ -234,6 +255,7 @@ void TahorProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     charWas.fill (-1);
     prepareOs (maxBlock);
     clean.prepare (sampleRate, maxBlock);
+    helpers.prepare (sampleRate);
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) maxBlock, 1 };
     for (auto& st : soloC) for (auto& f : st) { f.coefficients = new juce::dsp::IIR::Coefficients<float> (1, 0, 0, 1, 0, 0); f.prepare (spec); }
     for (auto& st : soloF) for (auto& f : st) { f.coefficients = new juce::dsp::IIR::Coefficients<float> (1, 0, 0, 1, 0, 0); f.prepare (spec); }
@@ -262,6 +284,19 @@ int TahorProcessor::latencyNow() const
 {
     // Pressure V1: only CLEAN's look-ahead delays the sound
     return param ("tahorOn") > 0.5f ? pressure::CleanCompressor::lookSamples (cleanSettings(), preparedRate) : 0;
+}
+
+pressure::HelperSettings TahorProcessor::helperSettings() const
+{
+    pressure::HelperSettings s;
+    s.liftOn = param ("hLiftOn") > 0.5f; s.rideOn = param ("hRideOn") > 0.5f; s.breathOn = param ("hBreathOn") > 0.5f; s.peakOn = param ("hPeakOn") > 0.5f;
+    s.liftMode = (int) param ("hLiftMode");
+    s.lowHz = param ("hLowHz"); s.lowThr = param ("hLowThr"); s.lowLift = param ("hLowLift");
+    s.highHz = param ("hHighHz"); s.highThr = param ("hHighThr"); s.highLift = param ("hHighLift");
+    s.rideRange = param ("hRideRange"); s.rideTarget = param ("hRideTarget"); s.rideSpeed = (int) param ("hRideSpeed");
+    s.breathDb = param ("hBreath"); s.breathSense = param ("hBreathSense"); s.breathFadeMs = param ("hBreathFade");
+    s.inDbu = param ("hPkIn"); s.outDbu = param ("hPkOut"); s.slope = param ("hPkSlope"); s.release = param ("hPkRel"); s.pad = (int) param ("hPkPad");
+    return s;
 }
 
 pressure::CleanSettings TahorProcessor::cleanSettings() const
@@ -337,7 +372,9 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     { float r2 = 0; for (int c = 0; c < nc; ++c) r2 = juce::jmax (r2, main.getRMSLevel (c, 0, n)); inRms.store (r2); }   // V10: for the readouts
 
     // ===== PRESSURE: HELPERS > CLEAN > VINTAGE =====
-    // HELPERS (V1: passes the sound through - wired up in the next version)
+    // HELPERS (LE-4): Lift > Rider > Breath > 1964
+    if (param ("resoOn") > 0.5f) helpers.process (main, nc, n, helperSettings());
+    else { helpers.peakGr.store (0.0f); helpers.rideDb.store (0.0f); helpers.breathRed.store (0.0f); helpers.liftLow.store (0.0f); helpers.liftHigh.store (0.0f); }
     // CLEAN
     {
         const auto cs = cleanSettings();

@@ -655,9 +655,19 @@ void Canvas::paintHeader (juce::Graphics& g)
         tx += 5 + 5;
         text (g, names[tab], f, ink, R (tx, cy - 6, labW + 6, 12));
         zone (R (box.getX() + 16, box.getY(), labW + 22, 20), Hit::TabCycle, 1);
-        const R pr (ra.getX() - 6 - 9, cy - 4.5f, 9, 9);
-        icon (g, Icon::Power, pr, power ? c : col ("#3a3936"), 1.1f);
-        zone (pr.expanded (4), Hit::TabPower, tab);
+        // PRESSURE: the tab's on / off - its own button beside the selector, big enough to see, and labelled
+        {
+            const juce::String t = juce::String (names[tab]) + (power ? "  ON" : "  OFF");
+            const auto bf = font (Face::CondMedium, 10, 1.3f);
+            const R pb (box.getRight() + 10, cy - 11, 30 + textWidth (bf, t) + 10, 22);
+            fillRound (g, pb, 6, power ? c.withAlpha (0.16f) : col ("#141518"));
+            strokeRound (g, pb, 6, power ? c.withAlpha (0.75f) : col ("#5a2a2a"));
+            const R ic (pb.getX() + 9, cy - 6, 12, 12);
+            if (power) { g.setColour (c.withAlpha (0.3f)); g.fillEllipse (ic.expanded (4)); }
+            icon (g, Icon::Power, ic, power ? c.interpolatedWith (juce::Colours::white, 0.25f) : col ("#ff5a4f", 0.8f), 1.4f);
+            text (g, t, bf, power ? ink : col ("#ff8a80"), R (ic.getRight() + 7, cy - 6, pb.getWidth() - 30, 12));
+            zone (pb, Hit::TabPower, tab);
+        }
     }
 }
 

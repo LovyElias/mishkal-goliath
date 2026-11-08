@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Pressure VERSION 1.4.0)   # raise with every version so hosts rescan
+project(Pressure VERSION 1.5.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -49,6 +49,11 @@ endif()
 #   V3 = fix: the crash on opening (HELPERS drew its Rider meter and Breath strip before the screen's history existed)
 #   V4 = HELPERS gets its name at the top centre, like the other tabs: LE-4, with PEAK · RIDE · LIFT · BREATH under it;
 #        the HELPERS tab selector wears its bronze (was teal)
+#   V5 = HELPERS works: Lift (two bands, Upward / Dyn EQ), Rider (Range, Target, Speed), Breath (Amount, Sense, Fade),
+#        the 1964 (Input, Output, Slope, Release, Meter, Pad - gain only, no colour); every HELPERS knob, switch and
+#        power button live; the Rider meter, loudness, Breath light / count, 1964 lights and the Tone drawer show the real
+#        thing. Each tab's on / off is its own labelled button beside the selector. Everything that goes away (drawers,
+#        the knee display, controls that sit back) fades out over 3 seconds.
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -80,7 +85,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(PRESSURE_LATEST_VERSION 4)   # raise this by one for every new version
+set(PRESSURE_LATEST_VERSION 5)   # raise this by one for every new version
 
 # One plug-in, updated in place
 tahor_plugin(Pressure "Mishkal Pressure" Prss com.mishkalaudio.pressure ${PRESSURE_LATEST_VERSION} "${TAHOR_FORMATS}")

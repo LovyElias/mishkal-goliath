@@ -5,6 +5,7 @@
 #include "Dsp/ResoPro.h"
 #include "Dsp/VocalChain.h"
 #include "Dsp/PressureClean.h"
+#include "Dsp/PressureHelpers.h"
 #include "TahorModel.h"
 
 #ifndef TAHOR_VERSION
@@ -135,6 +136,8 @@ public:
     bool hasSidechain() const;
     // PRESSURE
     pressure::CleanSettings cleanSettings() const;
+    pressure::HelperSettings helperSettings() const;
+    pressure::Helpers helpers;   // LE-4 (its readouts are atomics the screen reads)
     std::atomic<float> grDb { 0.0f };   // CLEAN's gain reduction right now (dB, >= 0)
 
 private:

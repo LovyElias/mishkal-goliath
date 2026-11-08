@@ -130,6 +130,10 @@ private:
     float pn (const juce::String& pid) const;           // normalised 0..1
     juce::String pfmt (const juce::String& pid) const;  // the value as the screen shows it
     bool pon (const juce::String& pid) const { return proc.param (pid) > 0.5f; }
+    std::map<int, double> fadeAt;                       // when each fading thing was last showing
+    float fadeOut (int key, bool on);                   // 1 while on, then down to 0 over 3 seconds
+    void paintTopStripFaded (juce::Graphics&);
+    void paintScDrawerFaded (juce::Graphics&);
     juce::String pchoice (const juce::String& pid) const;
     double kneeTouch = -1.0e9;   // when Threshold / Ratio / Knee was last touched (the knee display shows for 4 s)
     void paintSidechainDrawer (juce::Graphics&, ui::R unit);
