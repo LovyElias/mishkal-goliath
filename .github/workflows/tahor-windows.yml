@@ -7,6 +7,9 @@ on:
     branches: [ tahor-windows ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -50,3 +53,13 @@ jobs:
         with:
           name: Mishkal Tahor Beta V${{ steps.ver.outputs.v }} - Windows
           path: dist/Mishkal Tahor Beta V${{ steps.ver.outputs.v }} - Windows
+
+      - name: Attach the zip to a draft release (private until published)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          $name = "Mishkal Tahor Beta V$v - Windows"
+          Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip" -Force
+          gh release create "tahor-v$v-windows-${{ github.run_number }}" "dist\$name.zip" --draft --title "$name" --notes "Tester build (draft)" --target tahor-windows
