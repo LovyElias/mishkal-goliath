@@ -105,6 +105,7 @@ private:
     void paintEnvContent (juce::Graphics&, ui::R);
     void paintEnvEdge (juce::Graphics&, bool open);
     void paintCharContent (juce::Graphics&, ui::R);   // VINTAGE: the character drawer
+    void paintDynEqContent (juce::Graphics&, ui::R);  // HELPER: the tone drawer (high pass + Lift)
     bool envOn = false;   // opened from its glass edge on the right panel, or while Attack / Release is touched
     void paintArrowHandle (juce::Graphics&, ui::R, int dir, const juce::String& label);
     void paintTopStrip (juce::Graphics&, bool open);
