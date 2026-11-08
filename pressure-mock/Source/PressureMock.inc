@@ -628,6 +628,11 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);
             paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
             mThr = keepT; mRatio = keepR; mKnee = keepK;
+            {   // the envelope drawer: the right panel's twin of the knee
+                const bool eo = envOn || std::getenv ("PRESS_ENV") != nullptr;
+                if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
+                paintEnvEdge (g, eo);
+            }
         }
         paintTopStrip (g, std::getenv ("PRESS_TOPOFF") == nullptr);
         paintScDrawer (g, std::getenv ("PRESS_SC") != nullptr);
@@ -724,6 +729,11 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         const float alpha = (kneeOn || std::getenv ("PRESS_KNEE") != nullptr) ? 1.0f : (float) juce::jlimit (0.0, 1.0, (4000.0 - since) / 400.0);
         if (alpha > 0.01f) paintKneeOverlay (g, R (218.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), alpha);   // the Figma size
         paintKneeEdge (g, kneeOn || std::getenv ("PRESS_KNEE") != nullptr);
+        {   // the envelope drawer: the right panel's twin of the knee
+            const bool eo = envOn || std::getenv ("PRESS_ENV") != nullptr;
+            if (eo) paintEnvOverlay (g, R (PW - 218.0f - 359.0f, 94.5f, 359.0f, 474.0f).expanded (44, 96), 1.0f);
+            paintEnvEdge (g, eo);
+        }
     }
     // right: attack and release (with auto release), then make-up and mix side by side, and auto gain
     {
@@ -1233,7 +1243,34 @@ void Canvas::valueBar (juce::Graphics& g, R r, const char* label, const juce::St
 void Canvas::paintScDrawer (juce::Graphics& g, bool open)
 {
     const float x0 = 214.0f, x1 = PW - 214.0f;
-    if (! open) return;   // (its handle is in the bottom bar, beside Look-ahead)
+    // the glass edge with its handle, like the knee's - lying along the bottom centre when closed, on top of the drawer when open
+    auto scEdge = [&] (float ey, bool isOpen)
+    {
+        const R strip (x0, ey - 7, x1 - x0, 14);
+        juce::ColourGradient hg (juce::Colours::white.withAlpha (0.0f), strip.getX(), 0, juce::Colours::white.withAlpha (0.0f), strip.getRight(), 0, false);
+        hg.addColour (0.12, juce::Colours::white.withAlpha (0.05f)); hg.addColour (0.88, juce::Colours::white.withAlpha (0.05f));
+        g.setGradientFill (hg); g.fillRect (strip);
+        juce::ColourGradient lg (juce::Colours::white.withAlpha (0.0f), strip.getX(), 0, juce::Colours::white.withAlpha (0.0f), strip.getRight(), 0, false);
+        lg.addColour (0.12, cleanC.withAlpha (0.45f)); lg.addColour (0.5, juce::Colours::white.withAlpha (0.55f)); lg.addColour (0.88, cleanC.withAlpha (0.45f));
+        // the line, with a gap in the middle where the name sits (no bubble)
+        const R h (PW * 0.5f - 62, ey - 12, 124, 24);
+        g.setGradientFill (lg);
+        g.fillRect (strip.getX(), strip.getCentreY() - 0.5f, h.getX() - 6 - strip.getX(), 1.0f);
+        g.fillRect (h.getRight() + 6, strip.getCentreY() - 0.5f, strip.getRight() - h.getRight() - 6, 1.0f);
+        const bool near = h.expanded (40, 30).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_SC") != nullptr;
+        g.beginTransparencyLayer (near ? 1.0f : 0.35f);
+        for (int i = 0; i < 2; ++i)
+        {
+            const float cx = h.getX() + 18 + (float) i * 10, cy = h.getCentreY();
+            juce::Path c;
+            if (isOpen) { c.startNewSubPath (cx - 4, cy - 3); c.lineTo (cx, cy + 2); c.lineTo (cx + 4, cy - 3); }   // down: tuck it away
+            else        { c.startNewSubPath (cx - 4, cy + 3); c.lineTo (cx, cy - 2); c.lineTo (cx + 4, cy + 3); }   // up: bring it up
+            g.setColour (ink); g.strokePath (c, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+        text (g, "SIDECHAIN", font (Face::CondMedium, 9.5f, 1.8f), ink, R (h.getX() + 38, h.getY(), h.getWidth() - 46, h.getHeight()), juce::Justification::centredLeft);
+        g.endTransparencyLayer();
+    };
+    if (! open) { scEdge (652.0f, false); return; }
     const float edgeY = 498.0f;   // a short band along the bottom
     const R rowR0 (PW * 0.5f - 380.0f, 650.0f - 26.0f, 760, 50);
     const bool onControls = rowR0.expanded (10).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_ROW") != nullptr;
@@ -1264,15 +1301,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         g.drawImageTransformed (im, juce::AffineTransform::scale (1.0f / sc).translated (k.getX(), k.getY()));
     }
     // the horizontal glass edge, fading out at both ends, with its handle (arrows down: tuck it away)
-    {
-        const R strip (x0, edgeY - 7, x1 - x0, 14);
-        juce::ColourGradient hg (juce::Colours::white.withAlpha (0.0f), strip.getX(), 0, juce::Colours::white.withAlpha (0.0f), strip.getRight(), 0, false);
-        hg.addColour (0.12, juce::Colours::white.withAlpha (0.05f)); hg.addColour (0.88, juce::Colours::white.withAlpha (0.05f));
-        g.setGradientFill (hg); g.fillRect (strip);
-        juce::ColourGradient lg (juce::Colours::white.withAlpha (0.0f), strip.getX(), 0, juce::Colours::white.withAlpha (0.0f), strip.getRight(), 0, false);
-        lg.addColour (0.12, cleanC.withAlpha (0.45f)); lg.addColour (0.5, juce::Colours::white.withAlpha (0.55f)); lg.addColour (0.88, cleanC.withAlpha (0.45f));
-        g.setGradientFill (lg); g.fillRect (strip.getX(), strip.getCentreY() - 0.5f, strip.getWidth(), 1.0f);
-    }
+    scEdge (edgeY, true);
     // the controls, a row along the bottom centre
     {
         const float cy = 650.0f;   // nearly on the bottom bar
@@ -1420,7 +1449,7 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
     const bool ds = std::getenv ("PRESS_DS1") != nullptr;
     const bool ml = std::getenv ("PRESS_MLA") != nullptr;
     const bool pr = std::getenv ("PRESS_PRO") != nullptr;
-    const juce::String nm = rv ? "LE-755C" : ds ? "LE-DS1" : ml ? "LE-MLA" : pr ? "LE-PRO" : "LE-RC", sub = "PROGRAM COMPRESSOR";
+    const juce::String nm = rv ? "LE-755C" : ds ? "LE-DS1" : ml ? "LE-MLA" : pr ? "LE-580E" : "LE-11/25E", sub = "PROGRAM COMPRESSOR";
     text (g, nm, font (Face::Light, 15, 2.6f), ink, R (cx - 80, cy - 10, 160, 18), juce::Justification::centred);
     auto chev = [&] (float x, bool left)
     {
@@ -1429,11 +1458,203 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
         else      { c.startNewSubPath (x - 3, cy - 5); c.lineTo (x + 2, cy); c.lineTo (x - 3, cy + 5); }
         g.setColour (cleanC.withAlpha (0.8f)); g.strokePath (c, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     };
-    chev (cx - 44, true); chev (cx + 44, false);   // closer in
+    const float half = textWidth (font (Face::Light, 15, 2.6f), nm) * 0.5f + 12.0f;   // the arrows sit just outside the name, however long
+    chev (cx - half, true); chev (cx + half, false);
     for (int i = 0; i < 5; ++i)   // LE-RC, RVox, LE-DS1, LE-MLA, LE-PRO
     {
         const P d (cx - 16 + (float) i * 8, cy + 12);
         g.setColour (i == (rv ? 1 : ds ? 2 : ml ? 3 : pr ? 4 : 0) ? cleanC : juce::Colours::white.withAlpha (0.2f)); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
     }
     juce::ignoreUnused (sub);
+}
+
+// ---- the envelope drawer: how fast - a test hit, the reduction diving in at the attack and climbing back at the release
+void Canvas::paintEnvOverlay (juce::Graphics& g, R k, float alpha)
+{
+    const float sc = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int iw = juce::roundToInt (k.getWidth() * sc), ih = juce::roundToInt (k.getHeight() * sc);
+    juce::Image im (juce::Image::ARGB, juce::jmax (1, iw), juce::jmax (1, ih), true);
+    {
+        juce::Graphics ig (im);
+        ig.addTransform (juce::AffineTransform::translation (-k.getX(), -k.getY()).scaled (sc));
+        paintEnvContent (ig, k);
+    }
+    {
+        juce::Image::BitmapData bd (im, juce::Image::BitmapData::readWrite);
+        for (int y = 0; y < ih; ++y)
+        {
+            const float t = (float) y / (float) juce::jmax (1, ih - 1);
+            const float f = juce::jlimit (0.0f, 1.0f, juce::jmin (t / 0.16f, (1.0f - t) / 0.16f)) * alpha;
+            const float e = f * f * (3.0f - 2.0f * f);
+            for (int x = 0; x < iw; ++x) reinterpret_cast<juce::PixelARGB*> (bd.getPixelPointer (x, y))->multiplyAlpha (e);
+        }
+    }
+    g.drawImageTransformed (im, juce::AffineTransform::scale (1.0f / sc).translated (k.getX(), k.getY()));
+}
+
+void Canvas::paintEnvContent (juce::Graphics& g, R k)
+{
+    const R a = k.reduced (44, 96);
+    const bool ds1 = std::getenv ("PRESS_DS1") != nullptr, mla = std::getenv ("PRESS_MLA") != nullptr,
+               c755 = std::getenv ("PRESS_RVOX") != nullptr;
+    // each engine's timing (ms)
+    const float att = ds1 ? 3.0f : mla ? 0.16f : c755 ? 2.0f : 8.0f;
+    const float rel = ds1 ? 200.0f : mla ? 800.0f : c755 ? 80.0f : 120.0f, relSlow = 1200.0f;
+    const float hit = 400.0f, depth = 12.0f;                           // the test: a 400 ms hit that wants 12 dB of reduction
+    // time runs in two parts: the hit, zoomed in (log, so a fast attack shows), then the release in plain time
+    const float tmin = 0.1f, split = 0.46f;
+    const float relSpan = ds1 ? 2600.0f : juce::jmax (600.0f, rel * 5.0f);
+    const float tmax = hit + relSpan;
+    auto px = [&] (float ms)
+    {
+        if (ms <= hit) return a.getX() + std::log (juce::jmax (tmin, ms) / tmin) / std::log (hit / tmin) * a.getWidth() * split;
+        return a.getX() + a.getWidth() * (split + (1.0f - split) * juce::jmin (1.0f, (ms - hit) / relSpan));
+    };
+    auto py = [&] (float db) { return a.getY() + 20.0f + (-db) / 24.0f * (a.getHeight() - 20.0f); };   // 0 dB near the top, reduction hangs down
+    auto grAt = [&] (float ms, int which)   // which: 0 the real curve, 1 fast only, 2 slow only (LE-DS1)
+    {
+        const float g0 = -depth * (1.0f - std::exp (-hit / att));
+        if (ms <= hit) return -depth * (1.0f - std::exp (-ms / att));
+        const float x = ms - hit;
+        if (! ds1 || which == 1) return g0 * std::exp (-x / rel);
+        if (which == 2) return g0 * std::exp (-x / relSlow);
+        return g0 * (0.65f * std::exp (-x / rel) + 0.35f * std::exp (-x / relSlow));   // average: fast for the peak, slow for the body
+    };
+    auto fs = font (Face::Regular, 9);
+    // grid: time across (log), reduction down
+    {
+        const float ticks[] { 1, 10, 100 };
+        const char* tl[] { "1 ms", "10 ms", "100 ms" };
+        for (int i = 0; i < 3; ++i)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.05f)); g.fillRect (px (ticks[i]), a.getY(), 1.0f, a.getHeight());
+            text (g, tl[i], fs, grey, R (px (ticks[i]) - 24, a.getBottom() + 6, 48, 10), juce::Justification::centred);
+        }
+        // the release side, in plain time after the hit ends
+        const float step = relSpan > 2000.0f ? 1000.0f : relSpan > 900.0f ? 500.0f : 200.0f;
+        for (float t = step; t <= relSpan + 1.0f; t += step)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.05f)); g.fillRect (px (hit + t), a.getY(), 1.0f, a.getHeight());
+            text (g, "+" + (t >= 1000.0f ? juce::String (t / 1000.0f, 1) + " s" : juce::String ((int) t) + " ms"), fs, grey, R (px (hit + t) - 24, a.getBottom() + 6, 48, 10), juce::Justification::centred);
+        }
+        // where the hit stops: a slightly brighter divider
+        g.setColour (juce::Colours::white.withAlpha (0.14f)); g.fillRect (px (hit), a.getY(), 1.0f, a.getHeight());
+        for (int db = 0; db >= -24; db -= 6)
+        {
+            g.setColour (juce::Colours::white.withAlpha (db == 0 ? 0.12f : 0.05f)); g.fillRect (a.getX(), py ((float) db), a.getWidth(), 1.0f);
+            if (db < 0) text (g, MINUS + juce::String (-db), fs, grey, R (a.getX() + 4, py ((float) db) + 2, 24, 10), juce::Justification::centredLeft);
+        }
+    }
+    // the hit itself: a soft band along the bottom while the sound is loud
+    {
+        const R hb (px (tmin), a.getBottom() - 16, px (hit) - px (tmin), 10);
+        g.setColour (cleanC.withAlpha (0.16f)); g.fillRoundedRectangle (hb, 3);
+        text (g, "THE HIT  400 ms", font (Face::CondMedium, 8.5f, 1.4f), grey, hb.translated (0, -14).withHeight (11), juce::Justification::centred);
+    }
+    // markers: thin glass lines where the attack lands and where the release gets back
+    auto marker = [&] (float ms, const juce::String& lab, float labY)
+    {
+        const float x = px (ms);
+        juce::ColourGradient gg (juce::Colours::white.withAlpha (0.0f), x, a.getY(), juce::Colours::white.withAlpha (0.0f), x, a.getBottom(), false);
+        gg.addColour (0.5, juce::Colours::white.withAlpha (0.28f));
+        g.setGradientFill (gg); g.fillRect (x - 0.5f, a.getY(), 1.0f, a.getHeight());
+        text (g, lab, font (Face::CondMedium, 9, 1.4f), cleanC.interpolatedWith (juce::Colours::white, 0.3f), R (x + 5, labY, 120, 11), juce::Justification::centredLeft);
+    };
+    auto fmt = [] (float ms) { return ms >= 1000.0f ? juce::String (ms / 1000.0f, 1) + " s" : ms < 1.0f ? juce::String (ms, 2) + " ms" : juce::String (ms, ms < 10.0f ? 1 : 0) + " ms"; };
+    marker (att, "ATTACK  " + fmt (att), py (-depth) + 8);
+    marker (hit + rel, (ds1 ? "REL FAST  " : "RELEASE  ") + fmt (rel), py (-depth) + 8);
+    if (ds1) marker (hit + relSlow, "REL SLOW  " + fmt (relSlow), py (-depth) + 24);
+    // the curve(s)
+    auto pathOf = [&] (int which)
+    {
+        juce::Path pth;
+        for (int i = 0; i <= 300; ++i)
+        {
+            const float f = (float) i / 300.0f;
+            const float ms = f <= split ? tmin * std::pow (hit / tmin, f / split) : hit + relSpan * (f - split) / (1.0f - split);
+            const P pt (px (ms), py (grAt (ms, which)));
+            if (i == 0) pth.startNewSubPath (pt); else pth.lineTo (pt);
+        }
+        return pth;
+    };
+    if (ds1)   // the fast and slow releases on their own, faint, either side of the real (average) curve
+    {
+        const float dl[] { 3.0f, 4.0f };
+        for (int w = 1; w <= 2; ++w)
+        {
+            juce::Path d; juce::PathStrokeType (1.0f).createDashedStroke (d, pathOf (w), dl, 2);
+            g.setColour (juce::Colours::white.withAlpha (0.3f)); g.fillPath (d);
+        }
+    }
+    const auto main = pathOf (0);
+    g.setColour (juce::Colours::black.withAlpha (0.4f)); g.strokePath (main, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (juce::Colours::white.withAlpha (0.95f)); g.strokePath (main, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // the dot, running along the curve again and again, with its rainbow sparkle trail (like the knee)
+    {
+        const double tms = std::getenv ("PRESS_BREATH") ? std::atof (std::getenv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
+        const float u = std::getenv ("PRESS_ENV_U") ? (float) std::atof (std::getenv ("PRESS_ENV_U")) : (float) std::fmod (tms / 3000.0, 1.0);
+        auto at = [&] (float uu) { const float ms = uu <= split ? tmin * std::pow (hit / tmin, uu / split) : hit + relSpan * (uu - split) / (1.0f - split); return P (px (ms), py (grAt (ms, 0))); };
+        auto lift = [&] (P c) { return 0.15f + 0.85f * smoothStep ((a.getBottom() - c.y) / (a.getHeight() * 0.8f)); };
+        juce::Random rnd (7);
+        for (int i = 40; i >= 1; --i)
+        {
+            const float uu = u - (float) i * 0.006f; if (uu < 0.0f) continue;
+            const float age = (float) i / 40.0f;
+            const P c = at (uu);
+            const float jx = (rnd.nextFloat() - 0.5f) * 20.0f * age, jy = (rnd.nextFloat() - 0.5f) * 20.0f * age;
+            const auto rc = juce::Colour::fromHSV (std::fmod ((float) i * 0.045f + u, 1.0f), 0.7f, 1.0f, 1.0f);
+            g.setColour (rc.withAlpha (0.7f * (1.0f - age) * lift (c)));
+            const float r = 1.2f + 3.0f * (1.0f - age);
+            g.fillEllipse (c.x + jx - r * 0.5f, c.y + jy - r * 0.5f, r, r);
+        }
+        const P c = at (u);
+        const auto gold = col ("#ffd27a");
+        const float l = lift (c);
+        g.setGradientFill (juce::ColourGradient (gold.withAlpha (0.6f * l), c.x, c.y, gold.withAlpha (0.0f), c.x + 16, c.y, true));
+        g.fillEllipse (c.x - 16, c.y - 16, 32, 32);
+        g.setColour (gold.interpolatedWith (juce::Colours::white, 0.45f).withAlpha (0.3f + 0.7f * l)); g.fillEllipse (c.x - 4.5f, c.y - 4.5f, 9, 9);
+        g.setColour (juce::Colours::white.withAlpha (0.25f + 0.75f * l)); g.fillEllipse (c.x - 2, c.y - 2, 4, 4);
+    }
+    // what it says
+    text (g, "ENVELOPE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 100, 12));
+    juce::String rd = mla ? juce::String (U8 ("0.02 ms/dB  \xc2\xb7  0.10 s/dB  \xc2\xb7  follows the music"))
+                    : ds1 ? "attack " + fmt (att) + U8 ("  \xc2\xb7  ") + fmt (rel) + " / " + fmt (relSlow) + U8 ("  \xc2\xb7  average")
+                          : "attack " + fmt (att) + U8 ("  \xc2\xb7  release ") + fmt (rel);
+    text (g, rd, font (Face::Regular, 10.5f), ink, R (a.getRight() - 260, a.getY() - 31, 260, 13), juce::Justification::centredRight);
+    if (c755) text (g, "FIXED", font (Face::CondMedium, 9, 1.6f), cleanC, R (a.getX() + 70, a.getY() - 30, 60, 12));
+    text (g, "TIME", font (Face::CondMedium, 9, 1.6f), grey, R (a.getRight() - 30, a.getBottom() + 16, 30, 10), juce::Justification::centredRight);
+    text (g, "GR", font (Face::CondMedium, 9, 1.6f), grey, R (a.getX() + 6, a.getY() + 4, 30, 10), juce::Justification::centredLeft);
+}
+
+void Canvas::paintEnvEdge (juce::Graphics& g, bool open)
+{
+    const float ex = open ? PW - 614.0f : PW - 214.0f;   // the mirror of the knee's edge
+    const R strip (ex, 0, 14, 670);
+    {
+        juce::ColourGradient vg (juce::Colours::white.withAlpha (0.0f), 0, strip.getY(), juce::Colours::white.withAlpha (0.0f), 0, strip.getBottom(), false);
+        vg.addColour (0.12, juce::Colours::white.withAlpha (0.05f)); vg.addColour (0.88, juce::Colours::white.withAlpha (0.05f));
+        g.setGradientFill (vg); g.fillRect (strip);
+        juce::ColourGradient lg (juce::Colours::white.withAlpha (0.0f), 0, strip.getY(), juce::Colours::white.withAlpha (0.0f), 0, strip.getBottom(), false);
+        lg.addColour (0.12, cleanC.withAlpha (0.45f)); lg.addColour (0.5, juce::Colours::white.withAlpha (0.55f)); lg.addColour (0.88, cleanC.withAlpha (0.45f));
+        g.setGradientFill (lg); g.fillRect (strip.getCentreX() - 0.5f, strip.getY(), 1.0f, strip.getHeight());
+    }
+    {
+        const R h (strip.getCentreX() - 12, 310, 24, 60);
+        const bool near = h.expanded (30, 40).contains (mouse - display.getPosition()) || std::getenv ("PRESS_HOVER_ENV") != nullptr;
+        g.beginTransparencyLayer (near ? 1.0f : 0.18f);
+        juce::Path p; p.addRoundedRectangle (h, 12);
+        cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.4f), 10, { 0, 3 }), p);
+        g.setGradientFill (juce::ColourGradient (col ("#2c2b38", 0.85f), h.getX(), h.getY(), col ("#17171d", 0.85f), h.getRight(), h.getBottom(), false));
+        g.fillPath (p);
+        g.setColour (cleanC.withAlpha (0.7f)); g.strokePath (p, juce::PathStrokeType (1.0f));
+        for (int i = 0; i < 2; ++i)
+        {
+            const float cy = h.getCentreY() - 6 + (float) i * 12, cx = h.getCentreX();
+            juce::Path c;   // closed: points left (pull it out across the screen); open: points right (tuck it back)
+            if (open) { c.startNewSubPath (cx - 3, cy - 4); c.lineTo (cx + 2, cy); c.lineTo (cx - 3, cy + 4); }
+            else      { c.startNewSubPath (cx + 3, cy - 4); c.lineTo (cx - 2, cy); c.lineTo (cx + 3, cy + 4); }
+            g.setColour (ink); g.strokePath (c, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+        g.endTransparencyLayer();
+    }
 }

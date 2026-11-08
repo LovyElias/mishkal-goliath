@@ -2862,10 +2862,7 @@ void Canvas::paintBottomBar (juce::Graphics& g)
         { 0, "IN", {}, Hit::None, {}, {} },
         { 1, dbText (proc.param ("inGain")), {}, Hit::InBox, border, ink },
         { 1, "AUTO", {}, Hit::Auto, learning ? col ("#6b4f1f") : border, learning ? amber : grey },
-        { 2, "Oversampling", osL[(int) proc.param ("os")], Hit::Os, {}, {} },   // (Stereo link and Look-ahead live in the sidechain now)
-        // Pressure: the sidechain opens from here - its EQ rises out of the bar
-        { 1, U8 (std::getenv ("PRESS_SC") ? "SIDECHAIN \xe2\x96\xbe" : "SIDECHAIN \xe2\x96\xb4"), {}, Hit::None,
-          std::getenv ("PRESS_SC") ? col ("#4b4590") : border, std::getenv ("PRESS_SC") ? col ("#cfc7ff") : grey } };
+        { 2, "Oversampling", osL[(int) proc.param ("os")], Hit::Os, {}, {} } };   // (the sidechain opens from its own glass edge at the bottom centre now)
     std::vector<Item> right {
         { 4, "Scale: ", "60 dB", Hit::Range, {}, {} },   // (Peak / RMS is in the top strip, Internal / External in the sidechain)
         { 4, "Size: ", sz, Hit::Size, {}, {} },
