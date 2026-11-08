@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Pressure VERSION 1.2.0)   # raise with every version so hosts rescan
+project(Pressure VERSION 1.3.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -46,6 +46,7 @@ endif()
 #   V2 = fix: a crash when the window was closed and opened again (or with two copies open) - the screen read a closed
 #        window; the detector EQ's filters set up properly (they were running as first-order); LE-755C no longer adds
 #        CLEAN's Make-up on top of its own Gain
+#   V3 = fix: the crash on opening (HELPERS drew its Rider meter and Breath strip before the screen's history existed)
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -77,7 +78,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(PRESSURE_LATEST_VERSION 2)   # raise this by one for every new version
+set(PRESSURE_LATEST_VERSION 3)   # raise this by one for every new version
 
 # One plug-in, updated in place
 tahor_plugin(Pressure "Mishkal Pressure" Prss com.mishkalaudio.pressure ${PRESSURE_LATEST_VERSION} "${TAHOR_FORMATS}")

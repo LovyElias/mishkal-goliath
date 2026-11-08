@@ -253,6 +253,10 @@ float dbRange (TahorProcessor& p) { static const float r[4] { 3.0f, 6.0f, 12.0f,
 void Canvas::paint (juce::Graphics& g)
 {
     gPressCanvas = this;
+    {   // PRESSURE: the screen's history exists before the first draw (the host can paint before any audio or timer)
+        const int n = (int) ((PW - 50.0f) / 2.0f);
+        if ((int) hIn.size() != n) { hIn.assign ((size_t) n, -90.0f); hOut = hIn; hGr.assign ((size_t) n, 0.0f); hRide = hGr; hBreath = hGr; hPos = 0; }
+    }
     gCompMode = tab == 2;
     zones.clear();
     pz.clear();
