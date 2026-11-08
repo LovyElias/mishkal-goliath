@@ -1449,7 +1449,9 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
     const bool ds = std::getenv ("PRESS_DS1") != nullptr;
     const bool ml = std::getenv ("PRESS_MLA") != nullptr;
     const bool pr = std::getenv ("PRESS_PRO") != nullptr;
-    const juce::String nm = rv ? "LE-755C" : ds ? "LE-DS1" : ml ? "LE-MLA" : pr ? "LE-580E" : "LE-11/25E", sub = "PROGRAM COMPRESSOR";
+    const juce::String nm = rv ? "LE-755C" : ds ? "LE-DS1" : ml ? "LE-MLA" : pr ? "LE-580E" : "LE-11/25E";
+    // what each one is for, under its name
+    const juce::String sub = rv ? "VOCAL GRADE" : (ds || ml || pr) ? "MASTERING GRADE" : "MIX GRADE";
     text (g, nm, font (Face::Light, 15, 2.6f), ink, R (cx - 80, cy - 10, 160, 18), juce::Justification::centred);
     auto chev = [&] (float x, bool left)
     {
@@ -1458,14 +1460,14 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
         else      { c.startNewSubPath (x - 3, cy - 5); c.lineTo (x + 2, cy); c.lineTo (x - 3, cy + 5); }
         g.setColour (cleanC.withAlpha (0.8f)); g.strokePath (c, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     };
+    text (g, sub, font (Face::CondMedium, 8.5f, 2.2f), cleanC.withAlpha (0.85f), R (cx - 90, cy + 9, 180, 11), juce::Justification::centred);
     const float half = textWidth (font (Face::Light, 15, 2.6f), nm) * 0.5f + 12.0f;   // the arrows sit just outside the name, however long
     chev (cx - half, true); chev (cx + half, false);
     for (int i = 0; i < 5; ++i)   // LE-RC, RVox, LE-DS1, LE-MLA, LE-PRO
     {
-        const P d (cx - 16 + (float) i * 8, cy + 12);
+        const P d (cx - 16 + (float) i * 8, cy + 26);
         g.setColour (i == (rv ? 1 : ds ? 2 : ml ? 3 : pr ? 4 : 0) ? cleanC : juce::Colours::white.withAlpha (0.2f)); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
     }
-    juce::ignoreUnused (sub);
 }
 
 // ---- the envelope drawer: how fast - a test hit, the reduction diving in at the attack and climbing back at the release
