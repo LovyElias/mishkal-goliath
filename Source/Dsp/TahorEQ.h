@@ -53,7 +53,7 @@ inline double tahorAnalogBandDb (const CleanBand& b, double freq, double gainDb,
         case BandType::HighCut:
         {
             const int order = CleanupEQ::cutOrder (b.slope);
-            double qs[4]; const int n = CleanupEQ::cutQs (order, qs);
+            double qs[CleanupEQ::maxStages]; const int n = CleanupEQ::cutQs (order, qs);
             double total = 0.0;
             if (order % 2 == 1) total += b.type == BandType::LowCut ? db (x2 / (1.0 + x2)) : db (1.0 / (1.0 + x2));
             for (int st = 0; st < n; ++st)
@@ -110,8 +110,8 @@ inline void tahorAnalogBandPower (const CleanBand& b, double freq, double gainDb
         case BandType::HighCut:
         {
             const int order = CleanupEQ::cutOrder (b.slope);
-            double qs[4]; const int stages = CleanupEQ::cutQs (order, qs);
-            double cs[4];
+            double qs[CleanupEQ::maxStages]; const int stages = CleanupEQ::cutQs (order, qs);
+            double cs[CleanupEQ::maxStages];
             for (int st = 0; st < stages; ++st) { double sq = qs[st]; if (st == stages - 1) sq *= q / 0.7071; cs[st] = 1.0 / (sq * sq); }
             const bool lc = b.type == BandType::LowCut;
             for (int i = 0; i < n; ++i)

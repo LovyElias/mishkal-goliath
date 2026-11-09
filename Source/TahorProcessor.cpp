@@ -192,7 +192,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
         F (bid (b, "Hz"), n + "Freq", hz (10.0f, 30000.0f), td[(size_t) b].hz, "Hz");
         F (bid (b, "Gain"), n + "Gain", R (-30.0f, 30.0f, 0.1f), td[(size_t) b].db, "dB");
         { R r (0.1f, 30.0f, 0.01f); r.setSkewForCentre (1.0f); F (bid (b, "Q"), n + "Q", r, td[(size_t) b].q); }
-        C (bid (b, "Slope"), n + "Slope", { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct" }, td[(size_t) b].slope);
+        C (bid (b, "Slope"), n + "Slope", { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct", "72 dB/oct", "96 dB/oct", "Brickwall" }, td[(size_t) b].slope);
         C (bid (b, "Place"), n + "Stereo", { "ST", "M", "S", "L", "R" }, td[(size_t) b].place);
         B (bid (b, "Dyn"), n + "Dynamic", td[(size_t) b].dyn);
         F (bid (b, "Thr"), n + "Threshold", R (-60.0f, 0.0f, 0.1f), -30.0f, "dB");

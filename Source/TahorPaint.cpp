@@ -74,7 +74,7 @@ void bandPanel (juce::Graphics& g, R b, float peakX, juce::Colour c)
     body.quadraticTo (x0, y1 - ch * 0.25f, x0, y1 - ch);
     body.closeSubPath();
     cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 22, { 0, 8 }), body);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xcc17181d), 0, y0 - rise, juce::Colour (0xcc0f1013), 0, y1, false));   // 80% solid
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0x8f17181d), 0, y0 - rise, juce::Colour (0x8f0f1013), 0, y1, false));   // V17: 56% solid - 30% more glass (was 80%)
     g.fillPath (body);
     {
         g.saveState(); g.reduceClipRegion (body);
@@ -279,6 +279,7 @@ void Canvas::paint (juce::Graphics& g)
     proc.charSoloHz.store (soloHzUi); proc.charSoloQ.store (soloQUi);
 
     paintChainStrip (g);   // V16: what runs, in order, in the middle of the bottom bar
+    paintTopCentre (g);    // V17: what the tab is, at the top centre (Character: the THD light and its slider)
     // the resize corner: diagonal stripes
     {
         const R c (W - 17, H - 17, 14, 14);
@@ -617,6 +618,7 @@ void Canvas::paintHeader (juce::Graphics& g)
         text (g, t, f, on ? ink : col ("#b9b3a7"), R (b.getX() + 15, cy - 6, w, 12));
         if (on) text (g, v, font (Face::Regular, 9), amber, R (b.getX() + 15 + textWidth (f, t) + 4, cy - 6, 40, 12));
         zone (b, Hit::AutoGain);
+        rx = b.getX();   // V17: where AUTO GAIN starts (the selector and its power button keep clear of it)
     }
     // the compact selector
     {
@@ -626,7 +628,8 @@ void Canvas::paintHeader (juce::Graphics& g)
         const char* pw[3] { "resoOn", "tahorOn", "charOn" };
         const float labW = textWidth (f, "CHARACTER");
         const float w = 16 + 6 + 5 + 5 + labW + 7 + 9 + 6 + 16;
-        const float half = juce::jmin (180.0f, W * 0.5f - archTop[0]);
+        const float pwW = 30 + textWidth (font (Face::CondMedium, 10, 1.3f), "CHARACTER  OFF") + 10;   // V17: room for the power button
+        const float half = juce::jmin (180.0f, W * 0.5f - archTop[0], rx - 14 - pwW - 10 - w - 20 - W * 0.5f);
         const R box (W * 0.5f + half + 20, cy - 10, w, 20);   // V9: just past the arch, in the open space
         archTop[1] = box.getX() - 8;
         const auto c = cols[tab];
@@ -648,9 +651,19 @@ void Canvas::paintHeader (juce::Graphics& g)
         tx += 5 + 5;
         text (g, names[tab], f, ink, R (tx, cy - 6, labW + 6, 12));
         zone (R (box.getX() + 16, box.getY(), labW + 22, 20), Hit::TabCycle, 1);
-        const R pr (ra.getX() - 6 - 9, cy - 4.5f, 9, 9);
-        icon (g, Icon::Power, pr, power ? c : col ("#3a3936"), 1.1f);
-        zone (pr.expanded (4), Hit::TabPower, tab);
+        // V17: the tab's on / off - its own labelled button beside the selector (like Pressure's), not inside it
+        {
+            const juce::String t = juce::String (names[tab]) + (power ? "  ON" : "  OFF");
+            const auto bf = font (Face::CondMedium, 10, 1.3f);
+            const R pb (box.getRight() + 10, cy - 11, 30 + textWidth (bf, t) + 10, 22);
+            fillRound (g, pb, 6, power ? c.withAlpha (0.16f) : col ("#141518"));
+            strokeRound (g, pb, 6, power ? c.withAlpha (0.75f) : col ("#5a2a2a"));
+            const R ic (pb.getX() + 9, cy - 6, 12, 12);
+            if (power) { g.setColour (c.withAlpha (0.3f)); g.fillEllipse (ic.expanded (4)); }
+            icon (g, Icon::Power, ic, power ? c.interpolatedWith (juce::Colours::white, 0.25f) : col ("#ff5a4f", 0.8f), 1.4f);
+            text (g, t, bf, power ? ink : col ("#ff8a80"), R (ic.getRight() + 7, cy - 6, pb.getWidth() - 30, 12));
+            zone (pb, Hit::TabPower, tab);
+        }
     }
 }
 
@@ -1262,7 +1275,8 @@ void Canvas::paintLegend (juce::Graphics& g)
             zone (c.translated (display.getX(), display.getY() - 22.0f), Hit::CharMode, i);
             sx += mw[i];
         }
-        // V7: THD - a slim slider; the fill glows brighter amber the further it goes
+        // V7: THD - a slim slider (V17: moved to the top centre, under the THD light)
+        if (false)
         {
             const float v = juce::jlimit (0.0f, 1.0f, proc.param ("charThd") / 100.0f);
             float tx = seg.getRight() + 14;
@@ -1446,19 +1460,19 @@ void Canvas::paintResoTabInner (juce::Graphics& g)
             const std::vector<BubSeg> segs { { juce::String (i + 1), -1 }, { shapeNames[n.shape], 3 }, { hzText (n.hz), 0 }, { num (n.amount) + " dB", 1 },
                                              { "Q " + juce::String (n.q, 2), 2 } };   // V11, V14: each part clicks to change
             const juce::String t = bubText (segs);
-            auto f = font (Face::Regular, 12);
-            R b (x - 34, y - 52, textWidth (f, t) + 20 + 24, 22.4f);
+            auto f = font (Face::Regular, 14.4f);   // V17: 20% bigger
+            R b (x - 40, y - 60, textWidth (f, t) + 24 + 29, 27.0f);
             if (reveal > 0.01f)
             {
                 g.beginTransparencyLayer (reveal);
-                fillRound (g, b, 12, col ("#0e0e10", 0.9f)); strokeRound (g, b, 12, red.withAlpha (0.6f));
+                fillRound (g, b, 14, col ("#0e0e10", 0.9f)); strokeRound (g, b, 14, red.withAlpha (0.6f));
                 std::vector<std::pair<R, int>> segHits;
-                drawBubSegs (g, segs, f, b.reduced (10, 0).withTrimmedRight (24), mouse - o, segHits);
+                drawBubSegs (g, segs, f, b.reduced (12, 0).withTrimmedRight (29), mouse - o, segHits);
                 if (reveal > 0.05f) for (auto& sh : segHits) zone (sh.first.translated (o.x, o.y), Hit::BubbleEdit, sh.second, 100 + i);
                 const bool so = resoSolo == i;   // V12: solo, right on the bubble
-                const R sb (b.getRight() - 24, b.getY() + 3.2f, 16, 16);
+                const R sb (b.getRight() - 29, b.getY() + 4.0f, 19, 19);
                 g.setColour (so ? red : juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (sb);
-                text (g, "S", font (Face::SemiBold, 9.5f), so ? juce::Colours::white : soft, sb, juce::Justification::centred);
+                text (g, "S", font (Face::SemiBold, 11.4f), so ? juce::Colours::white : soft, sb, juce::Justification::centred);
                 g.endTransparencyLayer();
                 if (reveal > 0.05f) zone (sb.expanded (2).translated (o.x, o.y), Hit::BandSolo, 2);
                 revealRects.push_back (R::leftTopRightBottom (juce::jmin (b.getX(), x - 14), b.getY() - 6, juce::jmax (b.getRight(), x + 14), y + 14).translated (o.x, o.y));   // V14: stays open while hovered
@@ -1494,6 +1508,7 @@ void Canvas::paintResoTabInner (juce::Graphics& g)
         g.beginTransparencyLayer (reveal);
         g.saveState(); g.addTransform (tr);
         bandPanel (g, b, (nx - px) / k, sh);
+        const BiggerText biggerText (1.2f);   // V17: the panel's writing 20% bigger
         const bool rOff = rbyp[(size_t) selNode];
         {   // V12: power, then the name
             const R pwr (12, 12, 16, 16);
@@ -1527,6 +1542,7 @@ void Canvas::paintResoTabInner (juce::Graphics& g)
             text (g, labs[i], fl, soft, R (x + ks + 8, 44, 80, 15));
             text (g, vals[i], fv, soft, R (x + ks + 8, 62, 80, 19));
             zone (R (x, kt, ks, ks).translated (o.x, o.y), Hit::ResoNodeKnob, i);
+            zones.push_back ({ R (x + ks + 6, 42, 84, 42).translated (o.x, o.y), Hit::KnobValue, i, 0, Hit::ResoNodeKnob });   // V17: click its name or number to type
             x += ks + 8 + 80 + 6;
         }
         // the shape dropdown
@@ -1790,6 +1806,12 @@ void Canvas::paintTahorTab (juce::Graphics& g)
         }
         std::sort (cand.begin(), cand.end());
         for (size_t i = 0; i < cand.size() && specPeaks.size() < 10; ++i) specPeaks.push_back ({ (float) cand[i].second * 3.0f, cand[i].first });
+        if (freeze > 0.3f && ! dragging)   // V17: while the analyzer is held still, its peaks are marked - grab one to make a band
+            for (auto& pk : specPeaks)
+            {
+                g.setColour (col ("#d4c9ff", 0.55f * freeze)); g.drawEllipse (pk.x - 4, pk.y - 4, 8, 8, 1.2f);
+                g.setColour (col ("#d4c9ff", 0.12f * freeze)); g.fillEllipse (pk.x - 7, pk.y - 7, 14, 14);
+            }
         const P m (mouse.x - o.x, mouse.y - o.y);
         int best = -1; float bd2 = 1.0e9f;
         for (int i = 0; i < (int) specPeaks.size(); ++i)
@@ -1834,21 +1856,21 @@ void Canvas::paintTahorTab (juce::Graphics& g)
                 const auto& bd = bands[(size_t) b];
                 std::vector<BubSeg> segs { { types[(int) bd.type], 3 }, { hzText (bd.freq) + " (" + noteName (bd.freq) + ")", 0 } };   // V12: + the note
                 if (bd.hasGain()) segs.push_back ({ num (bd.gain) + " dB", 1 });
-                else if (bd.isCut()) { static const char* sl[6] { "6", "12", "18", "24", "36", "48" }; segs.push_back ({ juce::String (sl[juce::jlimit (0, 5, bd.slope)]) + " dB/oct", -1 }); }
+                else if (bd.isCut()) { static const char* sl[9] { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct", "72 dB/oct", "96 dB/oct", "brickwall" }; segs.push_back ({ juce::String (sl[juce::jlimit (0, 8, bd.slope)]), -1 }); }
                 segs.push_back ({ "Q " + juce::String (bd.q, bd.q < 10.0f ? 2 : 1), 2 });   // V14
                 const juce::String lab = bubText (segs);
-                auto f = font (Face::Regular, 12);
-                const float bw = textWidth (f, lab) + 20 + 24;
-                const R bb (juce::jlimit (4.0f, PW - bw - 4, x - 30), y - 50 < 4 ? y + 22 : y - 50, bw, 22.4f);
+                auto f = font (Face::Regular, 14.4f);   // V17: the bubble 20% bigger
+                const float bw = textWidth (f, lab) + 24 + 29;
+                const R bb (juce::jlimit (4.0f, PW - bw - 4, x - 36), y - 58 < 4 ? y + 22 : y - 58, bw, 27.0f);
                 g.beginTransparencyLayer (reveal);
-                fillRound (g, bb, 12, col ("#0e0e10", 0.9f)); strokeRound (g, bb, 12, c.withAlpha (0.6f));
+                fillRound (g, bb, 14, col ("#0e0e10", 0.9f)); strokeRound (g, bb, 14, c.withAlpha (0.6f));
                 std::vector<std::pair<R, int>> segHits;
-                drawBubSegs (g, segs, f, bb.reduced (10, 0).withTrimmedRight (24), mouse - o, segHits);
+                drawBubSegs (g, segs, f, bb.reduced (12, 0).withTrimmedRight (29), mouse - o, segHits);
                 if (reveal > 0.05f) for (auto& sh : segHits) bubbleZones.push_back ({ sh.first.translated (o.x, o.y), Hit::BubbleEdit, sh.second, b });
                 const bool so = proc.param (bid (b, "Solo")) > 0.5f;   // V12: solo, right on the bubble
-                const R sb (bb.getRight() - 24, bb.getY() + 3.2f, 16, 16);
+                const R sb (bb.getRight() - 29, bb.getY() + 4.0f, 19, 19);
                 g.setColour (so ? c : juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (sb);
-                text (g, "S", font (Face::SemiBold, 9.5f), so ? col ("#1a1208") : soft, sb, juce::Justification::centred);
+                text (g, "S", font (Face::SemiBold, 11.4f), so ? col ("#1a1208") : soft, sb, juce::Justification::centred);
                 g.endTransparencyLayer();
                 if (reveal > 0.05f) bubbleZones.push_back ({ sb.expanded (2).translated (o.x, o.y), Hit::BandSolo, 0 });
                 revealRects.push_back (bb.expanded (6).translated (o.x, o.y));   // V14: hovering the bubble keeps it open
@@ -1907,7 +1929,7 @@ void Canvas::paintTahorTab (juce::Graphics& g)
             ks.push_back ({ 2, "Q", juce::String (q, 2), 36 });
         }
         float knobsW = 0; for (auto& k : ks) knobsW += k.size + 22;
-        const float pw = 12 + 112 + 16 + knobsW + (dview ? 48.0f : 0.0f) + 8 + 104 + 6 + 26 + 12, ph = 104.0f, k = 0.84f;
+        const float pw = 12 + 148 + 16 + knobsW + (dview ? 48.0f : 0.0f) + 8 + 104 + 6 + 26 + 12, ph = 104.0f, k = 0.84f;
         const float px = juce::jlimit (8.0f, PW - 8.0f - pw * k, nx - pw * 0.5f * k), py = 662.0f - ph * k;
         const auto tr = juce::AffineTransform::scale (k).translated (px, py);
         const R b (0, 0, pw, ph);
@@ -1918,6 +1940,7 @@ void Canvas::paintTahorTab (juce::Graphics& g)
         g.saveState(); g.addTransform (tr);
         const auto c = bandColour (selBand);
         bandPanel (g, b, (nx - px) / k, c);
+        const BiggerText biggerText (1.2f);   // V17: the panel's writing 20% bigger
         float x = b.getX() + 12;
         const float cy = b.getCentreY();
         auto dropdown = [&] (R r, const juce::String& t, Hit h, int a, bool lit = false)
@@ -1935,12 +1958,16 @@ void Canvas::paintTahorTab (juce::Graphics& g)
             zone (pwr.expanded (3).translated (o.x, o.y), Hit::BandPower, 0, selBand);
             text (g, "Band " + juce::String (selBand + 1) + (byp ? "  (off)" : ""), font (Face::Medium, 12.5f), byp ? grey : ink, R (x + 22, top, 120, 16));
             static const char* types[6] { "Bell", "Low shelf", "High shelf", "Low cut", "High cut", "Notch" };
-            juce::String tt = types[type];
-            if (type == 3 || type == 4) { static const char* sl[6] { "6", "12", "18", "24", "36", "48" }; tt << "  " << sl[juce::jlimit (0, 5, (int) proc.param (bid (selBand, "Slope")))] << " dB"; }
-            dropdown (R (x, top + 22, 112, 24), tt, Hit::TahorType, 0);
+            if (type == 3 || type == 4)   // V17: a cut shows its slope right here, as its own dropdown
+            {
+                static const char* sl[9] { "6 dB", "12 dB", "18 dB", "24 dB", "36 dB", "48 dB", "72 dB", "96 dB", "Brick" };
+                dropdown (R (x, top + 22, 80, 24), type == 3 ? "Low cut" : "High cut", Hit::TahorType, 0);
+                dropdown (R (x + 84, top + 22, 64, 24), sl[juce::jlimit (0, 8, (int) proc.param (bid (selBand, "Slope")))], Hit::TahorType, 1, true);
+            }
+            else dropdown (R (x, top + 22, 148, 24), types[type], Hit::TahorType, 0);
             static const char* pl[5] { "Stereo", "Mid", "Side", "Left", "Right" };
-            dropdown (R (x, top + 52, 112, 24), pl[juce::jlimit (0, 4, place)], Hit::TahorPlace, -1, place != 0);
-            x += 112 + 16;
+            dropdown (R (x, top + 52, 148, 24), pl[juce::jlimit (0, 4, place)], Hit::TahorPlace, -1, place != 0);
+            x += 148 + 16;
         }
         const auto kc = dview ? col ("#7fd3ff") : amber;
         for (auto& kk : ks)
@@ -2461,6 +2488,7 @@ void Canvas::paintCharTab (juce::Graphics& g)
     // V2: the nodes of the unit on show, on its curve - drag them like Tahor's bands (locked to the unit's own steps)
     // V9: a split unit shows both sides' nodes (tagged L / R); a boost and a cut on one frequency sit a little apart
     Zone charBubble { {}, Hit::None };
+    std::vector<Zone> charSegZones;
     {
         const float rng = dbRange (proc);
         auto yOf = [rng] (float db) { return 335.0f - juce::jlimit (-rng * 0.95f, rng * 0.95f, db) / rng * 335.0f; };
@@ -2503,18 +2531,25 @@ void Canvas::paintCharTab (juce::Graphics& g)
                     text (g, t, font (Face::SemiBold, 11), col ("#1a1208"), R (x - 11, y - 11, 22, 22), juce::Justification::centred);
                     juce::String val = nd.gv < 0 ? (off ? juce::String ("off") : hzText (nodeHz (nd, v)))
                                                  : (nd.fv >= 0 ? hzText (nodeHz (nd, v)) + DOT : juce::String()) + num (nodeDb (nd, v)) + " dB";
-                    const auto lab = juce::String (nd.name) + DOT + val;
-                    auto f = font (Face::Regular, 12);
-                    const R b (x - 30, y - 50, textWidth (f, lab) + 20 + 24, 22.4f);
+                    // V17: the frequency and the gain each click to type, like Tahor's and Reso's bubbles
+                    std::vector<BubSeg> segs { { juce::String (nd.name), -1 } };
+                    if (nd.gv < 0) segs.push_back ({ off ? juce::String ("off") : hzText (nodeHz (nd, v)), nd.fv >= 0 ? 0 : -1 });
+                    else { if (nd.fv >= 0) segs.push_back ({ hzText (nodeHz (nd, v)), 0 }); segs.push_back ({ num (nodeDb (nd, v)) + " dB", 1 }); }
+                    const auto lab = bubText (segs);
+                    juce::ignoreUnused (val);
+                    auto f = font (Face::Regular, 14.4f);   // V17: 20% bigger
+                    const R b (x - 36, y - 58, textWidth (f, lab) + 24 + 29, 27.0f);
                     if (reveal > 0.01f)
                     {
                         g.beginTransparencyLayer (reveal);
-                        fillRound (g, b, 12, col ("#0e0e10", 0.9f)); strokeRound (g, b, 12, uc.withAlpha (0.6f));
-                        text (g, lab, f, juce::Colours::white, b.reduced (10, 0).withTrimmedRight (24));
+                        fillRound (g, b, 14, col ("#0e0e10", 0.9f)); strokeRound (g, b, 14, uc.withAlpha (0.6f));
+                        std::vector<std::pair<R, int>> segHits;
+                        drawBubSegs (g, segs, f, b.reduced (12, 0).withTrimmedRight (29), mouse - o, segHits);
+                        if (reveal > 0.05f && front) for (auto& shh : segHits) charSegZones.push_back ({ shh.first.translated (o.x, o.y), Hit::BubbleEdit, shh.second, 200 + i });
                         const bool so = charSolo == i && charSoloUnit == preview;   // V12: solo on the bubble
-                        const R sb (b.getRight() - 24, b.getY() + 3.2f, 16, 16);
+                        const R sb (b.getRight() - 29, b.getY() + 4.0f, 19, 19);
                         g.setColour (so ? uc : juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (sb);
-                        text (g, "S", font (Face::SemiBold, 9.5f), so ? col ("#1a1208") : soft, sb, juce::Justification::centred);
+                        text (g, "S", font (Face::SemiBold, 11.4f), so ? col ("#1a1208") : soft, sb, juce::Justification::centred);
                         g.endTransparencyLayer();
                         if (reveal > 0.05f) charBubble = { sb.expanded (2).translated (o.x, o.y), Hit::BandSolo, 1, i };
                         revealRects.push_back (R::leftTopRightBottom (juce::jmin (b.getX(), x - 14), b.getY() - 6, juce::jmax (b.getRight(), x + 14), y + 14).translated (o.x, o.y));   // V14: stays open while hovered
@@ -2539,6 +2574,7 @@ void Canvas::paintCharTab (juce::Graphics& g)
     }
 
     if (charBubble.kind != Hit::None) zones.push_back (charBubble);
+    for (auto& zz : charSegZones) zones.push_back (zz);   // V17: on top of the dots
     const float sc = 0.52f;                     // V16: 30% bigger (was 40% of its size)   // V4: solid, always shown
     const float plateH = unitPlateH (preview);
     const float bw = 905.0f * sc, bh = (plateH + 9.0f) * sc;   // V10: two-unit gear is taller (the extra unit on top)
@@ -2604,6 +2640,7 @@ void Canvas::paintCharTab (juce::Graphics& g)
         g.beginTransparencyLayer (reveal);
         g.saveState(); g.addTransform (tr);
         bandPanel (g, b, (nx - px) / kp, uc);
+        const BiggerText biggerText (1.2f);   // V17: the panel's writing 20% bigger
         const float cy = b.getCentreY();
         const bool cOff = (proc.charOff[(size_t) preview].load() >> ni) & 1;
         {   // V12: power - disable this band (its setting is kept)
@@ -2750,6 +2787,8 @@ void Canvas::paintBottomBar (juce::Graphics& g)
 
     // the pieces, measured: kind 0 = a label, 1 = a framed box, 2 = a button (label + value), 3 = the phase button, 4 = "Label: value"
     struct Item { int kind; juce::String a, b; Hit h; juce::Colour border, colour; float w = 0; };
+    // V17: phase, oversampling, render, analyzer, range and size 30% smaller, so the chain strip in the middle stands out
+    auto smallItem = [] (const Item& it) { return it.h == Hit::Phase || it.h == Hit::Os || it.h == Hit::OsRender || it.h == Hit::Analyzer || it.h == Hit::Range || it.h == Hit::Size; };
     auto measure = [&] (Item& it)
     {
         switch (it.kind)
@@ -2761,8 +2800,9 @@ void Canvas::paintBottomBar (juce::Graphics& g)
             case 5: it.w = 24; break;   // V13: an icon button
             default: it.w = 4 + textWidth (f11, it.a) + textWidth (f11, it.b) + 4; break;
         }
+        if (smallItem (it)) it.w *= 0.7f;
     };
-    auto draw = [&] (Item& it, float x)
+    auto drawRaw = [&] (Item& it, float x)
     {
         switch (it.kind)
         {
@@ -2786,6 +2826,16 @@ void Canvas::paintBottomBar (juce::Graphics& g)
             }
             default: { text (g, it.a, f11, grey, R (x + 4, cy - 7, 200, 14)); text (g, it.b, f11, ink, R (x + 4 + textWidth (f11, it.a), cy - 7, 200, 14)); zone (R (x, cy - 11, it.w, 22), it.h); break; }
         }
+    };
+    auto draw = [&] (Item& it, float x)
+    {
+        if (! smallItem (it)) { drawRaw (it, x); return; }
+        const auto t = juce::AffineTransform::scale (0.7f, 0.7f, x, cy);
+        const auto n0 = zones.size();
+        g.saveState(); g.addTransform (t);
+        it.w /= 0.7f; drawRaw (it, x); it.w *= 0.7f;
+        g.restoreState();
+        for (auto i = n0; i < zones.size(); ++i) zones[i].r = zones[i].r.transformedBy (t);
     };
     const auto border = col ("#34353b");
     // V5: two groups, either side of the arch - left: IN, AUTO, phase, oversampling; right: analyzer, range, size, SC, OUT
@@ -2824,9 +2874,9 @@ float Canvas::activeResoReduction() { return proc.activeReso().reductionNow.load
 // it. Click a block: its tab. Drag a block left or right: the sound follows the new order.
 void Canvas::paintChainStrip (juce::Graphics& g)
 {
-    const float cy = 782.0f, bh = 18.0f, arrowW = 12.0f;
+    const float cy = 782.0f, bh = 20.0f, arrowW = 14.0f;   // V17: a little bigger - it stands out
     const float room = archBot[1] - archBot[0];
-    const float bw = juce::jlimit (70.0f, 112.0f, (room - 2.0f * arrowW) / 3.0f);
+    const float bw = juce::jlimit (70.0f, 132.0f, (room - 2.0f * arrowW - 24.0f) / 3.0f);
     const float total = 3.0f * bw + 2.0f * arrowW;
     const float x0 = (archBot[0] + archBot[1]) * 0.5f - total * 0.5f;
     const int ord = juce::jlimit (0, 5, (int) proc.param ("order"));
@@ -2865,7 +2915,7 @@ void Canvas::paintChainStrip (juce::Graphics& g)
         const P d (b.getX() + 8, b.getCentreY());
         if (on) { g.setColour (c.withAlpha (0.3f)); g.fillEllipse (d.x - 4, d.y - 4, 8, 8); }
         g.setColour (on ? c.interpolatedWith (juce::Colours::white, 0.35f) : juce::Colours::white.withAlpha (0.18f)); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
-        const auto fN = font (Face::CondMedium, 8.0f, 1.0f), fW = font (Face::Regular, 8.5f);
+        const auto fN = font (Face::CondMedium, 9.0f, 1.1f), fW = font (Face::Regular, 9.5f);
         const float nw = textWidth (fN, name);
         text (g, name, fN, on ? ink : grey, R (b.getX() + 14, cy - 6, nw + 2, 12));
         text (g, what, fW, on ? col ("#b9b3a7") : col ("#5b5955"), R (b.getX() + 14 + nw + 4, cy - 6, b.getRight() - 4 - (b.getX() + 14 + nw + 4), 12));
@@ -2885,4 +2935,96 @@ void Canvas::paintChainStrip (juce::Graphics& g)
         block (o[i], x0 + (float) i * (bw + arrowW), false);
     }
     if (tchainDrag >= 0) block (tchainDrag, juce::jlimit (x0 - 20, x0 + total - bw + 20, tchainDragX - bw * 0.5f), true);
+}
+
+// V17: the top centre, in the screen's upper arch - Reso and Tahor say what they are; Character shows its THD light (the
+// saturation curve with a light running along it that runs hotter, splits and flickers as THD is pushed), with the THD
+// slider just under it
+void Canvas::paintTopCentre (juce::Graphics& g)
+{
+    const float c = W * 0.5f;
+    if (tab == 0 || tab == 1)
+    {
+        const char* t1 = tab == 0 ? "RESONANCE SUPPRESSOR" : "PRECISION EQ";
+        const juce::String t2 = tab == 0 ? juce::String ("TAMES HARSH PEAKS") : U8 ("CLEAN \xc2\xb7 SURGICAL");
+        const bool on = proc.param (tab == 0 ? "resoOn" : "tahorOn") > 0.5f;
+        text (g, t1, font (Face::Light, 14.5f, 3.2f), ink.withAlpha (on ? 0.92f : 0.4f), R (c - 200, 12, 400, 18), juce::Justification::centred);
+        text (g, t2, font (Face::CondMedium, 8.0f, 2.6f), (tab == 0 ? col ("#e0525a") : col ("#a99bff")).withAlpha (on ? 0.75f : 0.3f), R (c - 200, 31, 400, 11), juce::Justification::centred);
+        return;
+    }
+    const float thd = juce::jlimit (0.0f, 1.0f, proc.param ("charThd") / 100.0f);
+    const bool on = proc.param ("charOn") > 0.5f && (int) proc.param ("charMode") != 0;
+    text (g, "ANALOG CHARACTER", font (Face::CondMedium, 8.0f, 2.6f), col ("#b9b3a7", 0.5f), R (c - 150, 9, 300, 10), juce::Justification::centred);
+    // the light's path: the saturation curve, laid on its side across the arch
+    const R tc (c - 120, 24, 240, 19);
+    const float drive = 0.15f + 0.85f * thd;
+    auto curveY = [&] (float x) { const float k2 = 1.0f + 3.0f * drive; return juce::jlimit (-1.05f, 1.05f, std::tanh (k2 * x) / std::tanh (k2) + 0.06f * drive * x * x); };
+    auto at = [&] (float x) { return P (tc.getX() + (x + 1.0f) * 0.5f * tc.getWidth(), tc.getCentreY() - curveY (x) * 0.5f * tc.getHeight()); };
+    {
+        juce::Path cv;
+        for (int i = 0; i <= 120; ++i) { const P pt = at (-1.0f + 2.0f * (float) i / 120.0f); if (i == 0) cv.startNewSubPath (pt); else cv.lineTo (pt); }
+        juce::ColourGradient fade (juce::Colours::white.withAlpha (0.0f), tc.getX(), 0, juce::Colours::white.withAlpha (0.0f), tc.getRight(), 0, false);
+        fade.addColour (0.25, juce::Colours::white.withAlpha (on ? 0.5f : 0.2f)); fade.addColour (0.75, juce::Colours::white.withAlpha (on ? 0.5f : 0.2f));
+        g.setGradientFill (fade); g.strokePath (cv, juce::PathStrokeType (1.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    if (on)
+    {
+        const double tms = juce::Time::getMillisecondCounterHiRes();
+        const float ph = (float) std::sin (tms / 900.0) * 0.78f;
+        const float d = thd;
+        juce::Random rnd (3), fl ((juce::int64) (tms / 45.0));   // fl: a new flicker every 45 ms
+        for (int i = 24; i >= 1; --i)
+        {
+            const float age = (float) i / 24.0f;
+            const P cc = at (ph - (float) i * 0.012f);
+            const float hue = std::fmod (0.11f - 0.11f * d + (float) i * (0.012f + 0.05f * d) + 1.0f, 1.0f);   // calm: golds; pushed: the whole spectrum
+            const auto rc = juce::Colour::fromHSV (hue, 0.35f + 0.6f * d, 1.0f, 1.0f);
+            g.setColour (rc.withAlpha ((0.45f + 0.35f * d) * (1.0f - age)));
+            const float spread = 4.0f + 12.0f * d;
+            const float r = 1.0f + (2.4f + 1.6f * d) * (1.0f - age), jx = (rnd.nextFloat() - 0.5f) * spread * age, jy = (rnd.nextFloat() - 0.5f) * spread * age * 0.6f;
+            g.fillEllipse (cc.x + jx - r * 0.5f, cc.y + jy - r * 0.5f, r, r);
+        }
+        const P c0 = at (ph);
+        const P cc = c0.translated ((fl.nextFloat() - 0.5f) * 4.0f * d * d, (fl.nextFloat() - 0.5f) * 3.0f * d * d);   // a flicker when it's pushed
+        const auto core = col ("#ffd27a").interpolatedWith (col ("#ff8a2a"), juce::jmin (1.0f, d * 1.6f)).interpolatedWith (col ("#ff2d3d"), juce::jmax (0.0f, d * 1.6f - 0.6f));
+        if (d > 0.04f)   // chromatic split: three tinted ghosts, further apart the harder it's driven
+        {
+            const float off = 1.2f + 5.0f * d, a0 = (float) (tms / 260.0);
+            const juce::Colour gh[3] { col ("#ff3040"), col ("#3dff9a"), col ("#4a7dff") };
+            for (int k = 0; k < 3; ++k)
+            {
+                const float an = a0 + (float) k * 2.094f;
+                const P q = cc.translated (off * std::cos (an), off * std::sin (an));
+                const float gr = 7.0f + 4.0f * d;
+                g.setGradientFill (juce::ColourGradient (gh[k].withAlpha (0.45f * d), q.x, q.y, gh[k].withAlpha (0.0f), q.x + gr, q.y, true));
+                g.fillEllipse (q.x - gr, q.y - gr, gr * 2, gr * 2);
+            }
+        }
+        const float glowR = 12.0f + 6.0f * d * (0.75f + 0.25f * fl.nextFloat());
+        g.setGradientFill (juce::ColourGradient (core.withAlpha (0.6f + 0.25f * d), cc.x, cc.y, core.withAlpha (0.0f), cc.x + glowR, cc.y, true));
+        g.fillEllipse (cc.x - glowR, cc.y - glowR, glowR * 2, glowR * 2);
+        g.setColour (core.interpolatedWith (juce::Colours::white, 0.45f - 0.25f * d)); g.fillEllipse (cc.x - 3.5f, cc.y - 3.5f, 7, 7);
+        g.setColour (juce::Colours::white); g.fillEllipse (cc.x - 1.5f, cc.y - 1.5f, 3, 3);
+    }
+    // the THD slider, just under the light; the fill glows brighter amber the further it goes
+    {
+        const float cyT = 58.0f;
+        auto fm = font (Face::CondMedium, 9.5f, 1.2f);
+        const R tr (c - 70, cyT - 1.5f, 140, 3);
+        text (g, "THD", fm, col ("#b9b3a7"), R (tr.getX() - 34, cyT - 7, 30, 14), juce::Justification::centredRight);
+        fillRound (g, tr, 1.5f, juce::Colours::white.withAlpha (0.1f));
+        const auto glow = col ("#7a5418").interpolatedWith (col ("#ffcf7a"), thd);
+        if (thd > 0.001f)
+        {
+            const R onR = tr.withWidth (tr.getWidth() * thd);
+            g.setColour (glow.withAlpha (0.12f + 0.3f * thd)); g.fillRoundedRectangle (onR.expanded (1.5f + 2.5f * thd), 3.5f);
+            fillRound (g, onR, 1.5f, glow);
+        }
+        const float kx = tr.getX() + tr.getWidth() * thd;
+        g.setColour (glow.withAlpha (0.25f * thd)); g.fillEllipse (kx - 8, cyT - 8, 16, 16);
+        g.setColour (col ("#f4ede0")); g.fillEllipse (kx - 4.5f, cyT - 4.5f, 9, 9);
+        g.setColour (glow); g.fillEllipse (kx - 2, cyT - 2, 4, 4);
+        text (g, juce::String ((int) std::round (thd * 100.0f)) + "%", font (Face::Regular, 10), thd > 0.5f ? amber : col ("#b9b3a7"), R (tr.getRight() + 10, cyT - 7, 40, 14));
+        zone (R (tr.getX() - 6, cyT - 11, tr.getWidth() + 12, 22), Hit::Thd);
+    }
 }

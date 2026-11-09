@@ -43,13 +43,29 @@ using CleanBands = std::array<CleanBand, numCleanBands>;
 class CleanupEQ
 {
 public:
-    static constexpr int maxStages = 4;
-    using Biquad = std::array<float, 6>;   // b0 b1 b2 a0 a1 a2
+    static constexpr int maxStages = 12;   // Tahor V17: up to a 24th-order cut (the brickwall)
+    using Biquad = std::array<double, 6>;   // b0 b1 b2 a0 a1 a2 (V17: double - steep cuts down low stay clean)
     struct BandDesign { std::array<Biquad, maxStages> st {}; int n = 0; };
-    using AC = juce::dsp::IIR::ArrayCoefficients<float>;
+    using AC = juce::dsp::IIR::ArrayCoefficients<double>;
+    // V17: a biquad in double precision (transposed direct form II) - a 24th-order cut at 20 Hz in float drowns in noise
+    struct DBiquad
+    {
+        double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
+        void set (const Biquad& c) { const double ia = 1.0 / c[3]; b0 = c[0] * ia; b1 = c[1] * ia; b2 = c[2] * ia; a1 = c[4] * ia; a2 = c[5] * ia; }
+        void reset() { z1 = z2 = 0; }
+        float processSample (float xf) noexcept
+        {
+            const double x = xf, y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y;
+            if (std::abs (z1) < 1.0e-30) z1 = 0; if (std::abs (z2) < 1.0e-30) z2 = 0;   // (no denormals)
+            return (float) y;
+        }
+    };
 
-    // Tahor: cut slopes 0..5 = 6, 12, 18, 24, 36, 48 dB/oct (odd orders get a first-order section first)
-    static int cutOrder (int slope) { static const int o[6] { 1, 2, 3, 4, 6, 8 }; return o[juce::jlimit (0, 5, slope)]; }
+    // Tahor: cut slopes 0..8 = 6, 12, 18, 24, 36, 48, 72, 96 dB/oct and a brickwall (144 dB/oct) (odd orders get a
+    // first-order section first)
+    static constexpr int numSlopes = 9;
+    static int cutOrder (int slope) { static const int o[numSlopes] { 1, 2, 3, 4, 6, 8, 12, 16, 24 }; return o[juce::jlimit (0, numSlopes - 1, slope)]; }
     // Butterworth biquad Qs for an order (the first-order section, if any, is not listed)
     static int cutQs (int order, double* qs)
     {
@@ -60,7 +76,13 @@ public:
             case 3: qs[0] = 1.0; return 1;
             case 4: qs[0] = 0.5412; qs[1] = 1.3066; return 2;
             case 6: qs[0] = 0.5176; qs[1] = 0.7071; qs[2] = 1.9319; return 3;
-            default: qs[0] = 0.5098; qs[1] = 0.6013; qs[2] = 0.9000; qs[3] = 2.5629; return 4;
+            case 8: qs[0] = 0.5098; qs[1] = 0.6013; qs[2] = 0.9000; qs[3] = 2.5629; return 4;
+            default:   // V17: any even order - Butterworth, the least resonant stage first
+            {
+                const int n = order / 2;
+                for (int k = 1; k <= n; ++k) qs[k - 1] = 1.0 / (2.0 * std::cos ((2.0 * k - 1.0) * juce::MathConstants<double>::pi / (2.0 * order)));
+                return n;
+            }
         }
     }
     static int stagesFor (const CleanBand& b) { if (! b.isCut()) return 1; const int o = cutOrder (b.slope); return o / 2 + o % 2; }
@@ -68,9 +90,9 @@ public:
     static BandDesign design (const CleanBand& b, float freq, float gainDb, float q, double sr)
     {
         BandDesign d;
-        const float f = juce::jlimit (10.0f, (float) (sr * 0.45), freq);
+        const double f = juce::jlimit (10.0, sr * 0.45, (double) freq);
         q = juce::jlimit (0.05f, 30.0f, q);
-        const float g = juce::Decibels::decibelsToGain (gainDb);
+        const double g = juce::Decibels::decibelsToGain ((double) gainDb);
 
         switch (b.type)
         {
@@ -83,8 +105,8 @@ public:
             {
                 // Butterworth: the band's Q scales the most resonant stage, so Q 0.71 = flat Butterworth
                 const int order = cutOrder (b.slope);
-                double qs[4]; const int nb = cutQs (order, qs);
-                const float scale = q / 0.7071f;
+                double qs[maxStages]; const int nb = cutQs (order, qs);
+                const double scale = q / 0.7071;
                 int n = 0;
                 if (order % 2 == 1)
                 {
@@ -93,7 +115,7 @@ public:
                 }
                 for (int s = 0; s < nb; ++s)
                 {
-                    float sq = (float) qs[s];
+                    double sq = qs[s];
                     if (s == nb - 1) sq *= scale;
                     d.st[(size_t) n++] = b.type == BandType::LowCut ? AC::makeHighPass (sr, f, sq) : AC::makeLowPass (sr, f, sq);
                 }
@@ -127,11 +149,7 @@ public:
         for (auto& band : state)
         {
             for (auto& ch : band.filters)
-                for (auto& f : ch)
-                {
-                    f.coefficients = new juce::dsp::IIR::Coefficients<float> (1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
-                    f.prepare (spec);
-                }
+                for (auto& f : ch) f = DBiquad {};
             for (auto& det : band.detector)
             {
                 det.coefficients = new juce::dsp::IIR::Coefficients<float> (1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
@@ -214,14 +232,15 @@ public:
                 const auto d = design (b, st.freq, st.gain + st.dynDb, st.q, sr);
                 for (auto& ch : st.filters)
                     for (int s = 0; s < d.n; ++s)
-                        *ch[(size_t) s].coefficients = d.st[(size_t) s];
+                        ch[(size_t) s].set (d.st[(size_t) s]);
 
                 if (dynamic)
                 {
                     const float f = juce::jlimit (20.0f, (float) (sr * 0.45), st.freq);
-                    const auto bp = AC::makeBandPass (sr, f, juce::jmax (0.7f, st.q) * (b.spectral ? juce::jlimit (1.0f, 10.0f, b.specSel) : 1.0f));
+                    using ACf = juce::dsp::IIR::ArrayCoefficients<float>;
+                    const auto bp = ACf::makeBandPass (sr, f, juce::jmax (0.7f, st.q) * (b.spectral ? juce::jlimit (1.0f, 10.0f, b.specSel) : 1.0f));
                     for (auto& det : st.detector) *det.coefficients = bp;
-                    if (b.spectral) { const auto wide = AC::makeBandPass (sr, f, 0.5f); for (auto& det : st.detW) *det.coefficients = wide; }
+                    if (b.spectral) { const auto wide = ACf::makeBandPass (sr, f, 0.5f); for (auto& det : st.detW) *det.coefficients = wide; }
                 }
 
                 if (msBand)
@@ -323,7 +342,7 @@ private:
 
     struct BandState
     {
-        std::array<std::array<juce::dsp::IIR::Filter<float>, maxStages>, 2> filters;
+        std::array<std::array<DBiquad, maxStages>, 2> filters;
         std::array<juce::dsp::IIR::Filter<float>, 2> detector, detW;   // V9: detW = the wide "surroundings" detector (spectral)
         float freq = 1000.0f, gain = 0.0f, q = 1.0f;
         std::array<float, 2> env {}, envW {};

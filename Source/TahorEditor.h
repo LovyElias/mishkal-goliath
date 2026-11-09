@@ -31,6 +31,8 @@ namespace ui
     float textWidth (const juce::Font& f, const juce::String& s);
     void text (juce::Graphics& g, const juce::String& s, const juce::Font& f, juce::Colour c, R box,
                juce::Justification j = juce::Justification::centredLeft);
+    inline float textScale = 1.0f;   // V17: the band panels' writing 20% bigger (set while a panel draws)
+    struct BiggerText { BiggerText (float k) { textScale = k; } ~BiggerText() { textScale = 1.0f; } };
 }
 
 enum class Hit
@@ -143,7 +145,7 @@ private:
     std::vector<Zone> rangeZones;
     // V14: type a value straight into a bubble (frequency, gain, Q)
     std::unique_ptr<juce::TextEditor> typeIn;
-    juce::String typeInPid; int typeInKind = 0;
+    juce::String typeInPid; int typeInKind = 0; int typeInCharNode = -1;   // V17: a Character band's bubble (Hz / dB -> its knob)
     void openTypeIn (const Zone& z);
     void closeTypeIn (bool commit);
     // V16: Pro-Q 4 style on every knob - type any value, and a right-click menu
@@ -157,7 +159,7 @@ private:
     {
         zones.push_back ({ r, k, a, b });
         // V16: a knob's number sits just under it - click it to type a value (like Pro-Q 4)
-        if (isKnobHit (k) && std::abs (r.getWidth() - r.getHeight()) < 6.0f)
+        if (isKnobHit (k) && k != Hit::ResoNodeKnob && std::abs (r.getWidth() - r.getHeight()) < 6.0f)
         {
             const bool beside = k == Hit::ResoKnob || k == Hit::TiltKnob || k == Hit::LinkKnob;   // Reso's side panels: name and number to the right
             zones.push_back ({ beside ? ui::R (r.getRight(), r.getY(), 96, r.getHeight()) : ui::R (r.getX() - 12, r.getBottom(), r.getWidth() + 24, 22), Hit::KnobValue, a, b, k });
@@ -196,10 +198,13 @@ private:
     float drift = 0.0f;
     // V16: frame pacing and the drawing benchmark (only in the stand-alone app with Desktop/Mishkal Projects/Tahor-bench.on)
     double lastPaintMs = 0.0; int skipTick = 0;
+    float freeze = 0.0f; int playTicks = 0;   // V17: 1 = the analyzer held still (the mouse is over the graph)
     int benchStep = -1; double benchAt = 0.0, benchSum = 0.0, benchMax = 0.0; int benchFrames = 0, benchSlow = 0; bool benchOn = false;
     void benchTick();
     // V16: the chain strip (RESO / TAHOR / CHARACTER order)
     void paintChainStrip (juce::Graphics&);
+    void paintTopCentre (juce::Graphics&);
+    void flipCharUnit (int from, int to);
     void chainMouseUp (const juce::MouseEvent&);
     int tchainDrag = -1; float tchainDragX = 0.0f; float chainSlot[3] {};
     double lastWant = 0.0;
