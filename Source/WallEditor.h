@@ -21,6 +21,7 @@ namespace wallui
 class WallCanvas : public juce::Component, private juce::Timer
 {
 public:
+    const std::vector<std::pair<juce::Rectangle<float>, int>> zoneList() const { std::vector<std::pair<juce::Rectangle<float>, int>> v; for (auto& z : zones) v.push_back ({ z.r, (int) z.kind * 100 + z.a + 10 }); return v; }   // (for the test harness)
     explicit WallCanvas (WallProcessor&);
     ~WallCanvas() override;
     void paint (juce::Graphics&) override;

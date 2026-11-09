@@ -24,6 +24,13 @@ float WallCanvas::norm (const juce::String& id) const
     return 0.0f;
 }
 
+// V9: the Gold slider - which step is under x (the zone is the track plus 16 either side)
+static int goldStepAt (const wallui::R& r, float x)
+{
+    const float w = r.getWidth() - 32.0f;
+    return juce::jlimit (0, 4, juce::roundToInt ((x - (r.getX() + 16.0f)) / std::max (1.0f, w) * 4.0f));
+}
+
 const WallCanvas::Zone* WallCanvas::zoneAt (juce::Point<float> p) const
 {
     for (auto it = zones.rbegin(); it != zones.rend(); ++it)   // (the last drawn is on top)
@@ -123,6 +130,15 @@ void WallCanvas::mouseDown (const juce::MouseEvent& e)
         down = {};
         return;
     }
+    if (z->kind == Hit::GoldStep)   // V9: press = jump to that step, then slide
+    {
+        proc.beginGesture ("goldDrive"); dragging = true;
+        const int st = goldStepAt (z->r, e.position.x);
+        proc.dragParam ("goldDrive", (float) st);
+        if (st > 0 && pv ("goldOn") < 0.5f) proc.setParam ("goldOn", 1.0f);
+        repaint();
+        return;
+    }
     if (z->kind == Hit::Knob || z->kind == Hit::Learn || z->kind == Hit::BandXover)
     {
         const juce::String pid = z->kind == Hit::Learn ? juce::String ("target") : z->pid;
@@ -156,6 +172,12 @@ void WallCanvas::mouseDrag (const juce::MouseEvent& e)
             if (auto* p = proc.par (down.pid)) p->setValueNotifyingHost (p->convertTo0to1 (p->getNormalisableRange().snapToLegalValue (hz)));
             break;
         }
+        case Hit::GoldStep:
+        {
+            const int st = goldStepAt (down.r, e.position.x);
+            if (st != (int) pv ("goldDrive")) { proc.dragParam ("goldDrive", (float) st); if (st > 0 && pv ("goldOn") < 0.5f) proc.setParam ("goldOn", 1.0f); repaint(); }
+            break;
+        }
         case Hit::ChainBlock:
             if (down.a < 6 && down.pid.isEmpty() && moved) { chainDrag = down.a; chainDragX = e.position.x; repaint(); }
             break;
@@ -170,6 +192,7 @@ void WallCanvas::mouseUp (const juce::MouseEvent& e)
         const juce::String pid = down.kind == Hit::Learn ? juce::String ("target") : down.pid;
         proc.endGesture (pid);
         dragging = false;
+        if (down.kind == Hit::GoldStep) { down = {}; repaint(); return; }
     }
     if (chainDrag >= 0)
     {
@@ -212,6 +235,12 @@ void WallCanvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWhe
 {
     const auto* z = zoneAt (e.position);
     if (z == nullptr) return;
+    if (z->kind == Hit::GoldStep)
+    {
+        const int st = juce::jlimit (0, 4, (int) pv ("goldDrive") + ((w.deltaY + w.deltaX) > 0 ? 1 : -1));
+        proc.setParam ("goldDrive", (float) st); if (st > 0) proc.setParam ("goldOn", 1.0f);
+        repaint(); return;
+    }
     juce::String pid;
     if (z->kind == Hit::Knob || z->kind == Hit::BandXover) pid = z->pid;
     else if (z->kind == Hit::Learn) pid = "target";
@@ -296,7 +325,6 @@ void WallCanvas::click (const Zone& z, const juce::MouseEvent& e)
             break;
         }
         case Hit::Size: showSizeMenu (z.r); break;
-        case Hit::GoldStep: proc.setParam ("goldDrive", (float) z.a); if (z.a > 0) proc.setParam ("goldOn", 1.0f); break;
         case Hit::BandBody: selBand = z.a; break;
         case Hit::BandAdd: proc.setParam ("bCount", std::min (4.0f, pv ("bCount") + 1)); selBand = (int) pv ("bCount") - 1; break;
         case Hit::BandRemove: proc.setParam ("bCount", std::max (2.0f, pv ("bCount") - 1)); break;

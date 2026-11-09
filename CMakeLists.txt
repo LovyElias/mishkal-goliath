@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Wall VERSION 1.8.0)   # raise with every version so hosts rescan
+project(Wall VERSION 1.9.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -57,6 +57,7 @@ endif()
 #   V6 = the Loudness view's glass box and everything in it centred on the screen; the Spotify banner back at the top
 #   V7 = Character's HARMONICS ADDED window and Punch's ONE HIT window are glass
 #   V8 = GR and CREST titles plain white (no glow); double-tap a chain tab to turn that stage off / on (not the limiter); an off tab says off
+#   V9 = the Gold drive slides: press anywhere on it and slide Off > 2 > 3 > 4 > 6 dB (or scroll)
 function(wall_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -88,6 +89,6 @@ function(wall_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(WALL_LATEST_VERSION 8)   # raise this by one for every new version
+set(WALL_LATEST_VERSION 9)   # raise this by one for every new version
 
 wall_plugin(Wall "Mishkal Wall" Wall com.mishkalaudio.wall ${WALL_LATEST_VERSION} "${WALL_FORMATS}")

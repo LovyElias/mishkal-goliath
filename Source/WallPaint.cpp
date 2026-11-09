@@ -173,8 +173,9 @@ void WallCanvas::goldSlider (juce::Graphics& g, float cx, float cy, float w)
         const float x = x0 + w * (float) i / 4.0f;
         dot (g, x, cy, 2, i <= step ? glow : juce::Colours::white.withAlpha (0.25f));
         text (g, steps[i], x, cy + 14, Face::Regular, 8.5f, i == step ? amber : faint, 'c');
-        zone (R (x - w / 8, cy - 10, w / 4, 32), Hit::GoldStep, "goldDrive", i);
     }
+    // V9: one zone for the whole slider - click a step or slide along it (its track is this zone less 16 each side)
+    zone (R (x0 - 16, cy - 12, w + 32, 34), Hit::GoldStep, "goldDrive", -1);
     const float kx = x0 + w * t;
     dot (g, kx, cy, 8, glow.withAlpha (0.25f)); dot (g, kx, cy, 4.5f, hex (0xf4ede0)); dot (g, kx, cy, 2, glow);
 }
