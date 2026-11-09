@@ -1,4 +1,5 @@
 // ===== PRESSURE: switches and controls =====
+static double gLapT = 0; static void plap (const char* nm) { static const bool on = std::getenv ("PAINTPROF") != nullptr; if (! on) return; const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "    %s %.2f\n", nm, t - gLapT); gLapT = t; }
 const char* tahor::penv (const char* name)
 {
    #if PRESSURE_MOCK
@@ -54,7 +55,8 @@ void Canvas::paintTopStripFaded (juce::Graphics& g)
     if (a > 0.01f)   // tucking away: the strip fades out (its buttons no longer answer)
     {
         const auto nz = zones.size(); const auto np = pz.size();
-        g.beginTransparencyLayer (a); paintTopStrip (g, true); g.endTransparencyLayer();
+        g.saveState(); g.reduceClipRegion (juce::Rectangle<int> (200, 0, (int) PW - 400, 60));
+        g.beginTransparencyLayer (a); paintTopStrip (g, true); g.endTransparencyLayer(); g.restoreState();
         zones.resize (nz); pz.resize (np);
     }
     paintTopStrip (g, false);
@@ -67,7 +69,8 @@ void Canvas::paintScDrawerFaded (juce::Graphics& g)
     if (a > 0.01f)   // closing: the detector EQ and its controls fade out
     {
         const auto nz = zones.size(); const auto np = pz.size();
-        g.beginTransparencyLayer (a); paintScDrawer (g, true); g.endTransparencyLayer();
+        g.saveState(); g.reduceClipRegion (juce::Rectangle<int> (200, 440, (int) PW - 400, 240));
+        g.beginTransparencyLayer (a); paintScDrawer (g, true); g.endTransparencyLayer(); g.restoreState();
         zones.resize (nz); pz.resize (np);
     }
     paintScDrawer (g, false);
@@ -611,12 +614,19 @@ static void modernKnob (juce::Graphics& g, R b, float pos, juce::Colour c)
     g.drawLine (ctr.x + i0 * std::sin (av), ctr.y - i0 * std::cos (av), ctr.x + i1 * std::sin (av), ctr.y - i1 * std::cos (av), 2.2f);
 }
 
+// PRESSURE: glass pictures are the same every frame - make each once (per size and screen density) and reuse it
+static std::map<juce::String, juce::Image>& glassCache() { static std::map<juce::String, juce::Image> c; return c; }
+static const juce::Image* glassFind (const juce::String& key) { auto& c = glassCache(); auto it = c.find (key); return it == c.end() ? nullptr : &it->second; }
+static void glassKeep (const juce::String& key, const juce::Image& im) { auto& c = glassCache(); if (c.size() > 96) c.clear(); c[key] = im; }
+
 // glass: a dark tinted pane whose opacity follows alphaAt (u across, t down, both 0..1) - drawn as a picture so it can
 // fade in any direction
 static void drawGlass (juce::Graphics& g, R s, std::function<float (float, float)> alphaAt, float tint = 0.92f)
 {
     const float k = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     const int iw = juce::jmax (2, juce::roundToInt (s.getWidth() * k)), ih = juce::jmax (2, juce::roundToInt (s.getHeight() * k));
+    const juce::String ck = "glass " + s.toString() + " " + juce::String (k) + " " + juce::String (tint);
+    if (auto* c = glassFind (ck)) { g.drawImageTransformed (*c, juce::AffineTransform::scale (1.0f / k).translated (s.getX(), s.getY())); return; }
     juce::Image im (juce::Image::ARGB, iw, ih, true);
     {
         juce::Graphics ig (im);
@@ -630,6 +640,7 @@ static void drawGlass (juce::Graphics& g, R s, std::function<float (float, float
     for (int y = 0; y < ih; ++y)
         for (int x = 0; x < iw; ++x)
             reinterpret_cast<juce::PixelARGB*> (bd.getPixelPointer (x, y))->multiplyAlpha (juce::jlimit (0.0f, 1.0f, alphaAt ((float) x / (float) (iw - 1), (float) y / (float) (ih - 1))));
+    glassKeep (ck, im);
     g.drawImageTransformed (im, juce::AffineTransform::scale (1.0f / k).translated (s.getX(), s.getY()));
 }
 static float smoothStep (float v) { v = juce::jlimit (0.0f, 1.0f, v); return v * v * (3.0f - 2.0f * v); }
@@ -871,6 +882,7 @@ void Canvas::paintSidechainDrawer (juce::Graphics& g, R unit)
 // on the right, in modern glass panels; the rest in a slim strip along the bottom
 void Canvas::paintCleanTab (juce::Graphics& g)
 {
+    gLapT = juce::Time::getMillisecondCounterHiRes();
     const bool mla = penv ("PRESS_MLA") != nullptr;   // LE-MLA: the Maselec MLA-2 - drive into a fixed threshold, stepped controls
     if (! gCompMode)   // the curve the knee drawer draws: the engine's own
     {
@@ -888,6 +900,8 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         const R s (s0.getX(), 0, s0.getWidth(), 670);
         const float k = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
         const int iw = juce::roundToInt (s.getWidth() * k), ih = juce::roundToInt (s.getHeight() * k);
+        const juce::String ck = "panel " + juce::String (gHelperTab ? 1 : 0) + s.toString() + (right ? "R" : "L") + juce::String (k);
+        if (auto* c = glassFind (ck)) { g.drawImageTransformed (*c, juce::AffineTransform::scale (1.0f / k).translated (s.getX(), s.getY())); return; }
         juce::Image im (juce::Image::ARGB, iw, ih, true);
         {
             juce::Graphics ig (im);
@@ -916,6 +930,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                     reinterpret_cast<juce::PixelARGB*> (bd.getPixelPointer (x, y))->multiplyAlpha (fx[(size_t) x] * fy);
             }
         }
+        glassKeep (ck, im);
         g.drawImageTransformed (im, juce::AffineTransform::scale (1.0f / k).translated (s.getX(), s.getY()));
     };
     auto title = [&] (R s, const char* t)
@@ -1421,11 +1436,12 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 paintEnvEdge (g, eo);
             }
         }
-        paintGrStrip (g);
+        // (CLEAN has its sidechain - the gain-reduction strip is VINTAGE only)
         paintTopStripFaded (g);
         paintScDrawerFaded (g);
         return;
     }
+    plap ("clean-start");
     // left: threshold, ratio, and the knee with its little graph
     {
         const R s (0, top, pw, ph);
@@ -1511,6 +1527,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             zone (t, Hit::Piano, 77);   // (mock: the click target for the knee window)
         }
     }
+    plap ("left-panel");
     // Pro-C 3 style knee display: big, over the waveform, while Threshold, Ratio or Knee is touched - fades 4 s after
     {
         const double since = juce::Time::getMillisecondCounterHiRes() - kneeTouch;
@@ -1523,6 +1540,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             paintEnvEdge (g, eo);
         }
     }
+    plap ("knee+env drawers");
     // right: attack and release (with auto release), then make-up and mix side by side, and auto gain
     {
         const R s (PW - pw, top, pw, ph);
@@ -1561,9 +1579,10 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             // faint until the mouse comes over it (like Range and Hold) - but always clear when it's on
             const R br (s.getX() + 18, yy, pw - 36, 22);
             const bool near = br.expanded (8).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_RH") != nullptr || pon (pid);
+            g.saveState(); g.reduceClipRegion ((br.expanded (6)).toNearestInt());   // (a layer only as big as what it covers - fast)
             g.beginTransparencyLayer (0.14f + (1.0f - 0.14f) * fadeOut (__LINE__, near));
             glassButton (g, br, t, pon (pid));
-            g.endTransparencyLayer();
+            g.endTransparencyLayer(); g.restoreState();
             pctl (br, pid, 1);
         };
         if (! ds1 && ! mla) { lit (y, "AUTO RELEASE", "cAutoRel"); y += 36; }
@@ -1600,16 +1619,17 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             const float bw = (pw - 36 - 10) * 0.5f, ry = 650.0f - 21.0f;
             const R both (s.getX() + 18, ry, pw - 36, 42);
             const bool near = both.expanded (10).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_RH") != nullptr;
+            g.saveState(); g.reduceClipRegion ((both.expanded (6)).toNearestInt());   // (a layer only as big as what it covers - fast)
             g.beginTransparencyLayer (0.14f + (1.0f - 0.14f) * fadeOut (__LINE__, near));
             valueBar (g, R (s.getX() + 18, ry, bw, 42), "RANGE", pfmt ("cRange"), pn ("cRange"));
             valueBar (g, R (s.getX() + 18 + bw + 10, ry, bw, 42), "HOLD", pfmt ("cHold"), pn ("cHold"));
             pctl (R (s.getX() + 18, ry, bw, 42), "cRange", 0); pctl (R (s.getX() + 18 + bw + 10, ry, bw, 42), "cHold", 0);
-            g.endTransparencyLayer();
+            g.endTransparencyLayer(); g.restoreState();
         }
     }
-    paintGrStrip (g);
-    paintTopStripFaded (g);
-    paintScDrawerFaded (g);
+    plap ("right-panel");
+    paintTopStripFaded (g); plap ("topstrip");
+    paintScDrawerFaded (g); plap ("sc");
     // the strip along the bottom: off for now (Lovy is deciding where its controls go)
     if (false)
     {
@@ -1660,6 +1680,8 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         const R s (s0.getX(), 0, s0.getWidth(), 670);
         const float k = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
         const int iw = juce::roundToInt (s.getWidth() * k), ih = juce::roundToInt (s.getHeight() * k);
+        const juce::String ck = "panel " + juce::String (gHelperTab ? 1 : 0) + s.toString() + (right ? "R" : "L") + juce::String (k);
+        if (auto* c = glassFind (ck)) { g.drawImageTransformed (*c, juce::AffineTransform::scale (1.0f / k).translated (s.getX(), s.getY())); return; }
         juce::Image im (juce::Image::ARGB, iw, ih, true);
         {
             juce::Graphics ig (im);
@@ -1685,6 +1707,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
                 for (int x = 0; x < iw; ++x) reinterpret_cast<juce::PixelARGB*> (bd.getPixelPointer (x, y))->multiplyAlpha (fx[(size_t) x] * fy);
             }
         }
+        glassKeep (ck, im);
         g.drawImageTransformed (im, juce::AffineTransform::scale (1.0f / k).translated (s.getX(), s.getY()));
     };
     auto fh = font (Face::CondMedium, 10, 2.0f);
@@ -1721,7 +1744,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         const bool ring = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
         int i = 0;
         gHelperKnob = false;   // (the compressors' own knob)
-        if (! cardOn) g.beginTransparencyLayer (0.3f);   // an off tool's knobs sit back
+        if (! cardOn) { g.saveState(); g.reduceClipRegion ((s).toNearestInt()); g.beginTransparencyLayer (0.3f); }   // an off tool's knobs sit back
         for (auto& k : ks)
         {
             const float cx = s.getX() + 18 + w * ((float) i + 0.5f);
@@ -1731,7 +1754,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
             ++i;
         }
         gHelperKnob = false;
-        if (! cardOn) g.endTransparencyLayer();
+        if (! cardOn) { g.endTransparencyLayer(); g.restoreState(); }
         y += 17 + sz + (ring ? 12.0f : 6.0f + 16.0f + 10.0f);
     };
     auto seg = [&] (R r, std::initializer_list<const char*> labs, const char* pid, juce::Colour c)
@@ -1757,7 +1780,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         { float yy = y; const bool ring0 = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
           for (auto& k : kp) { ks.push_back ({ k.first, pfmt (k.second), pn (k.second) }); pctl (R (cx - sz * 0.5f - 4, yy + 12, sz + 8, sz + 8), k.second, 0); yy += 16 + sz + (ring0 ? 14.0f : 5.0f + 16.0f + 12.0f); } }
         const bool ring = penv ("PRESS_HKNOB") != nullptr && std::atoi (penv ("PRESS_HKNOB")) == 3;
-        if (! cardOn) g.beginTransparencyLayer (0.3f);
+        if (! cardOn) { g.saveState(); g.reduceClipRegion ((R (cx - colW * 0.5f, y, colW, 400)).toNearestInt()); g.beginTransparencyLayer (0.3f); }
         for (auto& k : ks)
         {
             text (g, std::get<0> (k), font (Face::CondMedium, 9.5f, 1.6f), col ("#b9b3a7"), R (cx - colW * 0.5f, y, colW, 11), juce::Justification::centred);
@@ -1765,7 +1788,7 @@ void Canvas::paintLevelTab (juce::Graphics& g)
             if (! ring) text (g, std::get<1> (k), font (Face::Light, 13.0f, 0.4f), ink, R (cx - colW * 0.5f, y + 16 + sz + 5, colW, 16), juce::Justification::centred);
             y += 16 + sz + (ring ? 14.0f : 5.0f + 16.0f + 12.0f);
         }
-        if (! cardOn) g.endTransparencyLayer();
+        if (! cardOn) { g.endTransparencyLayer(); g.restoreState(); }
         return y;
     };
     // ---- right: Lift (its two bands side by side, a column each) and the Breath under it - next to its Tone drawer
@@ -2110,6 +2133,7 @@ void Canvas::paintKneeEdge (juce::Graphics& g, bool open)
         const R h (strip.getCentreX() - 12, 310, 24, 60);
         dz (h.expanded (8, 6), Hit::PDrawer, 0);
         const bool near = h.expanded (30, 40).contains (mouse - display.getPosition());
+        g.saveState(); g.reduceClipRegion ((h.expanded (20)).toNearestInt());   // (a layer only as big as what it covers - fast)
         g.beginTransparencyLayer (0.18f + (1.0f - 0.18f) * fadeOut (__LINE__, near));
         juce::Path p; p.addRoundedRectangle (h, 12);
         cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.4f), 10, { 0, 3 }), p);
@@ -2125,7 +2149,7 @@ void Canvas::paintKneeEdge (juce::Graphics& g, bool open)
             else      { c.startNewSubPath (cx - 3, cy - 4); c.lineTo (cx + 2, cy); c.lineTo (cx - 3, cy + 4); }
             g.setColour (ink); g.strokePath (c, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
-        g.endTransparencyLayer();
+        g.endTransparencyLayer(); g.restoreState();
     }
 }
 
@@ -2133,6 +2157,7 @@ void Canvas::paintKneeEdge (juce::Graphics& g, bool open)
 void Canvas::paintArrowHandle (juce::Graphics& g, R h, int dir, const juce::String& label)
 {
     const bool near = h.expanded (30, 30).contains (mouse - display.getPosition());
+    g.saveState(); g.reduceClipRegion ((h.expanded (6)).toNearestInt());   // (a layer only as big as what it covers - fast)
     g.beginTransparencyLayer (0.2f + 0.8f * fadeOut (__LINE__ * 100000 + (int) h.getX() * 7 + (int) h.getY(), near));
     juce::Path p; p.addRoundedRectangle (h, juce::jmin (h.getWidth(), h.getHeight()) * 0.5f);
     g.setGradientFill (juce::ColourGradient (col ("#2c2b38", 0.85f), h.getX(), h.getY(), col ("#17171d", 0.85f), h.getRight(), h.getBottom(), false));
@@ -2145,7 +2170,7 @@ void Canvas::paintArrowHandle (juce::Graphics& g, R h, int dir, const juce::Stri
     g.setColour (ink); g.strokePath (ch, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     if (label.isNotEmpty())
         text (g, label, font (Face::CondMedium, 9, 1.6f), ink, R (c.x + 9, h.getY(), h.getRight() - c.x - 9, h.getHeight()), juce::Justification::centredLeft);
-    g.endTransparencyLayer();
+    g.endTransparencyLayer(); g.restoreState();
 }
 
 // the top strip: the finer controls - Range, Hold, Glide/Snap, Color/Pure, Auto Attack, Peak/RMS and Delta - in glass
@@ -2547,6 +2572,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         g.fillRect (strip.getX(), strip.getCentreY() - 0.5f, h.getX() - 6 - strip.getX(), 1.0f);
         g.fillRect (h.getRight() + 6, strip.getCentreY() - 0.5f, strip.getRight() - h.getRight() - 6, 1.0f);
         const bool near = h.expanded (40, 30).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_SC") != nullptr;
+        g.saveState(); g.reduceClipRegion ((h.expanded (12)).toNearestInt());   // (a layer only as big as what it covers - fast)
         g.beginTransparencyLayer (0.35f + 0.65f * fadeOut (__LINE__, near));
         for (int i = 0; i < 2; ++i)
         {
@@ -2557,7 +2583,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
             g.setColour (ink); g.strokePath (c, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
         text (g, gHelperTab ? U8 ("DE-ESS  \xc2\xb7  POP") : juce::String ("SIDECHAIN"), font (Face::CondMedium, 9.5f, 1.8f), ink, R (h.getX() + 38, h.getY(), h.getWidth() - 46, h.getHeight()), juce::Justification::centredLeft);
-        g.endTransparencyLayer();
+        g.endTransparencyLayer(); g.restoreState();
     };
     if (! open) { scEdge (652.0f, false); return; }
     const float edgeY = 498.0f;   // a short band along the bottom
@@ -2613,6 +2639,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         auto toggle = [&] (R r, const char* t, bool on) { glassButton (g, r, t, on); };
         const R rowR (PW * 0.5f - 380.0f, cy - 26, 760, 50);
         const bool nearRow = rowR.expanded (10).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_ROW") != nullptr;
+        g.saveState(); g.reduceClipRegion ((rowR.expanded (12)).toNearestInt());   // (a layer only as big as what it covers - fast)
         g.beginTransparencyLayer (0.14f + 0.86f * fadeOut (__LINE__, nearRow));
         float x = PW * 0.5f - 372.0f;
         const bool pro = penv ("PRESS_PRO") != nullptr, sync = pro && penv ("PRESS_PRO_SYNC") != nullptr;
@@ -2658,7 +2685,7 @@ void Canvas::paintScDrawer (juce::Graphics& g, bool open)
         valueBar (g, R (x, cy - 21, 96, 42), "M / S", pchoice ("cScMs"), pn ("cScMs")); pctl (R (x, cy - 21, 96, 42), "cScMs", 1); x += 108;
         valueBar (g, R (x, cy - 21, 96, 42), "LOOK-AHEAD", pfmt ("cLook") + (pro ? U8 (" \xc2\xb7 max 10") : juce::String()), pn ("cLook"));
         pctl (R (x, cy - 21, 96, 42), "cLook", 0);
-        g.endTransparencyLayer();
+        g.endTransparencyLayer(); g.restoreState();
     }
 }
 
@@ -2995,6 +3022,7 @@ void Canvas::paintEnvEdge (juce::Graphics& g, bool open)
         const R h (strip.getCentreX() - 12, 310, 24, 60);
         dz (h.expanded (8, 6), Hit::PDrawer, 1);
         const bool near = h.expanded (30, 40).contains (mouse - display.getPosition()) || penv ("PRESS_HOVER_ENV") != nullptr;
+        g.saveState(); g.reduceClipRegion ((h.expanded (20)).toNearestInt());   // (a layer only as big as what it covers - fast)
         g.beginTransparencyLayer (0.18f + (1.0f - 0.18f) * fadeOut (__LINE__, near));
         juce::Path p; p.addRoundedRectangle (h, 12);
         cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.4f), 10, { 0, 3 }), p);
@@ -3009,7 +3037,7 @@ void Canvas::paintEnvEdge (juce::Graphics& g, bool open)
             else      { c.startNewSubPath (cx + 3, cy - 4); c.lineTo (cx - 2, cy); c.lineTo (cx + 3, cy + 4); }
             g.setColour (ink); g.strokePath (c, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
-        g.endTransparencyLayer();
+        g.endTransparencyLayer(); g.restoreState();
     }
 }
 
@@ -3308,9 +3336,13 @@ void Canvas::paintGrStrip (juce::Graphics& g)
 {
     const int n = (int) hGr.size();
     if (n < 2) return;
-    const R box (PW * 0.5f - 300.0f, 552.0f, 600.0f, 62.0f);
+    // V11: lower, just above the bottom bar, on glass that melts into the window at its edges
+    const R box (PW * 0.5f - 300.0f, 614.0f, 600.0f, 62.0f);
     const R gr (box.getX() + 12, box.getY() + 19, box.getWidth() - 196, box.getHeight() - 26);
-    fillRound (g, box, 8, col ("#0d0e12", 0.72f)); strokeRound (g, box, 8, juce::Colours::white.withAlpha (0.08f));
+    drawGlass (g, box.expanded (40, 14), [] (float u, float t)
+    {
+        return 0.85f * smoothStep (u / 0.14f) * smoothStep ((1.0f - u) / 0.14f) * smoothStep (t / 0.3f) * smoothStep ((1.0f - t) / 0.3f);
+    }, 0.8f);
     text (g, U8 ("GAIN REDUCTION  \xc2\xb7  10 s"), font (Face::CondMedium, 8, 1.6f), col ("#b9b3a7"), R (gr.getX(), box.getY() + 5, 200, 10));
     const float scale = 15.0f;   // dB down to the bottom of the strip
     for (float db : { 5.0f, 10.0f, 15.0f })

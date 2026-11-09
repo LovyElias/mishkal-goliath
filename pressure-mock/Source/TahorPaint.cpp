@@ -253,6 +253,7 @@ float dbRange (TahorProcessor& p) { static const float r[4] { 3.0f, 6.0f, 12.0f,
 void Canvas::paint (juce::Graphics& g)
 {
     gPressCanvas = this;
+    syncTabWindows();
     {   // PRESSURE: the screen's history exists before the first draw (the host can paint before any audio or timer)
         const int n = (int) ((PW - 50.0f) / 2.0f);
         if ((int) hIn.size() != n) { hIn.assign ((size_t) n, -90.0f); hOut = hIn; hGr.assign ((size_t) n, 0.0f); hRide = hGr; hBreath = hGr; hPos = 0; }
@@ -268,13 +269,17 @@ void Canvas::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (col ("#121215"), 0, 0, col ("#0b0b0d"), 0, H, false));
     g.fillAll();
 
-    paintHeader (g);
-    paintBottomBar (g);      // V5: before the screen, so the screen's arches can open into the header and the bar
-    paintDisplay (g);
-    paintMeters (g);
-    paintGrMeter (g);
-    paintGateMeter (g);
-    paintEngineSlide (g);   // CLEAN / VINTAGE: the unit and its arrows; HELPERS: LE-4
+    static const bool prof = std::getenv ("PAINTPROF") != nullptr;
+    double t0 = juce::Time::getMillisecondCounterHiRes();
+    auto lap = [&] (const char* nm) { if (prof) { const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "%s %.2f\n", nm, t - t0); t0 = t; } };
+    lap ("bg");
+    paintHeader (g); lap ("header");
+    paintBottomBar (g); lap ("bottom");      // V5: before the screen, so the screen's arches can open into the header and the bar
+    paintDisplay (g); lap ("display");
+    paintMeters (g); lap ("meters");
+    paintGrMeter (g); lap ("grmeter");
+    paintGateMeter (g); lap ("gate");
+    paintEngineSlide (g); lap ("engine");   // CLEAN / VINTAGE: the unit and its arrows; HELPERS: LE-4
     if (tab == 0)
     {
         const bool off = proc.param ("resoOn") < 0.5f;   // V9: the panels dim too (still adjustable)
@@ -721,10 +726,13 @@ void Canvas::paintDisplay (juce::Graphics& g)
     const auto shape = screenPath();
     g.reduceClipRegion (shape);   // V5: the arched screen
     g.addTransform (juce::AffineTransform::translation (d.getX(), d.getY()));
-    paintBackground (g);
+    static const bool prof2 = std::getenv ("PAINTPROF") != nullptr;
+    double q0 = juce::Time::getMillisecondCounterHiRes();
+    auto lap2 = [&] (const char* nm) { if (prof2) { const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "  %s %.2f\n", nm, t - q0); q0 = t; } };
+    paintBackground (g); lap2 ("background");
     const bool tabOff = proc.param (tab == 0 ? "resoOn" : tab == 1 ? "tahorOn" : "charOn") < 0.5f;
     if (tabOff) g.beginTransparencyLayer (0.3f);   // PRESSURE: the tab is off - the whole screen sits back (still adjustable)
-    paintDynScreen (g, tab == 2 ? 1 : tab);   // (VINTAGE uses the same glass screen as CLEAN now)
+    paintDynScreen (g, tab == 2 ? 1 : tab); lap2 ("dynscreen");   // (VINTAGE uses the same glass screen as CLEAN now)
     if (false)   // (Pressure: no frequency labels)
     {
         auto f = font (Face::Regular, 11);
@@ -735,6 +743,7 @@ void Canvas::paintDisplay (juce::Graphics& g)
     if (tab == 0) paintLevelTab (g);
     if (tab == 1) paintCleanTab (g);
     if (tab == 2) paintCleanTab (g);   // VINTAGE in glass: panels + faceplate (the old chain view: paintCharTab)
+    lap2 ("tab");
     if (tabOff) g.endTransparencyLayer();
     g.restoreState();
     // V4: the screen fades softly into the header and the bottom bar

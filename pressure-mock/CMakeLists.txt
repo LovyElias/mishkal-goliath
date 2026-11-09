@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Pressure VERSION 1.10.0)   # raise with every version so hosts rescan
+project(Pressure VERSION 1.11.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -67,6 +67,10 @@ endif()
 #        oversampling off
 #   V10 = a gain-reduction strip along the bottom of CLEAN and VINTAGE: the last ten seconds of reduction (with the peak
 #         as a dashed line), and NOW / AVERAGE / PEAK readouts
+#   V11 = tap any number to type it; new starting values (HELPERS: just the 1964, In -5.5 at three o'clock, Out +4,
+#         knee open; CLEAN: LE-DS1, 1.5:1, threshold 0, make-up 0, knee/envelope/sidechain open; VINTAGE: LE-660,
+#         In -12, Out +4; oversampling 2x); each tab remembers its own open windows; the gain-reduction strip is
+#         VINTAGE only, lower, on glass; faster drawing (cached glass, smaller layers) and a steady 30 frames a second
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -98,7 +102,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(PRESSURE_LATEST_VERSION 10)   # raise this by one for every new version
+set(PRESSURE_LATEST_VERSION 11)   # raise this by one for every new version
 
 # One plug-in, updated in place
 tahor_plugin(Pressure "Mishkal Pressure" Prss com.mishkalaudio.pressure ${PRESSURE_LATEST_VERSION} "${TAHOR_FORMATS}")

@@ -40,10 +40,10 @@ inline const std::vector<VParam>& vintageParams()
         { "v0Meter", "LE-76 Meter", 'C', 0, 0, 0, 0, "GR|+8|+4|OFF", "" },
         { "v0Rev", "LE-76 Revision", 'C', 0, 0, 0, 0, "A|B|C|D|E|F|G|H|LN", "" },
         // LE-660
-        { "v1In", "LE-660 Input Gain", 'C', 0, 0, 3, 0, "-12|-8|-4|0|+4|+8", "dB" },
+        { "v1In", "LE-660 Input Gain", 'C', 0, 0, 0, 0, "-12|-8|-4|0|+4|+8", "dB" },
         { "v1Thr", "LE-660 Threshold", 'F', 0, 10, 4, 0, nullptr, "" },
         { "v1Tc", "LE-660 Time Constant", 'C', 0, 0, 1, 0, "1|2|3|4|5|6", "" },
-        { "v1Out", "LE-660 Output", 'F', -20, 20, 6, 0, nullptr, "dB+" },
+        { "v1Out", "LE-660 Output", 'F', -20, 20, 4, 0, nullptr, "dB+" },
         { "v1Dc", "LE-660 DC Threshold", 'F', -5, 5, 0, 0, nullptr, "" },
         { "v1Mix", "LE-660 Mix", 'F', 0, 100, 100, 0, nullptr, "%" },
         { "v1Lat", "LE-660 Lat / Vert", 'C', 0, 0, 0, 0, "OFF|ON", "" },

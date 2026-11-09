@@ -56,7 +56,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     B ("bypass", "Bypass", false);
     B ("match", "Match", false);
     C ("phase", "Processing", { "Natural Phase", "Linear Phase", "Linear Phase HQ" }, 0);
-    C ("os", "Oversampling", { "Off", "2x", "4x", "8x", "16x", "32x" }, 0);   // Pressure: off until you turn it on
+    C ("os", "Oversampling", { "Off", "2x", "4x", "8x", "16x", "32x" }, 1);   // Pressure: starts at 2x
     C ("osRender", "Render Oversampling", { "Same", "2x", "4x", "8x", "16x", "32x" }, 5);
     F ("inGain", "Input", R (-24.0f, 24.0f, 0.1f), 0.0f, "dB");
     F ("outGain", "Output", R (-24.0f, 24.0f, 0.1f), 0.0f, "dB");
@@ -71,7 +71,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     // ===== PRESSURE =====
     // (the three tabs' power buttons keep their old ids: resoOn = HELPERS, tahorOn = CLEAN, charOn = VINTAGE)
     // HELPERS (LE-4)
-    B ("hLiftOn", "Lift On", true);  B ("hRideOn", "Rider On", true);  B ("hBreathOn", "Breath On", true);  B ("hPeakOn", "1964 On", true);
+    B ("hLiftOn", "Lift On", false);  B ("hRideOn", "Rider On", false);  B ("hBreathOn", "Breath On", false);  B ("hPeakOn", "1964 On", true);   // HELPERS starts with just the 1964
     C ("hLiftMode", "Lift Mode", { "Upward", "Dyn EQ" }, 0);
     B ("hLowSolo", "Lift Low Solo", false);  B ("hHighSolo", "Lift High Solo", false);
     F ("hLowHz", "Lift Low Freq", hz (40.0f, 500.0f), 120.0f, "Hz");
@@ -86,14 +86,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     F ("hBreath", "Breath Amount", R (-20.0f, 0.0f, 0.1f), -8.0f, "dB");
     F ("hBreathSense", "Breath Sense", R (0.0f, 100.0f, 1.0f), 55.0f, "%");
     { R r (5.0f, 200.0f, 1.0f); r.setSkewForCentre (40.0f); F ("hBreathFade", "Breath Fade", r, 40.0f, "ms"); }
-    F ("hPkIn", "1964 Input", R (-40.0f, 10.0f, 0.5f), -40.0f, "dBu");
+    { R r (-40.0f, 10.0f, 0.5f); r.skew = 0.492f; F ("hPkIn", "1964 Input", r, -5.5f, "dBu"); }   // -5.5 dBu sits at three o'clock
     F ("hPkOut", "1964 Output", R (-10.0f, 10.0f, 0.1f), 4.0f, "dBu");
     { R r (1.1f, 100.0f, 0.01f); r.setSkewForCentre (4.0f); F ("hPkSlope", "1964 Slope", r, 2.0f, ":1"); }
     F ("hPkRel", "1964 Release", R (0.0f, 10.0f, 0.1f), 3.0f);
     C ("hPkMeter", "1964 Meter", { "GR", "+4", "+8" }, 0);
     C ("hPkPad", "1964 Pad", { "Off", "10", "20" }, 0);
     // VINTAGE: which unit, then every unit's own controls (the table in PressureVintage.h)
-    C ("vUnit", "Vintage Unit", { "LE-76", "LE-660", "LE-STA", "LE-2500", "LE-G", "LE-IRON", "LE-336", "LE-8X", "LE-160", "LE-7", "LE-760", "LE-SHM", "LE-2A", "LE-1B", "LE-VSC" }, 0);
+    C ("vUnit", "Vintage Unit", { "LE-76", "LE-660", "LE-STA", "LE-2500", "LE-G", "LE-IRON", "LE-336", "LE-8X", "LE-160", "LE-7", "LE-760", "LE-SHM", "LE-2A", "LE-1B", "LE-VSC" }, 1);   // VINTAGE starts on LE-660
     for (auto& v : pressure::vintageParams())
     {
         if (v.kind == 'B') B (v.id, v.name, v.def > 0.5f);
@@ -101,9 +101,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
         else { R r (v.lo, v.hi, (v.hi - v.lo) / 1000.0f); if (v.centre > 0.0f) r.setSkewForCentre (v.centre); F (v.id, v.name, r, v.def, v.unit); }
     }
     // CLEAN
-    C ("cEngine", "Clean Engine", { "LE-11/25E", "LE-755C", "LE-DS1", "LE-MLA", "LE-580E" }, 0);
-    F ("cThresh", "Threshold", R (-60.0f, 0.0f, 0.1f), -24.0f, "dB");
-    { R r (1.0f, 20.0f, 0.01f); r.setSkewForCentre (4.0f); F ("cRatio", "Ratio", r, 4.0f, ":1"); }
+    C ("cEngine", "Clean Engine", { "LE-11/25E", "LE-755C", "LE-DS1", "LE-MLA", "LE-580E" }, 2);   // CLEAN starts on LE-DS1
+    F ("cThresh", "Threshold", R (-60.0f, 0.0f, 0.1f), 0.0f, "dB");
+    { R r (1.0f, 20.0f, 0.01f); r.setSkewForCentre (4.0f); F ("cRatio", "Ratio", r, 1.5f, ":1"); }
     F ("cKnee", "Knee", R (0.0f, 24.0f, 0.1f), 6.0f, "dB");
     F ("cDsKnee", "DS1 Soft Knee", R (0.0f, 1.0f, 0.01f), 0.6f);
     { R r (0.05f, 250.0f, 0.01f); r.setSkewForCentre (8.0f); F ("cAttack", "Attack", r, 8.0f, "ms"); }
@@ -118,7 +118,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     { R r (100.0f, 5000.0f, 1.0f); r.setSkewForCentre (1200.0f); F ("cDsRelS", "DS1 Release Slow", r, 1200.0f, "ms"); }
     { R r (1.0f, 300.0f, 0.1f); r.setSkewForCentre (30.0f); F ("cDsAvg", "DS1 Average", r, 30.0f, "ms"); }
     C ("cDsBand", "DS1 Full / Band", { "Full Range", "Band" }, 0);
-    F ("cMakeup", "Make-up", R (-12.0f, 24.0f, 0.1f), 4.0f, "dB");
+    F ("cMakeup", "Make-up", R (-12.0f, 24.0f, 0.1f), 0.0f, "dB");
     F ("cMix", "Mix", R (0.0f, 100.0f, 1.0f), 100.0f, "%");
     B ("cAutoGain", "Clean Auto Gain", false);
     F ("cRange", "Range", R (0.0f, 60.0f, 0.5f), 24.0f, "dB");

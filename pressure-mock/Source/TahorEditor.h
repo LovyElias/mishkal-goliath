@@ -131,6 +131,17 @@ private:
     juce::String pfmt (const juce::String& pid) const;  // the value as the screen shows it
     bool pon (const juce::String& pid) const { return proc.param (pid) > 0.5f; }
     std::map<int, double> fadeAt;                       // when each fading thing was last showing
+    // V11: each tab keeps its own windows open - HELPERS: knee; CLEAN: knee, envelope, sidechain; VINTAGE: none
+    bool tabWin[3][3] { { true, false, false }, { true, true, true }, { false, false, false } };
+    int winTab = -1;
+    void syncTabWindows()
+    {
+        if (winTab == tab) return;
+        if (winTab >= 0 && winTab < 3) { tabWin[winTab][0] = kneeOn; tabWin[winTab][1] = envOn; tabWin[winTab][2] = scOn; }
+        winTab = juce::jlimit (0, 2, tab);
+        kneeOn = tabWin[winTab][0]; envOn = tabWin[winTab][1]; scOn = tabWin[winTab][2];
+        fadeAt.clear();   // (no leftover fade from the tab you came from)
+    }
     float fadeOut (int key, bool on);                   // 1 while on, then down to 0 over 3 seconds
     void paintTopStripFaded (juce::Graphics&);
     void paintScDrawerFaded (juce::Graphics&);
@@ -196,6 +207,9 @@ private:
     juce::String typeInPid; int typeInKind = 0;
     void openTypeIn (const Zone& z);
     void closeTypeIn (bool commit);
+    // Pressure V11: tap any number to type it (opens a moment after the tap, so a double-click still resets)
+    void openPressTypeIn (const Zone& z);
+    Zone typeSoon; double typeSoonAt = 0.0;
     void paintCursorReadout (juce::Graphics&);   // V14: the dynamic range's grab spots (added after the background)
     std::vector<Zone> zones;
     void zone (ui::R r, Hit k, int a = 0, int b = 0) { zones.push_back ({ r, k, a, b }); }

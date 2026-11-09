@@ -71,7 +71,7 @@ Canvas::Canvas (TahorProcessor& p) : proc (p)
     hann.resize (8192);
     for (int i = 0; i < 8192; ++i) hann[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / 8192.0f);
     resoShown.assign ((size_t) PW + 1, 0.0f);
-    startTimerHz (60);   // V6: smoother movement; V14: 60 a second now the drawing is lighter
+    startTimerHz (30);   // Pressure V11: 30 a second keeps every frame on time in the host   // V6: smoother movement; V14: 60 a second now the drawing is lighter
 }
 
 Canvas::~Canvas()
@@ -99,6 +99,11 @@ void Canvas::analyse (std::vector<float>& win, std::vector<float>& smoothDb)
 void Canvas::timerCallback()
 {
     pressCanvas (this, true);
+    if (typeSoonAt > 0.0 && juce::Time::getMillisecondCounterHiRes() - typeSoonAt > 280.0)
+    {
+        typeSoonAt = 0.0;
+        if (typeIn == nullptr) openPressTypeIn (typeSoon);
+    }
     proc.preTap.pull (preWin);
     proc.postTap.pull (postWin);
     if (eqMatch == 1)   // V12: EQ MATCH learning - your sound (pre) and the reference (sidechain)
@@ -253,6 +258,7 @@ void Canvas::mouseDown (const juce::MouseEvent& e)
     if (auto* pzz = zoneAt (e.position); pzz != nullptr && isPressureHit (pzz->kind))
     {
         if (typeIn != nullptr) closeTypeIn (true);
+        typeSoonAt = 0.0;   // (a second click: it's a double-click, not a tap)
         downAt = e.position; mouse = e.position; dragging = true; down = *pzz; dragPid = {}; dragPid2 = {};
         if (down.kind == Hit::PCtl && juce::isPositiveAndBelow (down.a, (int) pz.size()))
         {
@@ -521,6 +527,9 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
         const bool moved = e.position.getDistanceFrom (downAt) > 3.0f;
         if (! moved)
         {
+            if (down.kind == Hit::PCtl && (down.b == 0 || down.b == 3 || down.b == 4 || down.b == 5) && juce::isPositiveAndBelow (down.a, (int) pz.size())
+                && e.getNumberOfClicks() == 1)
+            { typeSoon = down; typeSoonAt = juce::Time::getMillisecondCounterHiRes(); }   // a tap: type the value in
             if (down.kind == Hit::PCtl && down.b >= 100 && juce::isPositiveAndBelow (down.a, (int) pz.size()))   // a segment: pick it
                 proc.setParam (pz[(size_t) down.a], (float) (down.b - 100));
             if (down.kind == Hit::PCtl && (down.b == 1 || down.b == 2) && juce::isPositiveAndBelow (down.a, (int) pz.size()))
@@ -591,6 +600,7 @@ void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
     if (z == nullptr) return;
     if (z->kind == Hit::PCtl)   // PRESSURE: double-click a knob or bar - back to its default
     {
+        typeSoonAt = 0.0;
         if ((z->b == 0 || z->b == 3 || z->b == 4) && juce::isPositiveAndBelow (z->a, (int) pz.size()))
             if (auto* p = proc.apvts.getParameter (pz[(size_t) z->a])) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); }
         repaint();
@@ -697,11 +707,87 @@ void Canvas::openTypeIn (const Zone& z)
     t.onFocusLost = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
 }
 
+void Canvas::openPressTypeIn (const Zone& z)
+{
+    if (! juce::isPositiveAndBelow (z.a, (int) pz.size())) return;
+    const auto pid = pz[(size_t) z.a];
+    auto* p = proc.apvts.getParameter (pid);
+    if (p == nullptr || dynamic_cast<juce::AudioParameterBool*> (p) != nullptr) return;
+    typeInKind = 9;
+    typeInPid = pid;
+    typeIn = std::make_unique<juce::TextEditor>();
+    auto& t = *typeIn;
+    t.setFont (ui::font (ui::Face::Regular, 12.0f));
+    t.setJustification (juce::Justification::centred);
+    t.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1c1c22));
+    t.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    t.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xffb08d57));
+    t.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (0xffb08d57));
+    t.setColour (juce::TextEditor::highlightColourId, juce::Colour (0x66b08d57));
+    t.setIndents (4, 3);
+    juce::String now;
+    if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p)) now = c->getCurrentChoiceName();
+    else
+    {
+        const float v = proc.param (pid);
+        const auto range = proc.apvts.getParameterRange (pid);
+        const int dec = range.interval >= 1.0f ? 0 : (std::abs (v) >= 100.0f ? 0 : (range.interval >= 0.1f || range.interval <= 0.0f ? 1 : 2));
+        now = std::abs (v) >= 10000.0f ? juce::String (v / 1000.0f, 1) + "k" : juce::String (v, dec);
+        if (now.containsChar ('.')) now = now.trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+    }
+    t.setText (now, false);
+    auto r = z.r.withSizeKeepingCentre (juce::jlimit (64.0f, 110.0f, z.r.getWidth()), 22.0f);
+    r = r.constrainedWithin (getLocalBounds().toFloat().reduced (4));
+    t.setBounds (r.getSmallestIntegerContainer());
+    addAndMakeVisible (t);
+    t.selectAll();
+    t.grabKeyboardFocus();
+    const juce::Component::SafePointer<Canvas> sp (this);
+    t.onReturnKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
+    t.onEscapeKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (false); }); };
+    t.onFocusLost = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
+    repaint();
+}
+
 void Canvas::closeTypeIn (bool commit)
 {
     if (typeIn == nullptr) return;
     float v = 0.0f;
-    if (commit && parseTyped (typeIn->getText(), typeInKind, v))
+    bool ok = false;
+    if (commit && typeInKind == 9)   // Pressure: any number; a choice by its name or the nearest of its values
+    {
+        const auto txt = typeIn->getText().trim();
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (typeInPid)))
+        {
+            auto numOf = [] (juce::String s, float& f)
+            {
+                s = s.toLowerCase().replace (",", ".");
+                const float m = s.containsChar ('k') ? 1000.0f : 1.0f;
+                const auto n = s.retainCharacters ("-0123456789.");
+                if (! n.containsAnyOf ("0123456789")) return false;
+                f = n.getFloatValue() * m; return true;
+            };
+            for (int i = 0; i < c->choices.size() && ! ok; ++i)
+                if (c->choices[i].trim().equalsIgnoreCase (txt)) { v = (float) i; ok = true; }
+            float want = 0.0f;
+            if (! ok && numOf (txt, want))
+            {
+                float best = 1.0e9f;
+                for (int i = 0; i < c->choices.size(); ++i)
+                    if (float f = 0.0f; numOf (c->choices[i], f) && std::abs (f - want) < best) { best = std::abs (f - want); v = (float) i; ok = true; }
+                if (! ok && want >= 1.0f && want <= (float) c->choices.size()) { v = want - 1.0f; ok = true; }   // or its place in the list
+            }
+        }
+        else
+        {
+            auto s = txt.toLowerCase().replace (",", ".");
+            const float m = s.containsChar ('k') ? 1000.0f : 1.0f;
+            auto n = s.retainCharacters ("-+0123456789.");
+            if (n.containsAnyOf ("0123456789")) { v = n.getFloatValue() * m; ok = true; }
+        }
+    }
+    else if (commit) ok = parseTyped (typeIn->getText(), typeInKind, v);
+    if (ok)
         if (auto* p = proc.apvts.getParameter (typeInPid))
         {
             const auto range = proc.apvts.getParameterRange (typeInPid);
