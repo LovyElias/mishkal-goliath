@@ -198,11 +198,12 @@ private:
     float drift = 0.0f;
     // V16: frame pacing and the drawing benchmark (only in the stand-alone app with Desktop/Mishkal Projects/Tahor-bench.on)
     double lastPaintMs = 0.0; int skipTick = 0;
-    float freeze = 0.0f; int playTicks = 0;   // V17: 1 = the analyzer held still (the mouse is over the graph)
+    float freeze = 0.0f; int playTicks = 0; bool nearPeak = false; int grabSolo = -1; bool grabbing = false; int lastAdded = -1; double lastAddMs = 0.0;   // V18   // V17: 1 = the analyzer held still (the mouse is over the graph)
     int benchStep = -1; double benchAt = 0.0, benchSum = 0.0, benchMax = 0.0; int benchFrames = 0, benchSlow = 0; bool benchOn = false;
     void benchTick();
     // V16: the chain strip (RESO / TAHOR / CHARACTER order)
     void paintChainStrip (juce::Graphics&);
+    void topArrows (juce::Graphics&, float c, float cy, float dx); void topDots (juce::Graphics&, float c, float cy);   // V18
     void paintTopCentre (juce::Graphics&);
     void flipCharUnit (int from, int to);
     void chainMouseUp (const juce::MouseEvent&);

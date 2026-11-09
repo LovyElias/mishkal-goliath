@@ -6,8 +6,8 @@ using namespace tahor::ui;
 
 namespace
 {
-const juce::Colour ink = col ("#ece6da"), grey = col ("#8d8a84"), dim = col ("#5f5c57"), amber = col ("#f3a93c"), red = col ("#ef6c6c");
-const juce::Colour crimson = col ("#b3262f"), crimsonLine = col ("#c0303c"), soft = col ("#ece9e4");
+const juce::Colour ink = col ("#ece6da"), grey = col ("#8d8a84"), dim = col ("#5f5c57"), amber = col ("#f3a93c"), red = col ("#ec8a5e");   // V18: Reso in Pressure's warm copper (was red)
+const juce::Colour crimson = col ("#a8441f"), crimsonLine = col ("#c9572f"), soft = col ("#ece9e4");
 constexpr float pi = juce::MathConstants<float>::pi;
 
 juce::String U8 (const char* s) { return juce::String::fromUTF8 (s); }
@@ -74,7 +74,7 @@ void bandPanel (juce::Graphics& g, R b, float peakX, juce::Colour c)
     body.quadraticTo (x0, y1 - ch * 0.25f, x0, y1 - ch);
     body.closeSubPath();
     cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 22, { 0, 8 }), body);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0x8f17181d), 0, y0 - rise, juce::Colour (0x8f0f1013), 0, y1, false));   // V17: 56% solid - 30% more glass (was 80%)
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0x6417181d), 0, y0 - rise, juce::Colour (0x640f1013), 0, y1, false));   // V17: 56% solid - 30% more glass (was 80%)
     g.fillPath (body);
     {
         g.saveState(); g.reduceClipRegion (body);
@@ -218,9 +218,9 @@ juce::Colour resoShade (int shape)   // V6: one red family, a shade per kind of 
 {
     switch (shape)
     {
-        case 0: case 1: case 5: return col ("#ef6c6c");   // bell, bandpass, notch
-        case 4:                 return col ("#ff7a45");   // tilt
-        default:                return col ("#c0303c");   // shelves and cuts
+        case 0: case 1: case 5: return col ("#ec8a5e");   // bell, bandpass, notch
+        case 4:                 return col ("#f2a35a");   // tilt
+        default:                return col ("#c9572f");   // shelves and cuts
     }
 }
 // the shape's little curve, for the dropdown
@@ -777,7 +777,7 @@ void Canvas::paintBackgroundInner (juce::Graphics& g)
     const R d (-display.getX(), -70.0f, W, 800.0f);   // V5: under the arches too   // V3: the whole screen between the header and the bottom bar
     fillEllipseGrad (g, d, PW * 0.5f, -40, d.getWidth() * 0.5f * 1.4142f, 760 * 1.4142f, { { 0.0f, col ("#1c1826") }, { 0.7f, col ("#0f0f13") }, { 1.0f, col ("#0d0d10") } });
     const float t = drift * juce::MathConstants<float>::twoPi;
-    const juce::Colour acc = tab == 0 ? col ("#b3262f") : tab == 1 ? col ("#6d5bd0") : col ("#c27a1c");
+    const juce::Colour acc = tab == 0 ? col ("#a8441f") : tab == 1 ? col ("#6d5bd0") : col ("#c27a1c");
     // two big soft glows that wander very slowly (one minute round): the room breathes without pulling the eye
     fillEllipseGrad (g, d, 300 + 120 * std::sin (t), 120 + 40 * std::cos (t * 2), 520, 300,
                      { { 0.0f, col ("#6d28d9", 0.13f) }, { 0.55f, col ("#6d28d9", 0.04f) }, { 1.0f, col ("#6d28d9", 0.0f) } });
@@ -884,9 +884,9 @@ void Canvas::paintSpectrumInner (juce::Graphics& g, int mode)
         const auto p = shape (preCol, true);
         const float top = topOf (preCol);
         // the depth: Pre sits behind, a deep blue-violet that sinks into the floor
-        g.setGradientFill (juce::ColourGradient (col ("#3b2f7a", mode == 2 ? 0.55f : 0.42f), 0, top, col ("#101426", 0.05f), 0, 730, false));
+        g.setGradientFill (juce::ColourGradient (col ("#4a4038", mode == 2 ? 0.55f : 0.42f), 0, top, col ("#141210", 0.05f), 0, 730, false));   // V18: smoke
         g.fillPath (p);
-        g.setGradientFill (juce::ColourGradient (col ("#6d5bd0", 0.28f), 0, 560, col ("#6d5bd0", 0.0f), 0, 664, false));   // V9: fades out at the bottom
+        g.setGradientFill (juce::ColourGradient (col ("#8a7a68", 0.28f), 0, 560, col ("#8a7a68", 0.0f), 0, 664, false));   // V9: fades out at the bottom
         g.strokePath (shape (preCol, false), juce::PathStrokeType (1.0f, juce::PathStrokeType::curved));
     }
     if (mode == 0 || mode == 1)
@@ -894,13 +894,13 @@ void Canvas::paintSpectrumInner (juce::Graphics& g, int mode)
         columns (postDb, postCol);
         const auto p = shape (postCol, true);
         const float top = topOf (postCol);
-        g.setGradientFill (juce::ColourGradient (col ("#8b5cf6", 0.42f), 0, top, col ("#1e3a5f", 0.10f), 0, 730, false));
+        g.setGradientFill (juce::ColourGradient (col ("#b9a48a", 0.34f), 0, top, col ("#2a2420", 0.10f), 0, 730, false));   // V18: warm smoke, like Pressure
         g.fillPath (p);
         const auto edge = shape (postCol, false);
         auto fade = [&g] (juce::Colour c) { g.setGradientFill (juce::ColourGradient (c, 0, 560, c.withAlpha (0.0f), 0, 664, false)); };   // V9: no flat line at the bottom
-        fade (col ("#a78bfa", 0.07f)); g.strokePath (edge, juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        fade (col ("#a78bfa", 0.14f)); g.strokePath (edge, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        fade (col ("#d4c9ff", 0.6f));  g.strokePath (edge, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        fade (col ("#e8d2b0", 0.07f)); g.strokePath (edge, juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        fade (col ("#e8d2b0", 0.14f)); g.strokePath (edge, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        fade (col ("#f4ead8", 0.6f));  g.strokePath (edge, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 }
 
@@ -978,9 +978,17 @@ void Canvas::paintCurves (juce::Graphics& g)
         const bool on = proc.param ("tahorOn") > 0.5f;
         bool split = false;
         for (int b = 0; b < numBands; ++b) if (bands[(size_t) b].on && bands[(size_t) b].place >= 3) split = true;
+        // V18: where a cut drops the line off the bottom, it fades away (like Pro-Q) instead of running flat along the floor
+        auto fadeDown = [&] (juce::Colour c)
+        {
+            juce::ColourGradient gr (c, 0, yOf (-rng * 0.55f), c.withAlpha (0.0f), 0, yOf (-rng * 0.95f) - 2.0f, false);
+            g.setGradientFill (gr);
+        };
         if (! split)
         {
-            g.setColour (juce::Colours::white.withAlpha ((tab == 1 ? 1.0f : 0.45f) * (on ? 1.0f : 0.35f)));
+            const float a = (tab == 1 ? 1.0f : 0.45f) * (on ? 1.0f : 0.35f);
+            if (tab == 1) { fadeDown (col ("#fff4dc", 0.07f * a)); g.strokePath (p, juce::PathStrokeType (9.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded)); }   // a soft warm glow (Pressure's lines)
+            fadeDown (juce::Colours::white.withAlpha (a));
             g.strokePath (p, juce::PathStrokeType (tab == 1 ? 3.0f : 2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
         else
@@ -1004,8 +1012,8 @@ void Canvas::paintCurves (juce::Graphics& g)
                 }
                 const auto cc = side == 0 ? lc : rc;
                 const float a = (tab == 1 ? 1.0f : 0.45f) * (on ? 1.0f : 0.35f);
-                g.setColour (cc.withAlpha (0.18f * a)); g.strokePath (q, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-                g.setColour (cc.withAlpha (a)); g.strokePath (q, juce::PathStrokeType (tab == 1 ? 2.4f : 1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                fadeDown (cc.withAlpha (0.18f * a)); g.strokePath (q, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                fadeDown (cc.withAlpha (a)); g.strokePath (q, juce::PathStrokeType (tab == 1 ? 2.4f : 1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
                 if (tab == 1)
                 {
                     const float ye = juce::jlimit (30.0f, 600.0f, q.getCurrentPosition().y);
@@ -1299,8 +1307,8 @@ void Canvas::paintLegend (juce::Graphics& g)
             zone (R (tr.getX() - 6, 2, tr.getWidth() + 12, 22).translated (display.getX(), display.getY() - 22.0f), Hit::Thd);
         }
     }
-    const juce::String hint = tab == 0 ? U8 ("drag the red edges to focus \xc2\xb7 dots to push or relax")
-                            : tab == 1 ? U8 ("double-click to add a band \xc2\xb7 drag across to select \xc2\xb7 right-click a dot for more")
+    const juce::String hint = tab == 0 ? U8 ("drag the edges to focus \xc2\xb7 dots to push or relax")
+                            : tab == 1 ? U8 ("click to add a band \xc2\xb7 drag across to select \xc2\xb7 right-click a dot for more")
                                        : U8 ("each unit draws its own colour \xc2\xb7 the bright line is the combined sound");
     {
         const float hiX = tab == 0 ? fx (proc.param ("rsHigh")) - 12.0f : PW - 16 - 26;   // V8: Reso's hint stays in the lit part
@@ -1328,58 +1336,63 @@ void Canvas::paintLegend (juce::Graphics& g)
 
 //==============================================================================
 // the 52 px knob of Reso: a bold silver ring, a dark disc, a small white dot
-void Canvas::neonKnob (juce::Graphics& g, P tl, float pos, float size)
+// V18: Pressure's knob, so Tahor and Pressure read as one family - scale ticks round the outside, a glowing value arc,
+// a knurled rim and a matte cap with a white index (the same drawing as Pressure's modernKnob)
+static void pressureKnob (juce::Graphics& g, R b, float pos, juce::Colour c)
 {
-    if (std::abs (size - 52.0f) > 0.01f)   // V5: drawn as vectors at any size (crisp)
+    pos = juce::jlimit (0.0f, 1.0f, pos);
+    const auto ctr = b.getCentre();
+    const float r = b.getWidth() * 0.5f, a0 = -135.0f * pi / 180.0f, a1 = 135.0f * pi / 180.0f, av = a0 + (a1 - a0) * pos;
+    const float tk = juce::jlimit (0.6f, 1.0f, r / 24.0f);   // small knobs: shorter ticks
+    for (int i = 0; i <= 10; ++i)
     {
-        g.saveState();
-        g.addTransform (juce::AffineTransform::scale (size / 52.0f).translated (tl.x, tl.y));
-        neonKnob (g, { 0, 0 }, pos, 52.0f);
-        g.restoreState();
-        return;
+        const float t = a0 + (a1 - a0) * (float) i / 10.0f;
+        const float r0 = r + 3.0f * tk, r1 = r + (i % 5 == 0 ? 8.0f : 6.0f) * tk;
+        g.setColour (juce::Colours::white.withAlpha (i % 5 == 0 ? 0.45f : 0.22f));
+        g.drawLine (ctr.x + r0 * std::sin (t), ctr.y - r0 * std::cos (t), ctr.x + r1 * std::sin (t), ctr.y - r1 * std::cos (t), 1.0f);
     }
-    const auto c = tl + P (26, 26);
-    const float a = 300.0f * juce::jlimit (0.0f, 1.0f, pos);
-    const float a0 = 210.0f * pi / 180.0f;
-    const float rMid = 24.9f, w = 2.6f;
-    juce::Path track; track.addCentredArc (c.x, c.y, rMid, rMid, 0.0f, a0 + a * pi / 180.0f, a0 + 300.0f * pi / 180.0f, true);
-    g.setColour (juce::Colours::white.withAlpha (0.14f)); g.strokePath (track, juce::PathStrokeType (w));
-    if (a > 0.5f)
     {
-        juce::Path arc; arc.addCentredArc (c.x, c.y, rMid, rMid, 0.0f, a0, a0 + a * pi / 180.0f, true);
-        g.setColour (col ("#eef0f2")); g.strokePath (arc, juce::PathStrokeType (w));
+        juce::Path track; track.addCentredArc (ctr.x, ctr.y, r - 1.5f, r - 1.5f, 0.0f, a0, a1, true);
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.strokePath (track, juce::PathStrokeType (3.0f * tk, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        if (pos > 0.005f)
+        {
+            juce::Path arc; arc.addCentredArc (ctr.x, ctr.y, r - 1.5f, r - 1.5f, 0.0f, a0, av, true);
+            g.setColour (c.withAlpha (0.25f)); g.strokePath (arc, juce::PathStrokeType (7.0f * tk, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour (c); g.strokePath (arc, juce::PathStrokeType (2.6f * tk, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
     }
-    // the disc (inset 11): shadow, radial body, a faint top highlight
-    const R disc (tl.x + 11, tl.y + 11, 30, 30);
-    { juce::Path p; p.addEllipse (disc.translated (0, 2)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 4, {}), p); }
-    g.setGradientFill (juce::ColourGradient (col ("#34343a"), disc.getX() + 0.45f * 30, disc.getY() + 0.35f * 30, col ("#222226"),
-                                             disc.getX() + 0.45f * 30 + 30 * 0.7f * 0.95f, disc.getY() + 0.35f * 30, true));
-    g.fillEllipse (disc);
-    g.setColour (juce::Colours::white.withAlpha (0.06f)); g.drawEllipse (disc.reduced (0.5f).translated (0, 0.5f), 1.0f);
-    const float d = (a - 150.0f) * pi / 180.0f;
-    g.setColour (col ("#fff1e2"));
-    g.fillEllipse (c.x + 18.0f * std::sin (d) - 3, c.y - 18.0f * std::cos (d) - 3, 6, 6);
+    const R body = b.reduced (5.0f * tk);
+    { juce::Path p; p.addEllipse (body.translated (0, 3.0f * tk)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.7f), (int) (6 * tk), {}), p); }
+    g.setGradientFill (juce::ColourGradient (col ("#3a3b41"), body.getX(), body.getY(), col ("#121316"), body.getRight(), body.getBottom(), false));
+    g.fillEllipse (body);
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        const float rr = body.getWidth() * 0.5f;
+        for (int i = 0; i < 48; ++i)
+        {
+            const float t = (float) i / 48.0f * juce::MathConstants<float>::twoPi + av;
+            g.drawLine (ctr.x + (rr - 2.5f * tk) * std::sin (t), ctr.y - (rr - 2.5f * tk) * std::cos (t), ctr.x + rr * std::sin (t), ctr.y - rr * std::cos (t), 0.8f);
+        }
+    }
+    const R cap = body.reduced (body.getWidth() * 0.12f);
+    g.setGradientFill (juce::ColourGradient (col ("#2e2f35"), cap.getCentreX(), cap.getY(), col ("#18191d"), cap.getCentreX(), cap.getBottom(), false));
+    g.fillEllipse (cap);
+    g.setColour (juce::Colours::white.withAlpha (0.08f)); g.drawEllipse (cap.reduced (0.5f), 1.0f);
+    const float i0 = cap.getWidth() * 0.12f, i1 = cap.getWidth() * 0.46f;
+    g.setColour (col ("#f4f1ea"));
+    g.drawLine (ctr.x + i0 * std::sin (av), ctr.y - i0 * std::cos (av), ctr.x + i1 * std::sin (av), ctr.y - i1 * std::cos (av), 2.2f * tk);
 }
 
-// the Tahor pop-up knob: a coloured pie (conic from 225, 270 degrees) with a turning disc and pointer
+// Reso's knobs (V18: Pressure's knob, in Reso's copper)
+void Canvas::neonKnob (juce::Graphics& g, P tl, float pos, float size)
+{
+    pressureKnob (g, R (tl.x, tl.y, size, size).reduced (size * 0.16f), pos, red);
+}
+
+// the Tahor / Character pop-up knob (V18: Pressure's knob, in the band's colour)
 void Canvas::bandKnob (juce::Graphics& g, R b, float pos, juce::Colour c)
 {
-    const float s = b.getWidth(), a = 270.0f * juce::jlimit (0.0f, 1.0f, pos);
-    const auto ctr = b.getCentre();
-    const float a0 = 225.0f * pi / 180.0f;
-    juce::Path rest; rest.addPieSegment (b, a0 + a * pi / 180.0f, a0 + 270.0f * pi / 180.0f, 0.0f);
-    g.setColour (juce::Colours::black.withAlpha (0.35f)); g.fillPath (rest);
-    if (a > 0.3f) { juce::Path on; on.addPieSegment (b, a0, a0 + a * pi / 180.0f, 0.0f); g.setColour (c); g.fillPath (on); }
-    const float i = std::round (s * 0.1f);
-    const R disc = b.reduced (i);
-    { juce::Path p; p.addEllipse (disc.translated (0, 2)); cachedShadow (g, juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 4, {}), p); }
-    g.setGradientFill (juce::ColourGradient (col ("#2c2d33"), disc.getX() + disc.getWidth() * 0.4f, disc.getY() + disc.getHeight() * 0.35f,
-                                             col ("#141518"), disc.getX() + disc.getWidth() * 0.4f + disc.getWidth() * 0.7f * 0.9f, disc.getY() + disc.getHeight() * 0.35f, true));
-    g.fillEllipse (disc);
-    const float rot = (a - 135.0f) * pi / 180.0f;
-    juce::Path ptr; ptr.addRoundedRectangle (-1.0f, -disc.getHeight() * 0.5f + 3.0f, 2.0f, std::round (s * 0.24f), 1.0f);
-    g.setColour (col ("#f4ede0"));
-    g.fillPath (ptr, juce::AffineTransform::rotation (rot).translated (ctr.x, ctr.y));
+    pressureKnob (g, b.reduced (b.getWidth() * 0.13f), pos, c);
 }
 
 //==============================================================================
@@ -1465,7 +1478,7 @@ void Canvas::paintResoTabInner (juce::Graphics& g)
             if (reveal > 0.01f)
             {
                 g.beginTransparencyLayer (reveal);
-                fillRound (g, b, 14, col ("#0e0e10", 0.9f)); strokeRound (g, b, 14, red.withAlpha (0.6f));
+                fillRound (g, b, 14, col ("#0e0e10", 0.63f)); strokeRound (g, b, 14, red.withAlpha (0.6f));
                 std::vector<std::pair<R, int>> segHits;
                 drawBubSegs (g, segs, f, b.reduced (12, 0).withTrimmedRight (29), mouse - o, segHits);
                 if (reveal > 0.05f) for (auto& sh : segHits) zone (sh.first.translated (o.x, o.y), Hit::BubbleEdit, sh.second, 100 + i);
@@ -1636,7 +1649,7 @@ void Canvas::paintResoStrip (juce::Graphics& g)
             for (int i = 0; i < 16; ++i)
             {
                 juce::Colour c = col ("#2c2c31");
-                if (i < lit) c = lit == 1 ? col ("#ef6c6c") : col ("#6e1720").interpolatedWith (col ("#ef6c6c"), (float) i / (float) (lit - 1));
+                if (i < lit) c = lit == 1 ? col ("#ec8a5e") : col ("#5e2a14").interpolatedWith (col ("#ec8a5e"), (float) i / (float) (lit - 1));
                 fillRound (g, R (x + (float) i * (sw + 2), y + 16, sw, 10), 2, c);
             }
             y += 36;
@@ -1787,6 +1800,7 @@ void Canvas::paintTahorTab (juce::Graphics& g)
     }
     // V12: Spectrum Grab - the analyzer's peaks; the one near the mouse can be grabbed and becomes a band
     specPeaks.clear();
+    nearPeak = false;
     if (anaAlpha > 0.3f && postCol.size() > 20 && ((int) proc.param ("analyzer") <= 1))
     {
         const int n = (int) postCol.size();
@@ -1809,8 +1823,8 @@ void Canvas::paintTahorTab (juce::Graphics& g)
         if (freeze > 0.3f && ! dragging)   // V17: while the analyzer is held still, its peaks are marked - grab one to make a band
             for (auto& pk : specPeaks)
             {
-                g.setColour (col ("#d4c9ff", 0.55f * freeze)); g.drawEllipse (pk.x - 4, pk.y - 4, 8, 8, 1.2f);
-                g.setColour (col ("#d4c9ff", 0.12f * freeze)); g.fillEllipse (pk.x - 7, pk.y - 7, 14, 14);
+                g.setColour (col ("#ffd9a0", 0.55f * freeze)); g.drawEllipse (pk.x - 4, pk.y - 4, 8, 8, 1.2f);
+                g.setColour (col ("#ffd9a0", 0.12f * freeze)); g.fillEllipse (pk.x - 7, pk.y - 7, 14, 14);
             }
         const P m (mouse.x - o.x, mouse.y - o.y);
         int best = -1; float bd2 = 1.0e9f;
@@ -1819,13 +1833,14 @@ void Canvas::paintTahorTab (juce::Graphics& g)
             const float d = std::abs (specPeaks[(size_t) i].x - m.x);
             if (d < 30.0f && m.y > specPeaks[(size_t) i].y - 40 && m.y < 650 && d < bd2) { bd2 = d; best = i; }
         }
+        nearPeak = best >= 0 && ! dragging;   // V18: only then does the analyzer slow down
         if (best >= 0 && ! dragging)
         {
             const auto pk = specPeaks[(size_t) best];
-            g.setColour (col ("#d4c9ff", 0.9f)); g.drawEllipse (pk.x - 6, pk.y - 6, 12, 12, 1.5f);
-            g.setColour (col ("#d4c9ff", 0.25f)); g.fillEllipse (pk.x - 10, pk.y - 10, 20, 20);
+            g.setColour (col ("#ffd9a0", 0.9f)); g.drawEllipse (pk.x - 6, pk.y - 6, 12, 12, 1.5f);
+            g.setColour (col ("#ffd9a0", 0.25f)); g.fillEllipse (pk.x - 10, pk.y - 10, 20, 20);
             const auto t = "grab " + hzText (xf (pk.x));
-            text (g, t, font (Face::Regular, 10), col ("#d4c9ff"), R (pk.x - 40, pk.y - 26, 80, 12), juce::Justification::centred);
+            text (g, t, font (Face::Regular, 10), col ("#ffd9a0"), R (pk.x - 40, pk.y - 26, 80, 12), juce::Justification::centred);
             zone (R (pk.x - 12, pk.y - 12, 24, 24).translated (o.x, o.y), Hit::SpecPeak, best);
         }
     }
@@ -1846,9 +1861,9 @@ void Canvas::paintTahorTab (juce::Graphics& g)
         }
         if (b == selBand)
         {
-            g.setColour (c.withAlpha (0.16f)); g.fillEllipse (x - 19, y - 19, 38, 38);
-            g.setColour (col ("#fff3dc")); g.fillEllipse (x - 11, y - 11, 22, 22);
-            g.setColour (c); g.fillEllipse (x - 9, y - 9, 18, 18);
+            g.setGradientFill (juce::ColourGradient (c.withAlpha (0.45f), x, y, c.withAlpha (0.0f), x + 22, y, true)); g.fillEllipse (x - 22, y - 22, 44, 44);   // V18: Pressure's glowing dot
+            g.setColour (c); g.fillEllipse (x - 11.5f, y - 11.5f, 23, 23);
+            g.setColour (col ("#f6f1e6")); g.fillEllipse (x - 9.5f, y - 9.5f, 19, 19);
             text (g, t, font (Face::SemiBold, 11), col ("#1a1208"), R (x - 11, y - 11, 22, 22), juce::Justification::centred);
             if (reveal > 0.01f)   // V11: the bubble - shape, frequency, gain - live as you move it (like Character's)
             {
@@ -1863,7 +1878,7 @@ void Canvas::paintTahorTab (juce::Graphics& g)
                 const float bw = textWidth (f, lab) + 24 + 29;
                 const R bb (juce::jlimit (4.0f, PW - bw - 4, x - 36), y - 58 < 4 ? y + 22 : y - 58, bw, 27.0f);
                 g.beginTransparencyLayer (reveal);
-                fillRound (g, bb, 14, col ("#0e0e10", 0.9f)); strokeRound (g, bb, 14, c.withAlpha (0.6f));
+                fillRound (g, bb, 14, col ("#0e0e10", 0.63f)); strokeRound (g, bb, 14, c.withAlpha (0.6f));
                 std::vector<std::pair<R, int>> segHits;
                 drawBubSegs (g, segs, f, bb.reduced (12, 0).withTrimmedRight (29), mouse - o, segHits);
                 if (reveal > 0.05f) for (auto& sh : segHits) bubbleZones.push_back ({ sh.first.translated (o.x, o.y), Hit::BubbleEdit, sh.second, b });
@@ -2542,7 +2557,7 @@ void Canvas::paintCharTab (juce::Graphics& g)
                     if (reveal > 0.01f)
                     {
                         g.beginTransparencyLayer (reveal);
-                        fillRound (g, b, 14, col ("#0e0e10", 0.9f)); strokeRound (g, b, 14, uc.withAlpha (0.6f));
+                        fillRound (g, b, 14, col ("#0e0e10", 0.63f)); strokeRound (g, b, 14, uc.withAlpha (0.6f));
                         std::vector<std::pair<R, int>> segHits;
                         drawBubSegs (g, segs, f, b.reduced (12, 0).withTrimmedRight (29), mouse - o, segHits);
                         if (reveal > 0.05f && front) for (auto& shh : segHits) charSegZones.push_back ({ shh.first.translated (o.x, o.y), Hit::BubbleEdit, shh.second, 200 + i });
@@ -2859,8 +2874,9 @@ void Canvas::paintBottomBar (juce::Graphics& g)
     float x = 20;
     for (size_t i = 0; i < left.size(); ++i) { measure (left[i]); draw (left[i], x); x += left[i].w + (i < 5 ? gaps[i] : 0); }
     archBot[0] = x + 16;
+    std::vector<float> rg { 8, 4, 10, 12, 5, 10, 5 };
+    if (tab != 1) { right.erase (right.begin()); rg.erase (rg.begin()); }   // V18: the keyboard button only where the keyboard is (Tahor)
     float tot = 0;
-    const float rg[] { 8, 4, 10, 12, 5, 10, 5 };
     for (size_t i = 0; i < right.size(); ++i) { measure (right[i]); tot += right[i].w + (i + 1 < right.size() ? rg[i] : 0); }
     x = W - 20 - tot;
     archBot[1] = x - 16;
@@ -2876,16 +2892,19 @@ void Canvas::paintChainStrip (juce::Graphics& g)
 {
     const float cy = 782.0f, bh = 20.0f, arrowW = 14.0f;   // V17: a little bigger - it stands out
     const float room = archBot[1] - archBot[0];
-    const float bw = juce::jlimit (70.0f, 132.0f, (room - 2.0f * arrowW - 24.0f) / 3.0f);
+    const float bw = juce::jlimit (70.0f, 132.0f, (room - 2.0f * arrowW - 64.0f) / 3.0f);
     const float total = 3.0f * bw + 2.0f * arrowW;
-    const float x0 = (archBot[0] + archBot[1]) * 0.5f - total * 0.5f;
+    const auto fC = font (Face::CondMedium, 9.0f, 2.0f);
+    const float lw = textWidth (fC, "CHAIN") + 10.0f;   // V18: labelled like Pressure's
+    const float x0 = (archBot[0] + archBot[1]) * 0.5f - total * 0.5f + lw * 0.5f;
+    text (g, "CHAIN", fC, col ("#77746e"), R (x0 - lw, cy - 6, lw, 12));
     const int ord = juce::jlimit (0, 5, (int) proc.param ("order"));
     for (int i = 0; i < 3; ++i) chainSlot[i] = x0 + (float) i * (bw + arrowW) + bw * 0.5f;
     auto info = [&] (int sec, juce::String& name, juce::String& what, juce::Colour& c, bool& on)
     {
         if (sec == 0)
         {
-            name = "RESO"; c = col ("#e0525a"); on = proc.param ("resoOn") > 0.5f;
+            name = "RESO"; c = col ("#e2835a"); on = proc.param ("resoOn") > 0.5f;
             const float r = activeResoReduction();
             what = on && r > 0.1f ? MINUS + juce::String (r, 1) : juce::String();
         }
@@ -2940,6 +2959,29 @@ void Canvas::paintChainStrip (juce::Graphics& g)
 // V17: the top centre, in the screen's upper arch - Reso and Tahor say what they are; Character shows its THD light (the
 // saturation curve with a light running along it that runs hotter, splits and flickers as THD is pushed), with the THD
 // slider just under it
+void Canvas::topArrows (juce::Graphics& g, float c, float cy, float dx)
+{
+    for (int s = 0; s < 2; ++s)
+    {
+        const R a (s == 0 ? c - dx - 8 : c + dx - 8, cy - 9, 16, 18);
+        const bool hv = a.expanded (4).contains (mouse);
+        icon (g, s == 0 ? Icon::Left : Icon::Right, a.withSizeKeepingCentre (11, 11), amber.withAlpha (hv ? 1.0f : 0.75f), 1.6f);
+        zone (a.expanded (4), Hit::TabCycle, s == 0 ? 2 : 1);
+    }
+}
+
+void Canvas::topDots (juce::Graphics& g, float c, float cy)
+{
+    const juce::Colour cols[3] { red, ink, amber };
+    for (int i = 0; i < 3; ++i)
+    {
+        const float x = c + (float) (i - 1) * 9.0f;
+        g.setColour (i == tab ? cols[i] : juce::Colours::white.withAlpha (0.2f));
+        const float d = i == tab ? 4.0f : 3.0f;
+        g.fillEllipse (x - d * 0.5f, cy - d * 0.5f, d, d);
+    }
+}
+
 void Canvas::paintTopCentre (juce::Graphics& g)
 {
     const float c = W * 0.5f;
@@ -2948,17 +2990,22 @@ void Canvas::paintTopCentre (juce::Graphics& g)
         const char* t1 = tab == 0 ? "RESONANCE SUPPRESSOR" : "PRECISION EQ";
         const juce::String t2 = tab == 0 ? juce::String ("TAMES HARSH PEAKS") : U8 ("CLEAN \xc2\xb7 SURGICAL");
         const bool on = proc.param (tab == 0 ? "resoOn" : "tahorOn") > 0.5f;
-        text (g, t1, font (Face::Light, 14.5f, 3.2f), ink.withAlpha (on ? 0.92f : 0.4f), R (c - 200, 12, 400, 18), juce::Justification::centred);
-        text (g, t2, font (Face::CondMedium, 8.0f, 2.6f), (tab == 0 ? col ("#e0525a") : col ("#a99bff")).withAlpha (on ? 0.75f : 0.3f), R (c - 200, 31, 400, 11), juce::Justification::centred);
+        // V18: Pressure's top centre - the name between amber arrows that flip the tab, a line under it, and page dots
+        const auto f1 = font (Face::Light, 15.5f, 3.0f);
+        text (g, t1, f1, ink.withAlpha (on ? 0.95f : 0.4f), R (c - 200, 9, 400, 19), juce::Justification::centred);
+        text (g, t2, font (Face::CondMedium, 8.0f, 2.6f), col ("#d8d1c4").withAlpha (on ? 0.8f : 0.3f), R (c - 200, 29, 400, 11), juce::Justification::centred);
+        topArrows (g, c, 18.5f, textWidth (f1, t1) * 0.5f + 14.0f);
+        topDots (g, c, 46.0f);
         return;
     }
     const float thd = juce::jlimit (0.0f, 1.0f, proc.param ("charThd") / 100.0f);
     const bool on = proc.param ("charOn") > 0.5f && (int) proc.param ("charMode") != 0;
-    text (g, "ANALOG CHARACTER", font (Face::CondMedium, 8.0f, 2.6f), col ("#b9b3a7", 0.5f), R (c - 150, 9, 300, 10), juce::Justification::centred);
+    text (g, "ANALOG CHARACTER", font (Face::CondMedium, 8.0f, 2.6f), col ("#d8d1c4", 0.75f), R (c - 150, 9, 300, 10), juce::Justification::centred);
+    topArrows (g, c, 33.5f, 134.0f);   // V18: the same arrows as Reso and Tahor, either side of the light
     // the light's path: the saturation curve, laid on its side across the arch
     const R tc (c - 120, 24, 240, 19);
     const float drive = 0.15f + 0.85f * thd;
-    auto curveY = [&] (float x) { const float k2 = 1.0f + 3.0f * drive; return juce::jlimit (-1.05f, 1.05f, std::tanh (k2 * x) / std::tanh (k2) + 0.06f * drive * x * x); };
+    auto curveY = [&] (float x) { const float k2 = 1.0f + 2.0f * drive + 9.0f * thd * thd; return juce::jlimit (-1.05f, 1.05f, std::tanh (k2 * x) / std::tanh (k2) + 0.10f * thd * x * x); };   // V18: bends much harder when pushed
     auto at = [&] (float x) { return P (tc.getX() + (x + 1.0f) * 0.5f * tc.getWidth(), tc.getCentreY() - curveY (x) * 0.5f * tc.getHeight()); };
     {
         juce::Path cv;

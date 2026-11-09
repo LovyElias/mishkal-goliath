@@ -123,8 +123,9 @@ void Canvas::timerCallback()
     }
     {   // V17: the mouse over the graph eases the analyzer to a stop (so a peak can be grabbed); leaving lets it run again
         playTicks = juce::jmax (meterDb[0], meterDb[1]) > -70.0f ? playTicks + 1 : 0;   // (only once it has been showing the music a moment)
-        const bool over = display.contains (mouse) && mouse.y > display.getY() + 30 && (tab == 1 || tab == 2) && typeIn == nullptr && playTicks > 20;
-        freeze += ((over ? 1.0f : 0.0f) - freeze) * (over ? 0.12f : 0.25f);
+        // V18: only when the mouse reaches for a peak - and never a full stop: it keeps moving, slowly enough to grab (Pro-Q 4)
+        const bool over = display.contains (mouse) && mouse.y > display.getY() + 30 && tab == 1 && typeIn == nullptr && playTicks > 20 && nearPeak;
+        freeze += ((over ? 0.9f : 0.0f) - freeze) * (over ? 0.12f : 0.2f);
     }
     analyse (preWin, preDb);
     analyse (postWin, postDb);
@@ -395,10 +396,13 @@ void Canvas::mouseDown (const juce::MouseEvent& e)
             {
                 const auto pk = specPeaks[(size_t) down.a];
                 const int before = selBand;
-                addTahorBand ({ pk.x + display.getX(), pk.y + display.getY() });
+                addTahorBand ({ pk.x + display.getX(), display.getY() + 335.0f });   // V18: it starts flat, then follows the mouse
                 if (selBand != before || proc.param (bid (selBand, "On")) > 0.5f)
                 {
                     proc.setParam (bid (selBand, "Q"), 4.0f);
+                    for (int b = 0; b < numBands; ++b) proc.setParam (bid (b, "Solo"), 0.0f);
+                    proc.setParam (bid (selBand, "Solo"), 1.0f); grabSolo = selBand;   // V18: hear just what you grabbed
+                    grabbing = true;
                     down = Zone { down.r, Hit::TahorNode, selBand };
                     selSet.clear();
                     dragPid = bid (selBand, "Hz"); dragPid2 = bid (selBand, "Gain");
@@ -499,6 +503,7 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
             const float rng = ranges[juce::jlimit (0, 3, (int) proc.param ("range"))] * 1.5f;
             proc.dragParam (dragPid, juce::jlimit (10.0f, 30000.0f, xf (x)));
             const int type = (int) proc.param (bid (selBand, "Type"));
+            if (grabbing) { if (type <= 2) proc.dragParam (dragPid2, juce::jlimit (-30.0f, 30.0f, (downAt.y - e.position.y) / 335.0f * rng)); break; }   // V18: up boosts, down cuts
             if (type <= 2) proc.dragParam (dragPid2, juce::jlimit (-30.0f, 30.0f, (335.0f - y) / 335.0f * rng));
             break;
         }
@@ -569,6 +574,8 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
         return;
     }
     if (down.kind == Hit::Chain) { chainMouseUp (e); return; }
+    if (grabSolo >= 0) { proc.setParam (bid (grabSolo, "Solo"), 0.0f); grabSolo = -1; }   // V18: let go - the full sound again
+    grabbing = false;
     dragging = false;
     if (dragPid.isNotEmpty()) proc.endGesture (dragPid);
     if (dragPid2.isNotEmpty()) proc.endGesture (dragPid2);
@@ -596,6 +603,7 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
             return;
         }
         selSet.clear();
+        if (! moved && tab == 1 && e.getNumberOfClicks() == 1) { addTahorBand (e.position); dragPid = {}; dragPid2 = {}; repaint(); return; }   // V18: one click adds a band
     }
     if (! moved && down.kind != Hit::None) click (down, e);
     dragPid = {}; dragPid2 = {};
@@ -618,10 +626,12 @@ void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
             break;
         case Hit::Thd: proc.setParam ("charThd", 50.0f); break;
         case Hit::ResoNode: proc.setParam (nid (z->a, "On"), 0.0f); break;
-        case Hit::TahorNode: proc.setParam (bid (z->a, "On"), 0.0f); break;
+        case Hit::TahorNode:   // V18: (not the band a click just added - a habitual double-click shouldn't add and remove it)
+            if (! (z->a == lastAdded && juce::Time::getMillisecondCounterHiRes() - lastAddMs < 600.0)) proc.setParam (bid (z->a, "On"), 0.0f);
+            break;
         case Hit::ResoBg: addResoNode (e.position); break;
         case Hit::CharNode: proc.charOff[(size_t) preview].fetch_xor (1 << z->a); break;   // V12: double-click switches a Character band off / on
-        case Hit::TahorBg: addTahorBand (e.position); break;
+        case Hit::TahorBg: break;   // V18: a single click already added it
         case Hit::Hardware:   // V14: double-click the gear at the bottom to add it to the chain (no need for the list)
         {
             auto c = proc.chain();
@@ -1331,6 +1341,7 @@ void Canvas::addTahorBand (P at)
             proc.setParam (bid (b, "Q"), type == 0 ? 1.0f : 0.71f);
             proc.setParam (bid (b, "On"), 1.0f);
             selBand = b;
+            lastAdded = b; lastAddMs = juce::Time::getMillisecondCounterHiRes();   // V18
             return;
         }
 }

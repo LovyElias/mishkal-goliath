@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Tahor VERSION 1.17.0)   # raise with every version so hosts rescan
+project(Tahor VERSION 1.18.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -98,6 +98,12 @@ endif()
 #        presets that don't use Reso load with Reso bypassed; the word above the hardware is bright again, letters spaced out
 #   V15 = smoother clicking and dragging: the background and soft shadows are drawn once and reused (the screen
 #        draws several times faster), and it redraws 60 times a second
+#   V18 = Pressure's family look: Pressure's knobs on Reso and every band panel, the top centre with amber arrows and page
+#         dots, a warm smoky analyzer, glowing ivory band dots, Reso in warm copper (was red), "CHAIN" before the strip;
+#         panels and bubbles 30% more see-through; the EQ line fades out past a cut; one click adds a band; the analyzer
+#         only slows (never stops) when the mouse reaches for a peak; a grabbed peak starts flat and follows the mouse
+#         (up boosts, down cuts) and plays solo while held; THD bends much harder when pushed (sound and light); the
+#         keyboard button only on the Tahor tab.
 #   V17 = one click on any band panel number types it (Reso, Tahor, Character); Character bubbles take typed values; THD
 #         light and slider at the top centre of Character; power button labelled beside the selector; tab titles at the
 #         top; flipping Character units carries the curve over; panels 30% more glass, text and bubbles 20% bigger; a new
@@ -141,7 +147,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(TAHOR_LATEST_VERSION 17)   # raise this by one for every new version
+set(TAHOR_LATEST_VERSION 18)   # raise this by one for every new version
 
 # One plug-in, updated in place (the version shows in its window's About)
 tahor_plugin(Tahor "Mishkal Tahor" Thor com.mishkalaudio.tahor ${TAHOR_LATEST_VERSION} "${TAHOR_FORMATS}")

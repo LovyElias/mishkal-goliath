@@ -521,7 +521,8 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     {
         if (! charOn || mode == 0) return;
         const float thd = param ("charThd") / 50.0f;   // V7: 0 .. 2, 1 = as before
-        const float mul = (mode == 2 ? 2.2f : 1.0f) * thd, dmul = (mode == 2 ? 1.35f : 1.0f) * (0.6f + 0.4f * thd);
+        const float hot = juce::jmax (0.0f, thd - 1.0f);   // V18: past 50% it bends much harder (the curve gets steeper fast)
+        const float mul = (mode == 2 ? 2.2f : 1.0f) * thd, dmul = (mode == 2 ? 1.35f : 1.0f) * (0.6f + 0.4f * thd + 2.4f * hot * hot);
         for (int s = 0; s < maxChain; ++s)
         {
             if (active[(size_t) s] < 0) continue;
