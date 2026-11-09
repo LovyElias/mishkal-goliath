@@ -42,8 +42,14 @@ void WallCanvas::timerCallback()
         auto& f = proc.frameFifo;
         const int ready = f.getNumReady();
         f.prepareToRead (ready, s1, z1, s2, z2);
-        for (int j = 0; j < z1; ++j) { wave[(size_t) wavePos] = proc.frames[(size_t) (s1 + j)]; wavePos = (wavePos + 1) % cols; }
-        for (int j = 0; j < z2; ++j) { wave[(size_t) wavePos] = proc.frames[(size_t) (s2 + j)]; wavePos = (wavePos + 1) % cols; }
+        auto take = [this] (const wall::Frame& fr)
+        {
+            wave[(size_t) wavePos] = fr; wavePos = (wavePos + 1) % rawN;
+            songAcc.inPk = std::max (songAcc.inPk, fr.inPk); songAcc.outPk = std::max (songAcc.outPk, fr.outPk); songAcc.grDb = std::max (songAcc.grDb, fr.grDb); songAcc.levDb = fr.levDb;
+            if (++songN >= 10) { if (song.size() < 72000) song.push_back (songAcc); songAcc = {}; songN = 0; }
+        };
+        for (int j = 0; j < z1; ++j) take (proc.frames[(size_t) (s1 + j)]);
+        for (int j = 0; j < z2; ++j) take (proc.frames[(size_t) (s2 + j)]);
         f.finishedRead (z1 + z2);
     }
     const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
@@ -88,6 +94,7 @@ void WallCanvas::mouseDown (const juce::MouseEvent& e)
     mouse = downAt = e.position; moved = false; dragging = false; chainDrag = -1;
     const auto* z = zoneAt (e.position);
     down = z != nullptr ? *z : Zone {};
+    if (e.mods.isPopupMenu() && z == nullptr && R (14, 56, W - 28, 700).contains (e.position)) { showDisplayMenu (R (e.position.x, e.position.y, 1, 1)); return; }
     if (z == nullptr) return;
     if (e.mods.isPopupMenu())
     {
@@ -285,7 +292,10 @@ void WallCanvas::click (const Zone& z, const juce::MouseEvent& e)
         case Hit::BandRemove: proc.setParam ("bCount", std::max (2.0f, pv ("bCount") - 1)); break;
         case Hit::BandSolo: flip (wall::bandId (z.a, "Solo")); break;
         case Hit::BandByp: flip (wall::bandId (z.a, "Byp")); break;
-        case Hit::LoudReset: proc.resetLoudness(); break;
+        case Hit::LoudReset: proc.resetLoudness(); song.clear(); break;
+        case Hit::Display: showDisplayMenu (z.r); break;
+        case Hit::LoudMenu: showLoudMenu (z.r); break;
+        case Hit::DitherMenu: showDitherMenu (z.r); break;
         default: break;
     }
     repaint();
@@ -380,6 +390,12 @@ void WallCanvas::showParamMenu (const juce::String& pid, R near)
         for (int v : { 0, 30, 60, 100 }) m.addItem (200 + v, juce::String (v) + "%", true, juce::roundToInt (pv ("limLinkR")) == v);
     }
     m.addSeparator();
+    {
+        const auto cc = proc.midiCcFor (pid);
+        m.addItem (5, "MIDI Learn" + juce::String (cc.isNotEmpty() ? "   (now " + cc + ")" : ""));
+        if (cc.isNotEmpty()) m.addItem (6, "Forget MIDI  (" + cc + ")");
+    }
+    m.addSeparator();
     m.addItem (3, "Fine: hold Command while dragging", false, false);
     m.addItem (4, "Reset: Option-click   Type: double-click", false, false);
     const juce::Component::SafePointer<WallCanvas> sp (this);
@@ -390,6 +406,8 @@ void WallCanvas::showParamMenu (const juce::String& pid, R near)
             auto* q = sp->proc.par (pid);
             if (r == 1) sp->openTypeIn (pid, near);
             else if (r == 2 && q != nullptr) { q->beginChangeGesture(); q->setValueNotifyingHost (q->getDefaultValue()); q->endChangeGesture(); }
+            else if (r == 5) sp->proc.midiLearn (pid);
+            else if (r == 6) sp->proc.midiForget (pid);
             else if (r >= 200) sp->proc.setParam ("limLinkR", (float) (r - 200));
             else if (r >= 100) { if (pid == "limStyle") sp->proc.setStyle (r - 100); else sp->proc.setParam (pid, (float) (r - 100)); }
             sp->repaint();
@@ -564,4 +582,86 @@ void WallEditor::resized()
     canvas.setBounds (0, 0, (int) W, (int) H);
     canvas.setTransform (juce::AffineTransform::scale (s));
     proc.apvts.state.setProperty ("uiScale", s, nullptr);
+}
+
+// ============================================================================================================
+// V2: the display (right-click the screen, or DISPLAY at its top left)
+void WallCanvas::showDisplayMenu (R at)
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("WAVE SPEED");
+    static const char* sp[] { "Fast  (6 seconds across)", "Slow  (25 seconds across)", "Infinite  (the whole song)", "Off" };
+    for (int i = 0; i < 4; ++i) m.addItem (1 + i, sp[i], true, proc.ui ("dispSpeed") == i);
+    m.addSectionHeader ("WAVE RANGE  (below the ceiling)");
+    for (int r : { 12, 24, 48 }) m.addItem (100 + r, juce::String (r) + " dB", true, proc.ui ("dispRange") == r);
+    m.addSectionHeader ("EDGE METERS");
+    static const char* ms[] { "Peak  (60 dB)", "Peak  (24 dB)", "K-20  (RMS)", "K-14  (RMS)", "K-12  (RMS)" };
+    for (int i = 0; i < 5; ++i) m.addItem (200 + i, ms[i], true, proc.ui ("meterScale") == i);
+    m.addSeparator();
+    m.addItem (300, "Peak labels  (marks the moments of most gain reduction)", true, proc.ui ("peakLabels") != 0);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (at).getSmallestIntegerContainer()), [this] (int r)
+    {
+        if (r >= 1 && r <= 4) proc.setUi ("dispSpeed", r - 1);
+        if (r >= 112 && r <= 148) proc.setUi ("dispRange", r - 100);
+        if (r >= 200 && r < 205) proc.setUi ("meterScale", r - 200);
+        if (r == 300) proc.setUi ("peakLabels", proc.ui ("peakLabels") == 0);
+        repaint();
+    });
+}
+
+// V2: the loudness standards: each sets the target and the ceiling
+static const char* stdNames[] { "Custom", "Streaming", "Apple Music", "EBU R128", "ATSC A/85", "TR-B32", "Club" };
+int WallCanvas::matchedStandard() const
+{
+    static const float lu[] { 0, -14, -16, -23, -24, -16, -9 }, ce[] { 0, -1, -1, -1, -2, -1, -0.3f };
+    const int want = (int) pv ("loudStd");
+    auto ok = [&] (int i) { return i > 0 && std::abs (pv ("target") - lu[i]) < 0.05f && std::abs (pv ("ceiling") - ce[i]) < 0.05f; };
+    if (ok (want)) return want;
+    for (int i = 1; i < 7; ++i) if (ok (i)) return i;
+    return 0;
+}
+void WallCanvas::showLoudMenu (R at)
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("LOUDNESS STANDARD  (sets the target and the ceiling)");
+    static const char* d[] { "", "-14 LUFS  -1 dBTP", "-16 LUFS  -1 dBTP", "-23 LUFS  -1 dBTP  (broadcast, Europe)", "-24 LKFS  -2 dBTP  (broadcast, US)", "-16 LUFS  -1 dBTP  (podcast, AES)", "-9 LUFS  -0.3 dBTP" };
+    const int cur = matchedStandard();
+    for (int i = 1; i < 7; ++i) m.addItem (1 + i, juce::String (stdNames[i]) + "     " + d[i], true, cur == i);
+    m.addSeparator();
+    m.addItem (20, "Type the target...");
+    m.addSectionHeader ("SCALE");
+    m.addItem (30, "Loudness view: 18 LU tall", true, proc.ui ("loudRange") == 18);
+    m.addItem (31, "Loudness view: 36 LU tall", true, proc.ui ("loudRange") == 36);
+    m.addItem (32, "Show as LU from the target", true, proc.ui ("loudRel") != 0);
+    m.addSeparator();
+    m.addItem (40, "Reset the loudness");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (at).getSmallestIntegerContainer()), [this, at] (int r)
+    {
+        if (r >= 2 && r <= 7) proc.applyLoudnessStandard (r - 1);
+        if (r == 20) openTypeIn ("target", at);
+        if (r == 30) proc.setUi ("loudRange", 18);
+        if (r == 31) proc.setUi ("loudRange", 36);
+        if (r == 32) proc.setUi ("loudRel", proc.ui ("loudRel") == 0);
+        if (r == 40) { proc.resetLoudness(); song.clear(); }
+        repaint();
+    });
+}
+
+// V2: dither - the bits and the noise shaping
+void WallCanvas::showDitherMenu (R at)
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("DITHER");
+    static const int order[] { 0, 1, 3, 4, 5, 2 };   // Off, 24, 22, 20, 18, 16
+    static const char* nm[] { "Off", "24 bit", "16 bit", "22 bit", "20 bit", "18 bit" };
+    for (int i : order) m.addItem (1 + i, nm[i], true, (int) pv ("dither") == i);
+    m.addSectionHeader ("NOISE SHAPING");
+    static const char* sh[] { "None  (flat)", "Basic", "Optimized  (moves the noise where the ear hears it least)" };
+    for (int i = 0; i < 3; ++i) m.addItem (20 + i, sh[i], true, (int) pv ("ditherShape") == i);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (at).getSmallestIntegerContainer()), [this] (int r)
+    {
+        if (r >= 1 && r <= 6) proc.setParam ("dither", (float) (r - 1));
+        if (r >= 20 && r <= 22) proc.setParam ("ditherShape", (float) (r - 20));
+        repaint();
+    });
 }

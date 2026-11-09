@@ -83,8 +83,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout WallProcessor::createLayout(
     fl ("mix", "Mix", 0.0f, 100.0f, 100.0f, 0.1f, -1, "%");
     ch ("preview", "Preview", { "Off", "Spotify", "Apple Music", "YouTube", "Tidal", "Amazon" }, 0);
     ch ("previewWhere", "Preview Platform", { "Spotify", "Apple Music", "YouTube", "Tidal", "Amazon" }, 0);
-    ch ("os", "Oversampling", { "Off", "2x", "4x", "8x" }, 2);
-    ch ("dither", "Dither", { "Off", "24", "16" }, 1);
+    ch ("os", "Oversampling", { "Off", "2x", "4x", "8x", "16x", "32x" }, 2);
+    ch ("dither", "Dither", { "Off", "24", "16", "22", "20", "18" }, 1);   // (V2: 22 / 20 / 18 added at the end, so V1 sessions open the same)
+    ch ("ditherShape", "Noise Shaping", { "None", "Basic", "Optimized" }, 1);
+    // V2: external sidechain (stem mastering: each stem limited by the whole mix)
+    bo ("scOn", "Sidechain", false);
+    fl ("scGain", "Sidechain Gain", -24.0f, 24.0f, 0.0f, 0.1f, -1, "dB");
+    ch ("loudStd", "Loudness Standard", { "Custom", "Streaming", "Apple Music", "EBU R128", "ATSC A/85", "TR-B32", "Club" }, 0);
     bo ("dc", "DC Filter", true);
     bo ("mono", "Mono Bass", true);
     fl ("monoHz", "Mono Below", 20.0f, 300.0f, 120.0f, 1.0f, 100.0f, "Hz");
@@ -157,14 +162,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout WallProcessor::createLayout(
 // ============================================================================================================
 WallProcessor::WallProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                                       .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "WALL", createLayout())
 {
     for (auto* p : getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
             apvts.addParameterListener (rp->getParameterID(), &dirtyListener);
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 5; ++i)
+    {
         os[(size_t) i] = std::make_unique<juce::dsp::Oversampling<float>> (2, i + 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
+        osKey[(size_t) i] = std::make_unique<juce::dsp::Oversampling<float>> (2, i + 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
+    }
+    for (auto& c : ccMap) c = -1;
     lastSeen = snapshot();
     history.push_back (lastSeen); historyLabel.add ("Open"); historyPos = 0;
     startTimerHz (30);
@@ -182,7 +192,18 @@ bool WallProcessor::isBusesLayoutSupported (const BusesLayout& l) const
 {
     const auto out = l.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::stereo() && out != juce::AudioChannelSet::mono()) return false;
-    return l.getMainInputChannelSet() == out;
+    if (l.getMainInputChannelSet() != out) return false;
+    if (l.inputBuses.size() > 1)
+    {
+        const auto sc = l.getChannelSet (true, 1);
+        if (! sc.isDisabled() && sc != juce::AudioChannelSet::stereo() && sc != juce::AudioChannelSet::mono()) return false;
+    }
+    return true;
+}
+bool WallProcessor::sidechainConnected() const
+{
+    auto* b = getBus (true, 1);
+    return b != nullptr && b->isEnabled() && b->getNumberOfChannels() > 0;
 }
 
 const juce::String WallProcessor::getProgramName (int index)
@@ -196,11 +217,12 @@ void WallProcessor::prepareToPlay (double sr, int block)
 {
     preparedRate = sr; maxBlock = std::max (1, block);
     for (auto& o : os) { o->initProcessing ((size_t) maxBlock); o->reset(); }
-    work.setSize (2, maxBlock * 8 + 8, false, true, true);
-    grTrace.assign ((size_t) (maxBlock * 8 + 8), 1.0f);
+    for (auto& o : osKey) { o->initProcessing ((size_t) maxBlock); o->reset(); }
+    grTrace.assign ((size_t) (maxBlock * 32 + 8), 1.0f);
+    for (auto& k : keyBuf) k.assign ((size_t) maxBlock, 0.0f);
     for (int c = 0; c < 2; ++c) { mixDry[c].assign ((size_t) maxBlock, 0.0f); dBypass[c].assign ((size_t) maxBlock, 0.0f); dDelta[c].assign ((size_t) maxBlock, 0.0f); }
     tmpR.assign ((size_t) maxBlock, 0.0f);
-    const int maxL = (int) std::ceil (5.0 * 0.001 * sr) * 8 + 8;
+    const int maxL = (int) std::ceil (5.0 * 0.001 * sr) * 32 + 8;
     limiter.prepare (sr * 4.0, maxL);
     ceiling.prepare (sr);
     dc.prepare (sr); mono.prepare (sr);
@@ -234,10 +256,30 @@ void WallProcessor::updateLatency()
     if (lat != reportedLatency) { reportedLatency = lat; setLatencySamples (lat); }
 }
 
-void WallProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void WallProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals nd;
-    const int n = buffer.getNumSamples(), nch = buffer.getNumChannels();
+    // V2: MIDI Learn - a controller's CC moves the control it was learned to (applied on the message thread)
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (! msg.isController()) continue;
+        const int cc = msg.getControllerNumber();
+        if (! juce::isPositiveAndBelow (cc, 128)) continue;
+        const int li = learnIndex.load();
+        if (li >= 0) { for (auto& c : ccMap) if (c.load() == li) c = -1; ccMap[(size_t) cc] = li; learnIndex = -1; }
+        const int pi = ccMap[(size_t) cc].load();
+        if (pi >= 0)
+        {
+            int s1, z1, s2, z2; ccFifo.prepareToWrite (1, s1, z1, s2, z2);
+            if (z1 > 0) ccQueue[(size_t) s1] = { pi, (float) msg.getControllerValue() / 127.0f };
+            ccFifo.finishedWrite (z1);
+        }
+    }
+    midi.clear();
+    const int n = buffer.getNumSamples();
+    auto mainBuf = getBusBuffer (buffer, true, 0);
+    const int nch = mainBuf.getNumChannels();
     if (n <= 0 || nch <= 0) return;
     if (n > maxBlock)   // (a host that sends more than it said: do it in pieces)
     {
@@ -245,24 +287,31 @@ void WallProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         for (int s = 0; s < n; s += maxBlock)
         {
             const int k = std::min (maxBlock, n - s);
-            juce::AudioBuffer<float> part (buffer.getArrayOfWritePointers(), nch, s, k);
+            juce::AudioBuffer<float> part (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), s, k);
             processBlock (part, m);
         }
         return;
     }
-    float* L = buffer.getWritePointer (0);
-    float* R = nch > 1 ? buffer.getWritePointer (1) : buffer.getWritePointer (0);
+    float* L = mainBuf.getWritePointer (0);
+    float* R = nch > 1 ? mainBuf.getWritePointer (1) : mainBuf.getWritePointer (0);
     const bool monoIO = nch < 2;
+    // V2: the sidechain key (if it's on and the host sends one)
+    const float* keyIn[2] { nullptr, nullptr };
+    if (param ("scOn") > 0.5f && getBusCount (true) > 1)
+    {
+        auto sc = getBusBuffer (buffer, true, 1);
+        if (sc.getNumChannels() > 0) { keyIn[0] = sc.getReadPointer (0); keyIn[1] = sc.getReadPointer (std::min (1, sc.getNumChannels() - 1)); }
+    }
     const double fs = preparedRate;
 
     // ---- settings for this block
-    const int osIdx = (int) param ("os"), factor = 1 << osIdx;
+    const int osIdx = juce::jlimit (0, 5, (int) param ("os")), factor = 1 << osIdx;
     const double fsOs = fs * factor;
     if (osIdx != osWas)
     {
         punch.prepare (fsOs); character.prepare (fsOs); bands.prepare (fsOs); leveler.prepare (fsOs);
         limiter.setRate (fsOs);
-        if (osIdx > 0) os[(size_t) (osIdx - 1)]->reset();
+        if (osIdx > 0) { os[(size_t) (osIdx - 1)]->reset(); osKey[(size_t) (osIdx - 1)]->reset(); }
         osWas = osIdx;
     }
     const float lookMs = param ("limLook");
@@ -330,6 +379,18 @@ void WallProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     // dry copy for MIX (with the drive), aligned to the wet path before the ceiling
     for (int i = 0; i < n; ++i) { mixDry[0][(size_t) i] = dryMix[0].process (L[i]); mixDry[1][(size_t) i] = dryMix[1].process (Rw[i]); }
 
+    // the key: the same trim and drive as the music, plus its own gain
+    const bool keyOn = keyIn[0] != nullptr;
+    if (keyOn)
+    {
+        const float kg = dbToGain (param ("scGain")) * trimT * inT;
+        for (int i = 0; i < n; ++i) { keyBuf[0][(size_t) i] = keyIn[0][i] * kg; keyBuf[1][(size_t) i] = keyIn[1][i] * kg; }
+    }
+    float* keyChans[2] { keyBuf[0].data(), keyBuf[1].data() };
+    juce::dsp::AudioBlock<float> keyBase (keyChans, 2, (size_t) n), keyUp = keyBase;
+    if (keyOn && osIdx > 0) keyUp = osKey[(size_t) (osIdx - 1)]->processSamplesUp (keyBase);
+    keyActive = keyOn;
+
     // ---- the chain, oversampled
     float* chans[2] { L, Rw };
     juce::dsp::AudioBlock<float> base (chans, 2, (size_t) n);
@@ -356,7 +417,7 @@ void WallProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     if (param ("levOn") < 0.5f) leveler.gainNow = 0.0f;
     if (param ("goldOn") < 0.5f) gold.hot = 0.0f;
     if (param ("clipOn") < 0.5f) clipper.shaveDb = 0.0f;
-    limiter.process (ul, ur, m, lm, Ls, A, grTrace.data());
+    limiter.process (ul, ur, m, lm, Ls, A, grTrace.data(), keyOn ? keyUp.getChannelPointer (0) : nullptr, keyOn ? keyUp.getChannelPointer (1) : nullptr);
     if (osIdx > 0) os[(size_t) (osIdx - 1)]->processSamplesDown (base);
 
     // ---- mix, the ceiling, out, unity, preview, dither, bypass
@@ -383,7 +444,8 @@ void WallProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float uT = unity ? juce::jlimit (-24.0f, 0.0f, 10.0f * std::log10 ((eIn + 1.0e-12f) / (eOut + 1.0e-12f))) : 0.0f;
     const float Th = dbToGain (ceilDb);
     const float kU = 1.0f - coefMs (200.0f, fs);
-    const int bits = (int) param ("dither") == 1 ? 24 : (int) param ("dither") == 2 ? 16 : 0;
+    static constexpr int ditherBits[] { 0, 24, 16, 22, 20, 18 };
+    const int bits = ditherBits[juce::jlimit (0, 5, (int) param ("dither"))];
     float pkO = 0.0f, sqO = 0.0f, pkOC[2] {};
     for (int i = 0; i < n; ++i)
     {
@@ -397,7 +459,7 @@ void WallProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         else { dryDelta[0].process (dDelta[0][(size_t) i]); dryDelta[1].process (dDelta[1][(size_t) i]); }
         L[i] = a; Rw[i] = b;
     }
-    dither.process (L, Rw, n, bits);
+    dither.process (L, Rw, n, bits, (int) param ("ditherShape"));
     const float kB = 1.0f - coefMs (15.0f, fs);
     for (int i = 0; i < n; ++i)
     {
@@ -454,6 +516,15 @@ void WallProcessor::dryDeltaIn (int i, float a, float b) { dDelta[0][(size_t) i]
 void WallProcessor::timerCallback()
 {
     updateLatency();
+    {
+        int s1, z1, s2, z2; const int ready = ccFifo.getNumReady();
+        ccFifo.prepareToRead (ready, s1, z1, s2, z2);
+        auto ps = getParameters();
+        auto apply = [&] (const std::pair<int, float>& q) { if (juce::isPositiveAndBelow (q.first, ps.size())) { ps[q.first]->beginChangeGesture(); ps[q.first]->setValueNotifyingHost (q.second); ps[q.first]->endChangeGesture(); } };
+        for (int j = 0; j < z1; ++j) apply (ccQueue[(size_t) (s1 + j)]);
+        for (int j = 0; j < z2; ++j) apply (ccQueue[(size_t) (s2 + j)]);
+        ccFifo.finishedRead (z1 + z2);
+    }
     // loudness from the 100 ms blocks
     int s1, z1, s2, z2;
     const int ready = lufsFifo.getNumReady();
@@ -560,6 +631,22 @@ void WallProcessor::bandsSwitched (bool on)
     setParam ("bandsOn", on ? 1.0f : 0.0f);
 }
 
+// ---------------- V2: MIDI Learn
+static int paramIndexOf (juce::AudioProcessor& p, const juce::String& pid)
+{
+    auto ps = p.getParameters();
+    for (int i = 0; i < ps.size(); ++i) if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (ps[i])) if (rp->getParameterID() == pid) return i;
+    return -1;
+}
+void WallProcessor::midiLearn (const juce::String& pid) { learnIndex = paramIndexOf (*this, pid); }
+void WallProcessor::midiForget (const juce::String& pid) { const int i = paramIndexOf (*this, pid); for (auto& c : ccMap) if (c.load() == i) c = -1; }
+juce::String WallProcessor::midiCcFor (const juce::String& pid) const
+{
+    const int i = paramIndexOf (const_cast<WallProcessor&> (*this), pid);
+    for (int cc = 0; cc < 128; ++cc) if (i >= 0 && ccMap[(size_t) cc].load() == i) return "CC " + juce::String (cc);
+    return {};
+}
+
 // ---------------- presets
 void WallProcessor::loadFactoryPreset (int index)
 {
@@ -659,6 +746,12 @@ void WallProcessor::getStateInformation (juce::MemoryBlock& mb)
     st.setProperty ("ab", abSlot, nullptr);
     st.setProperty ("uiSize", uiSize, nullptr);
     st.setProperty ("uiView", uiView, nullptr);
+    {
+        juce::StringArray m; auto ps = getParameters();
+        for (int cc = 0; cc < 128; ++cc) { const int i = ccMap[(size_t) cc].load(); if (juce::isPositiveAndBelow (i, ps.size())) if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (ps[i])) m.add (juce::String (cc) + "=" + rp->getParameterID()); }
+        st.setProperty ("midiMap", m.joinIntoString (","), nullptr);
+    }
+    for (auto& [k, v] : uiProps) st.setProperty (k, v, nullptr);
     if (auto x = st.createXml()) copyXmlToBinary (*x, mb);
 }
 void WallProcessor::setStateInformation (const void* data, int size)
@@ -673,8 +766,26 @@ void WallProcessor::setStateInformation (const void* data, int size)
     abSlot = (int) st.getProperty ("ab", 0);
     uiSize = (int) st.getProperty ("uiSize", uiSize);
     uiView = (int) st.getProperty ("uiView", uiView);
+    for (auto& c : ccMap) c = -1;
+    for (auto& e : juce::StringArray::fromTokens (st.getProperty ("midiMap", "").toString(), ",", ""))
+    {
+        const int cc = e.upToFirstOccurrenceOf ("=", false, false).getIntValue(); const int i = paramIndexOf (*this, e.fromFirstOccurrenceOf ("=", false, false));
+        if (juce::isPositiveAndBelow (cc, 128) && i >= 0) ccMap[(size_t) cc] = i;
+    }
+    for (auto& [k, v] : uiProps) v = st.getProperty (k, v);
     presetDirty = false;
 }
 
 juce::AudioProcessorEditor* WallProcessor::createEditor() { return new WallEditor (*this); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WallProcessor(); }
+
+// V2: the loudness standards - each sets the target and the ceiling the way that standard asks
+void WallProcessor::applyLoudnessStandard (int index)
+{
+    struct S { float lufs, ceil; bool tp; };
+    static const S st[] { { 0, 0, true }, { -14, -1.0f, true }, { -16, -1.0f, true }, { -23, -1.0f, true }, { -24, -2.0f, true }, { -16, -1.0f, true }, { -9, -0.3f, true } };
+    index = juce::jlimit (0, 6, index);
+    setParam ("loudStd", (float) index);
+    if (index == 0) return;
+    setParam ("target", st[index].lufs); setParam ("ceiling", st[index].ceil); setParam ("tp", st[index].tp ? 1.0f : 0.0f);
+}

@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include "WallDsp.h"
+#include <map>
 
 #ifndef WALL_VERSION
  #define WALL_VERSION 1
@@ -83,12 +84,26 @@ public:
     void bandsSwitched (bool on);       // switching the bands on starts each band from the general upward setting
 
     // LEARN: listens, then sets the input so the output sits at the target
+    // V2: MIDI Learn - right-click a control, "MIDI Learn", move a knob on your controller
+    void midiLearn (const juce::String& pid);
+    void midiForget (const juce::String& pid);
+    juce::String midiCcFor (const juce::String& pid) const;   // "CC 21" or empty
+    std::atomic<int> learnIndex { -1 };
+    std::array<std::atomic<int>, 128> ccMap;   // CC number -> parameter index (-1 none)
+    juce::AbstractFifo ccFifo { 512 }; std::array<std::pair<int, float>, 512> ccQueue {};
+    bool sidechainConnected() const;
     void startLearn();
     std::atomic<bool> learning { false };
     void startAutoTrim();
     bool autoTrim = false;
     void copyAB();
     int uiSize = 2, uiView = 0;   // (the editor's size and view, saved with the session)
+    // V2: the display's own settings (saved with the session): wave speed, wave range, meter scale, peak labels, loudness scale
+    std::map<juce::String, juce::var> uiProps { { "dispSpeed", 0 }, { "dispRange", 24 }, { "meterScale", 0 }, { "peakLabels", true }, { "loudRange", 18 }, { "loudRel", false } };
+    int ui (const juce::String& k) const { auto it = uiProps.find (k); return it == uiProps.end() ? 0 : (int) it->second; }
+    void setUi (const juce::String& k, juce::var v) { uiProps[k] = v; }
+    bool keyActive = false;   // (the sidechain key is arriving)
+    void applyLoudnessStandard (int index);
     void resetLoudness();
 
     // ----- for the screen
@@ -116,14 +131,14 @@ private:
     bool loadingPreset = false;
 
     // DSP
-    std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> os;   // 2x, 4x, 8x
+    std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 5> os, osKey;   // 2x .. 32x (V2), and the same for the sidechain key
     int osWas = -1;
     wall::DcFilter dc; wall::MonoBass mono;
     wall::Punch punch; wall::Character character; wall::Bands bands; wall::Leveler leveler; wall::Gold gold; wall::Clipper clipper;
     wall::Limiter limiter; wall::Ceiling ceiling; wall::Dither dither;
     std::array<wall::Delay, 2> dryMix, dryBypass, dryDelta;
     juce::AudioBuffer<float> work;
-    std::vector<float> grTrace, mixDry[2], dBypass[2], dDelta[2], tmpR;
+    std::vector<float> grTrace, mixDry[2], dBypass[2], dDelta[2], tmpR, keyBuf[2];
     void dryBypassIn (int i, float a, float b);
     void dryDeltaIn (int i, float a, float b);
     float trimS = 1.0f, inS = 1.0f, mixS = 1.0f, bypS = 0.0f, unityDb = 0.0f, prevDb = 0.0f;

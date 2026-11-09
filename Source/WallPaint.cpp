@@ -256,18 +256,41 @@ void WallCanvas::paintScreen (juce::Graphics& g)
         text (g, vn[i], xx + 31, y + 10.5f, Face::CondMedium, 9.5f, view == i ? amber : soft, 'c', 1.6f);
         zone (R (xx, y, 62, 20), Hit::View, {}, i);
     }
+    {
+        static const char* sp[] { "FAST", "SLOW", "INFINITE", "OFF" };
+        const juce::String t = juce::String ("DISPLAY  ") + middot + "  " + sp[juce::jlimit (0, 3, proc.ui ("dispSpeed"))];
+        const float w = tw (t, Face::CondMedium, 9, 1.4f) + 22;
+        fillR (g, x + 194, y, w, 20, 10, hex (0x17181b, 0.9f)); strokeR (g, x + 194, y, w, 20, 10, juce::Colours::white.withAlpha (0.12f));
+        text (g, t, x + 194 + w / 2, y + 10.5f, Face::CondMedium, 9, soft, 'c', 1.4f);
+        zone (R (x + 194, y, w, 20), Hit::Display);
+    }
 }
 
 void WallCanvas::paintWave (juce::Graphics& g)
 {
     const float yc = 404, amp = 300, ceilDb = pv ("ceiling");
     const float ceil = 0.58f;
-    auto f = [&] (float lin) { return juce::jlimit (0.0f, 1.05f, ceil * (1.0f + (gainToDb (lin) - ceilDb) / 24.0f)); };
+    const float range = (float) juce::jlimit (12, 48, proc.ui ("dispRange"));
+    auto f = [&] (float lin) { return juce::jlimit (0.0f, 1.05f, ceil * (1.0f + (gainToDb (lin) - ceilDb) / range)); };
     auto xs = [] (int i) { return 14.0f + (W - 28.0f) * (float) i / (float) (cols - 1); };
+    const int speed = proc.ui ("dispSpeed");   // V2: 0 fast, 1 slow, 2 infinite (the whole song), 3 off
+    if (speed == 3) { text (g, juce::String ("WAVE OFF  ") + middot + "  right-click the screen to bring it back", C, 404, Face::CondMedium, 9.5f, faint, 'c', 1.6f); return; }
     std::array<float, cols> in {}, out {}, gr {}, lv {};
+    auto merge = [] (wall::Frame& a, const wall::Frame& b) { a.inPk = std::max (a.inPk, b.inPk); a.outPk = std::max (a.outPk, b.outPk); a.grDb = std::max (a.grDb, b.grDb); a.levDb = b.levDb; };
     for (int i = 0; i < cols; ++i)
     {
-        const auto& fr = wave[(size_t) ((wavePos + i) % cols)];
+        wall::Frame fr {};
+        if (speed == 2)
+        {
+            const int n = (int) song.size();
+            const int a = n * i / cols, b = std::max (a + 1, n * (i + 1) / cols);
+            for (int k = a; k < b && k < n; ++k) merge (fr, song[(size_t) k]);
+        }
+        else
+        {
+            const int per = speed == 1 ? 4 : 1;
+            for (int k = 0; k < per; ++k) merge (fr, wave[(size_t) ((wavePos - (cols - i) * per + k + rawN * 8) % rawN)]);
+        }
         in[(size_t) i] = f (fr.inPk); out[(size_t) i] = std::min (f (fr.outPk), f (dbToGain (ceilDb)));
         gr[(size_t) i] = fr.grDb; lv[(size_t) i] = fr.levDb;
     }
@@ -310,6 +333,27 @@ void WallCanvas::paintWave (juce::Graphics& g)
         juce::Path l; l.startNewSubPath (xs (0), grY (0)); for (int i = 1; i < cols; ++i) l.lineTo (xs (i), grY (i));
         g.setColour (coral); g.strokePath (l, stroke (1.6f));
         g.setColour (juce::Colour (255, 122, 92).withAlpha (0.35f)); g.fillRect (14.0f, g0, W - 28, 1.0f);
+        // V2: peak labels - the moments of most gain reduction, marked
+        if (proc.ui ("peakLabels") != 0)
+        {
+            float mx = 0, mean = 0; for (auto v : gr) { mx = std::max (mx, v); mean += v / (float) cols; }
+            const float thr = std::max ({ 1.0f, mean + 1.0f, mx * 0.85f });   // (only the moments that stand out)
+            int shownN = 0;
+            for (int i = 20; i < cols - 30 && shownN < 6; ++i)
+            {
+                const float v = gr[(size_t) i];
+                if (v < thr) continue;
+                bool top = true;
+                for (int k = std::max (0, i - 30); k < std::min (cols, i + 30) && top; ++k) if (gr[(size_t) k] > v || (gr[(size_t) k] == v && k < i)) top = false;
+                if (! top) continue;
+                const float x = xs (i), y = grY (i) + 14;
+                const juce::String t = minus + juce::String (v, 1);
+                const float w = tw (t, Face::Medium, 8.5f) + 12;
+                fillR (g, x - w / 2, y - 7, w, 14, 7, hex (0x0e0e10, 0.85f)); strokeR (g, x - w / 2, y - 7, w, 14, 7, coral.withAlpha (0.6f));
+                text (g, t, x, y + 0.5f, Face::Medium, 8.5f, hex (0xff8a6e), 'c');
+                ++shownN;
+            }
+        }
     }
     // the ceiling, both sides
     for (float sg : { -1.0f, 1.0f }) dashH (g, 14, W - 14, yc + sg * ceil * amp, 6, 5, amber.withAlpha (0.75f), 1.2f);
@@ -345,19 +389,38 @@ void WallCanvas::paintWave (juce::Graphics& g)
 // the meters at the window's edges: input left, output right
 void WallCanvas::paintMeters (juce::Graphics& g)
 {
+    // V2: the scale - peak over 60 or 24 dB, or K-20 / K-14 / K-12 (RMS, 0 at -K dBFS, amber to +4, red above)
+    const int ms = proc.ui ("meterScale");
+    const int K = ms == 2 ? 20 : ms == 3 ? 14 : ms == 4 ? 12 : 0;
+    const float lo = K > 0 ? -(float) K - 24.0f : (ms == 1 ? -24.0f : -60.0f);
     auto meter = [&] (float x, float db)
     {
         fillR (g, x, 70, 4, 670, 2, juce::Colours::white.withAlpha (0.05f));
-        const float fr = juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f), h = 670 * fr;
-        juce::ColourGradient mg (green, 0, 740, hex (0xef4444), 0, 70, false); mg.addColour (0.7, green); mg.addColour (0.92, amber);
-        juce::Graphics::ScopedSaveState s (g);
-        juce::Path p; p.addRoundedRectangle (x, 70.0f, 4.0f, 670.0f, 2.0f); g.reduceClipRegion (p);
-        g.setGradientFill (mg); g.fillRect (x, 740 - h, 4.0f, h);
+        const float fr = juce::jlimit (0.0f, 1.0f, (db - lo) / -lo), h = 670 * fr;
+        juce::ColourGradient mg (green, 0, 740, hex (0xef4444), 0, 70, false);
+        if (K > 0) { const float k0 = (-(float) K - lo) / -lo, k4 = (-(float) K + 4 - lo) / -lo; mg.addColour (k0, green); mg.addColour (std::min (0.99, (double) k0 + 0.01), amber); mg.addColour (k4, amber); mg.addColour (std::min (0.995, (double) k4 + 0.01), hex (0xef4444)); }
+        else { mg.addColour (0.7, green); mg.addColour (0.92, amber); }
+        {
+            juce::Graphics::ScopedSaveState s (g);
+            juce::Path p; p.addRoundedRectangle (x, 70.0f, 4.0f, 670.0f, 2.0f); g.reduceClipRegion (p);
+            g.setGradientFill (mg); g.fillRect (x, 740 - h, 4.0f, h);
+        }
+        if (K > 0) { g.setColour (juce::Colours::white.withAlpha (0.7f)); g.fillRect (x - 1, 740 - 670 * (-(float) K - lo) / -lo, 6.0f, 1.0f); }
     };
+    if (K > 0)
+    {
+        const float ri = gainToDb (proc.inRms.load()), ro = gainToDb (proc.outRms.load());
+        meter (4, ri); meter (10, ri); meter (W - 16, ro); meter (W - 10, ro);
+        text (g, "K-" + juce::String (K) + " " + dbs (std::max (ri + (float) K, -40.0f), 1, true), 4, 748, Face::Medium, 9, ink);
+        text (g, "RMS", 4, 758, Face::Regular, 7.5f, grey);
+        text (g, dbs (std::max (ro + (float) K, -40.0f), 1, true) + " K-" + juce::String (K), W - 4, 748, Face::Medium, 9, ink, 'r');
+        text (g, "RMS", W - 4, 758, Face::Regular, 7.5f, grey, 'r');
+        return;
+    }
     meter (4, shown[0]); meter (10, shown[1]); meter (W - 16, shown[2]); meter (W - 10, shown[3]);
-    text (g, "PK " + dbs (std::max (pkHold[0], -60.0f)), 4, 748, Face::Medium, 9, ink);
+    text (g, "PK " + dbs (std::max (pkHold[0], lo)), 4, 748, Face::Medium, 9, ink);
     text (g, "AVG " + dbs (std::max (gainToDb (proc.inRms.load()), -60.0f)), 4, 758, Face::Regular, 7.5f, grey);
-    text (g, dbs (std::max (pkHold[1], -60.0f)) + " PK", W - 4, 748, Face::Medium, 9, ink, 'r');
+    text (g, dbs (std::max (pkHold[1], lo)) + " PK", W - 4, 748, Face::Medium, 9, ink, 'r');
     text (g, dbs (std::max (gainToDb (proc.outRms.load()), -60.0f)) + " AVG", W - 4, 758, Face::Regular, 7.5f, grey, 'r');
 }
 
@@ -572,13 +635,23 @@ void WallCanvas::paintLoudStrip (juce::Graphics& g)
     zone (R (x + 10, y + 6, 80, 20), Hit::LoudReset);
     {
         const float t = pv ("target");
-        const char* what = t <= -14 ? "streaming" : t <= -11 ? "pop" : t <= -8 ? "club" : "loud";
-        text (g, "target  " + dbs (t, t == std::round (t) ? 0 : 1) + " LUFS  " + middot + "  " + what, x + w - 16, y + 16, Face::Regular, 9.5f, grey, 'r');
+        static const char* stdN[] { "", "Streaming", "Apple Music", "EBU R128", "ATSC A/85", "TR-B32", "Club" };
+        const int ms = matchedStandard();
+        const juce::String what = ms > 0 ? juce::String (stdN[ms]) : juce::String (t <= -14 ? "streaming" : t <= -11 ? "pop" : t <= -8 ? "club" : "loud");
+        const juce::String tt = "target  " + dbs (t, t == std::round (t) ? 0 : 1) + " LUFS  " + middot + "  " + what;
+        const float tw2 = tw (tt, Face::Regular, 9.5f) + 16;
+        const bool over = R (x + w - 16 - tw2, y + 6, tw2 + 8, 20).contains (mouse);
+        if (over) fillR (g, x + w - 20 - tw2, y + 6, tw2 + 12, 20, 10, juce::Colours::white.withAlpha (0.06f));
+        text (g, tt + juce::String::fromUTF8 ("  \xe2\x96\xbe"), x + w - 16, y + 16, Face::Regular, 9.5f, over ? ink : grey, 'r');
+        zone (R (x + w - 20 - tw2, y + 6, tw2 + 12, 20), Hit::LoudMenu);
     }
-    auto lv = [] (float v) { return v <= -69.5f ? juce::String (minus + juce::String::fromUTF8 ("\xe2\x88\x9e")) : dbs (v); };
+    const bool rel = proc.ui ("loudRel") != 0; const float tgt = pv ("target");
+    auto lv = [&] (float v) { return v <= -69.5f ? juce::String (minus + juce::String::fromUTF8 ("\xe2\x88\x9e")) : rel ? dbs (v - tgt, 1, true) : dbs (v); };
+    auto lvTp = [] (float v) { return v <= -69.5f ? juce::String (minus + juce::String::fromUTF8 ("\xe2\x88\x9e")) : dbs (v); };
+    const char* lu = rel ? "LU" : "LUFS";
     const std::tuple<const char*, juce::String, const char*, juce::Colour> cells[] {
-        { "INTEGRATED", lv (proc.lufsI.load()), "LUFS", amber }, { "SHORT-TERM", lv (proc.lufsS.load()), "LUFS", ink }, { "MOMENTARY", lv (proc.lufsM.load()), "LUFS", ink },
-        { "TRUE PEAK", lv (std::max (-70.0f, proc.tpMaxDb.load())), "dBTP", ink }, { "RANGE", juce::String (proc.lra.load(), 1), "LU", ink }, { "GAIN REDUCTION", (grShown > 0.05f ? minus : juce::String()) + juce::String (grShown, 1), "dB", coral } };
+        { "INTEGRATED", lv (proc.lufsI.load()), lu, amber }, { "SHORT-TERM", lv (proc.lufsS.load()), lu, ink }, { "MOMENTARY", lv (proc.lufsM.load()), lu, ink },
+        { "TRUE PEAK", lvTp (std::max (-70.0f, proc.tpMaxDb.load())), "dBTP", ink }, { "RANGE", juce::String (proc.lra.load(), 1), "LU", ink }, { "GAIN REDUCTION", (grShown > 0.05f ? minus : juce::String()) + juce::String (grShown, 1), "dB", coral } };
     const float cw = (w - 32) / 6.0f;
     int i = 0;
     for (auto& [l, v, u, col] : cells)
@@ -641,7 +714,7 @@ void WallCanvas::paintBottom (juce::Graphics& g)
         zone (R (x, cy - 8, w, 16), k, pid);
     };
     chip (150, 44, "OS", choiceName (proc, "os"), false, Hit::Choice, "os");
-    chip (198, 50, "Dither", choiceName (proc, "dither"), false, Hit::Choice, "dither");
+    chip (198, 50, "Dither", choiceName (proc, "dither") + ((int) pv ("dither") > 0 && (int) pv ("ditherShape") == 2 ? "+" : ""), false, Hit::DitherMenu, "dither");
     chip (252, 24, "DC", {}, pv ("dc") > 0.5f, Hit::Toggle, "dc");
     chip (280, 58, "MONO", "<" + juce::String (juce::roundToInt (pv ("monoHz"))), pv ("mono") > 0.5f, Hit::Toggle, "mono");
     zones.push_back ({ R (308, cy - 8, 30, 16), Hit::Knob, "monoHz", 1 });   // (its number: drag or type)
@@ -998,8 +1071,20 @@ void WallCanvas::paintLimiter (juce::Graphics& g)
     const int si = (int) pv ("limStyle");
     cycleTab (g, C, PY + 26, wall::styles()[(size_t) si].name, 190, 1.2f, "limStyle");
     text (g, wall::styles()[(size_t) si].blurb, C, PY + 66, Face::Regular, 9.5f, grey, 'c');
-    const float kw = 120, x0 = C - kw * 2, y = PY + 82;
+    const float kw = 104, x0 = C - kw * 2.5f, y = PY + 82;
     paramKnob (g, "limAtk", x0 + kw * 0.5f, y, 54, "ATTACK", juce::String (pv ("limAtk"), pv ("limAtk") < 10 ? 1 : 0) + " ms", coral, false, 1);
+    // V2: the external sidechain - the limiter listens to the louder of the music and the key (stem mastering)
+    {
+        const bool sc = pv ("scOn") > 0.5f, has = proc.keyActive;
+        const juce::String t = sc ? (has ? juce::String ("SIDECHAIN  ON") : juce::String ("SIDECHAIN  ") + middot + "  NO KEY") : juce::String ("SIDECHAIN  OFF");
+        const float w = tw (t, Face::CondMedium, 9, 1.4f) + 28, sx = PX + PW2 - 100 - w;
+        fillR (g, sx, PY + 14, w, 18, 9, sc ? (has ? hex (0x4ade80, 0.14f) : amber.withAlpha (0.14f)) : hex (0x1b1c20));
+        strokeR (g, sx, PY + 14, w, 18, 9, sc ? (has ? hex (0x4ade80, 0.7f) : amber.withAlpha (0.7f)) : hex (0x34353b));
+        dot (g, sx + 10, PY + 23, 2.5f, sc ? (has ? green : amber) : grey);
+        text (g, t, sx + 16, PY + 23.5f, Face::CondMedium, 9, sc ? (has ? mint : amber) : label, 'l', 1.4f);
+        zone (R (sx, PY + 14, w, 18), Hit::Toggle, "scOn");
+        paramKnob (g, "scGain", x0 + kw * 4.5f, y, 54, "SC GAIN", dbs (pv ("scGain"), 1, true) + " dB", sc ? hex (0x4ade80) : ivory.withAlpha (0.4f), true, 1);
+    }
     paramKnob (g, "limStages", x0 + kw * 1.5f, y, 54, "STAGES", juce::String ((int) pv ("limStages")), coral, false, 1);
     paramKnob (g, "limLook", x0 + kw * 2.5f, y, 54, "LOOKAHEAD", juce::String (pv ("limLook"), 1) + " ms", ivory, false, 1);
     paramKnob (g, "limLinkT", x0 + kw * 3.5f, y, 54, juce::String ("LINK T ") + middot + " R", juce::String (juce::roundToInt (pv ("limLinkT"))) + " " + middot + " " + juce::String (juce::roundToInt (pv ("limLinkR"))), ivory, false, 1);
@@ -1135,9 +1220,9 @@ void WallCanvas::paintLoudView (juce::Graphics& g)
     }
     strokeR (g, 236, 126, W - 236 - 250, 372, 14, juce::Colours::white.withAlpha (0.08f));
     const float X0 = 262, X1 = W - 268, Y0 = 140, Y1 = 470;
-    const float tgt = pv ("target"), hiL = std::ceil ((tgt + 5) / 2) * 2, loL = hiL - 18;
+    const float tgt = pv ("target"), span18 = (float) (proc.ui ("loudRange") >= 36 ? 36 : 18), hiL = std::ceil ((tgt + span18 * 5 / 18) / 2) * 2, loL = hiL - span18;
     auto ly = [&] (float l) { return Y1 - (juce::jlimit (loL, hiL, l) - loL) / (hiL - loL) * (Y1 - Y0); };
-    for (float l = loL + 2; l <= hiL; l += 4) { g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (X0, ly (l), X1 - X0, 1.0f); text (g, dbs (l, 0), X0 - 8, ly (l) + 0.5f, Face::Regular, 8.5f, faint, 'r'); }
+    for (float l = loL + 2; l <= hiL; l += (span18 > 20 ? 8.0f : 4.0f)) { g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (X0, ly (l), X1 - X0, 1.0f); text (g, dbs (l, 0), X0 - 8, ly (l) + 0.5f, Face::Regular, 8.5f, faint, 'r'); }
     text (g, "LUFS", X0 - 8, Y0 - 14, Face::CondMedium, 8, faint, 'r', 1.4f);
     const auto& h = proc.lufsHistory;
     const int n = (int) h.size();
@@ -1202,6 +1287,15 @@ void WallCanvas::paintLoudView (juce::Graphics& g)
 // what the streaming preview is doing right now
 void WallCanvas::paintPreviewBanner (juce::Graphics& g)
 {
+    if (const int li = proc.learnIndex.load(); li >= 0)
+    {
+        auto ps = proc.getParameters();
+        const juce::String t = "MIDI LEARN  " + middot + "  move a knob on your controller for " + (juce::isPositiveAndBelow (li, ps.size()) ? ps[li]->getName (40).toUpperCase() : juce::String());
+        const float w = tw (t, Face::CondMedium, 10, 1.4f) + 40;
+        fillR (g, C - w / 2, 124, w, 24, 12, amber.withAlpha (0.16f)); strokeR (g, C - w / 2, 124, w, 24, 12, amber.withAlpha (0.8f));
+        dot (g, C - w / 2 + 14, 136, 3.5f, amber.withAlpha (0.5f + 0.5f * std::sin (animT * 6.0f)));
+        text (g, t, C + 6, 136.5f, Face::CondMedium, 10, juce::Colours::white, 'c', 1.4f);
+    }
     const int pvIdx = (int) pv ("preview");
     if (pvIdx <= 0) return;
     static const char* plat[] { "SPOTIFY", "APPLE MUSIC", "YOUTUBE", "TIDAL", "AMAZON" };

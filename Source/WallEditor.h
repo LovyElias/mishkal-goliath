@@ -13,7 +13,8 @@ namespace wallui
     {
         None, Knob, Toggle, Choice, CycleTab, Learn, Undo, Redo, History, Preset, PresetPrev, PresetNext, SavePreset,
         AB, Match, Power, StylePrev, StyleNext, StyleDot, Preview, Unity, View, ChainBlock, ChainDot, Size, Delta, Auto,
-        GoldStep, BandBody, BandXover, BandAdd, BandRemove, BandSolo, BandByp, LoudReset, PanelClose, Ceiling
+        GoldStep, BandBody, BandXover, BandAdd, BandRemove, BandSolo, BandByp, LoudReset, PanelClose, Ceiling,
+        Display, LoudMenu, DitherMenu   // V2
     };
 }
 
@@ -107,7 +108,13 @@ private:
 
     // ---- what the screen shows
     static constexpr int cols = 620;
-    std::array<wall::Frame, cols> wave {}; int wavePos = 0;
+    static constexpr int rawN = cols * 4;
+    std::array<wall::Frame, rawN> wave {}; int wavePos = 0;     // (V2: four screens' worth, for the slow speed)
+    std::vector<wall::Frame> song; wall::Frame songAcc; int songN = 0;   // V2: the whole song at 10 a second (Infinite)
+    void showDisplayMenu (wallui::R at);
+    void showLoudMenu (wallui::R at);
+    void showDitherMenu (wallui::R at);
+    int matchedStandard() const;
     float shown[8] {};   // smoothed meters: in L/R, out L/R (dB)
     float pkHold[2] { -90, -90 }; double pkTime[2] {};
     float grShown = 0, grAvg = 0, grPeak = 0; double grPeakT = 0;

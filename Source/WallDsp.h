@@ -471,7 +471,8 @@ struct Limiter
         minLinked.setWindow (L + 1); meanLinked.setWindow (A, 1.0f);
         for (int c = 0; c < 2; ++c) { minOwn[c].setWindow (L + 1); meanOwn[c].setWindow (A, 1.0f); delay[(size_t) c].setDelay (L); }
     }
-    void process (float* l, float* r, int n, const LimiterSettings& s, int lookaheadSamples, int attackSamples, float* grTrace = nullptr)
+    void process (float* l, float* r, int n, const LimiterSettings& s, int lookaheadSamples, int attackSamples, float* grTrace = nullptr,
+                  const float* keyL = nullptr, const float* keyR = nullptr)
     {
         setTimes (lookaheadSamples, attackSamples);
         const auto& st = styles()[(size_t) juce::jlimit (0, 8, s.style)];
@@ -484,7 +485,9 @@ struct Limiter
         for (int i = 0; i < n; ++i)
         {
             float x[2] { l[i], r[i] };
-            const float pk = std::max (std::abs (x[0]), std::abs (x[1]));
+            // (V2: with the sidechain on, each side sees the louder of itself and the key)
+            const float k0 = keyL != nullptr ? std::abs (keyL[i]) : 0.0f, k1 = keyR != nullptr ? std::abs (keyR[i]) : 0.0f;
+            const float pk = std::max (std::max (std::abs (x[0]), std::abs (x[1])), std::max (k0, k1));
             // ARC: dense music (low crest) lets go slower, sparse music faster
             rmsS = dA * rmsS + (1.0f - dA) * pk * pk; pkS = std::max (pk, pkS * (1.0f - (1.0f - dA) * 0.25f));
             const float dens = juce::jlimit (0.0f, 1.0f, 2.0f * std::sqrt (rmsS) / (pkS + 1.0e-6f));
@@ -510,8 +513,9 @@ struct Limiter
                 pre *= dbToGain (midGrDb);
             }
             x[0] *= pre; x[1] *= pre;
+            const float d0x = std::max (std::abs (x[0]), k0 * pre), d1x = std::max (std::abs (x[1]), k1 * pre);
             // stage: fast look-ahead - guarantees the ceiling
-            const float rq0 = std::min (1.0f, T / (std::abs (x[0]) + 1.0e-9f)), rq1 = std::min (1.0f, T / (std::abs (x[1]) + 1.0e-9f));
+            const float rq0 = std::min (1.0f, T / (d0x + 1.0e-9f)), rq1 = std::min (1.0f, T / (d1x + 1.0e-9f));
             const float relC = coefMs (s.releaseMs * arcMul, fs);
             const float sL = meanLinked.push (minLinked.push (std::min (rq0, rq1)));
             gLinked = sL < gLinked ? sL : gLinked * relC + (1.0f - relC) * sL;
@@ -602,22 +606,27 @@ struct Ceiling
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// DITHER: TPDF with first-order noise shaping, to 16 or 24 bits
+// DITHER: TPDF to 16 .. 24 bits; shaping: 0 none (flat), 1 basic (first order), 2 optimized (Wannamaker's 5-tap, pushed up out of the ear's most sensitive range)
 struct Dither
 {
-    juce::Random rng; float err[2] {};
-    void process (float* l, float* r, int n, int bits)
+    juce::Random rng; float e[2][5] {};
+    void process (float* l, float* r, int n, int bits, int shape = 1)
     {
         if (bits <= 0) return;
         const float q = 1.0f / (float) (1 << (bits - 1));
+        static constexpr float opt[5] { 2.033f, -2.165f, 1.959f, -1.590f, 0.6149f };
         float* ch[2] { l, r };
         for (int c = 0; c < 2; ++c)
             for (int i = 0; i < n; ++i)
             {
                 const float d = (rng.nextFloat() - rng.nextFloat()) * q;
-                const float x = ch[c][i] - 0.5f * err[c];
+                float fb = 0.0f;
+                if (shape == 1) fb = e[c][0];
+                else if (shape == 2) for (int k = 0; k < 5; ++k) fb += opt[k] * e[c][k];
+                const float x = ch[c][i] - fb;
                 const float y = std::round ((x + d) / q) * q;
-                err[c] = y - x;
+                for (int k = 4; k > 0; --k) e[c][k] = e[c][k - 1];
+                e[c][0] = juce::jlimit (-4.0f * q, 4.0f * q, y - x);
                 ch[c][i] = y;
             }
     }

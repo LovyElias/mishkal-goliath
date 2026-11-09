@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Wall VERSION 1.1.0)   # raise with every version so hosts rescan
+project(Wall VERSION 1.2.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -45,6 +45,12 @@ endif()
 #        the true-peak Ceiling that nothing passes. Oversampling Off / 2x / 4x / 8x, dither, DC, mono bass, mix,
 #        delta, unity gain, streaming preview, LEARN to a target. Wave / Bands / Loudness views, GR and Crest meters,
 #        LUFS M / S / I / LRA, true peak, correlation, ISP counter. Presets with our own names, A / B, undo / redo.
+#   V2 = external sidechain (the limiter listens to the louder of the music and the key - stem mastering) with its own
+#        gain; oversampling to 16x and 32x; dither to 24 / 22 / 20 / 18 / 16 bit with None / Basic / Optimized noise
+#        shaping; the display: wave speed Fast / Slow / Infinite (the whole song) / Off, wave range 12 / 24 / 48 dB,
+#        edge meters Peak 60 / Peak 24 / K-20 / K-14 / K-12, peak labels on the moments of most gain reduction;
+#        loudness standards (Streaming, Apple Music, EBU R128, ATSC A/85, TR-B32, Club) that set target and ceiling,
+#        an 18 / 36 LU loudness view and readings in LU from the target; MIDI Learn on every control
 function(wall_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -54,12 +60,12 @@ function(wall_plugin target product code bundle version formats)
         PRODUCT_NAME            "${product}"
         FORMATS                 ${formats}
         IS_SYNTH                FALSE
-        NEEDS_MIDI_INPUT        FALSE
+        NEEDS_MIDI_INPUT        TRUE    # V2: MIDI Learn
         NEEDS_MIDI_OUTPUT       FALSE
         IS_MIDI_EFFECT          FALSE
         EDITOR_WANTS_KEYBOARD_FOCUS FALSE
         VST3_CATEGORIES         Fx Dynamics Mastering
-        AU_MAIN_TYPE            kAudioUnitType_Effect
+        AU_MAIN_TYPE            kAudioUnitType_MusicEffect   # V2: so hosts send it MIDI (MIDI Learn)
         AAX_CATEGORY            AAX_ePlugInCategory_Dynamics
         COPY_PLUGIN_AFTER_BUILD ${WALL_COPY_AFTER_BUILD}
         AAX_COPY_DIR            "${CMAKE_BINARY_DIR}/AAX-ready-to-install")
@@ -76,6 +82,6 @@ function(wall_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(WALL_LATEST_VERSION 1)   # raise this by one for every new version
+set(WALL_LATEST_VERSION 2)   # raise this by one for every new version
 
 wall_plugin(Wall "Mishkal Wall" Wall com.mishkalaudio.wall ${WALL_LATEST_VERSION} "${WALL_FORMATS}")
