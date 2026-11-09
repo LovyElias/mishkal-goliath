@@ -134,6 +134,7 @@ private:
     float fadeOut (int key, bool on);                   // 1 while on, then down to 0 over 3 seconds
     void paintTopStripFaded (juce::Graphics&);
     void paintScDrawerFaded (juce::Graphics&);
+    void paintGrStrip (juce::Graphics&);   // CLEAN / VINTAGE: ten seconds of gain reduction and its readouts
     juce::String pchoice (const juce::String& pid) const;
     double kneeTouch = -1.0e9;   // when Threshold / Ratio / Knee was last touched (the knee display shows for 4 s)
     void paintSidechainDrawer (juce::Graphics&, ui::R unit);

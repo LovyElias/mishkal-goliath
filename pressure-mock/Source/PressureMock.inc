@@ -1371,6 +1371,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             paintEnvEdge (g, eo);
         }
         juce::ignoreUnused (unit);   // (no faceplate: the glass panels carry the unit)
+        paintGrStrip (g);
         paintTopStripFaded (g);   // (VINTAGE: each unit has its own sidechain switches up here - no sidechain drawer)
         return;
     }
@@ -1420,6 +1421,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 paintEnvEdge (g, eo);
             }
         }
+        paintGrStrip (g);
         paintTopStripFaded (g);
         paintScDrawerFaded (g);
         return;
@@ -1605,6 +1607,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             g.endTransparencyLayer();
         }
     }
+    paintGrStrip (g);
     paintTopStripFaded (g);
     paintScDrawerFaded (g);
     // the strip along the bottom: off for now (Lovy is deciding where its controls go)
@@ -1774,8 +1777,23 @@ void Canvas::paintLevelTab (juce::Graphics& g)
         seg (R (s.getX() + 18, y, s.getWidth() - 36, 18), { "UPWARD", "DYN EQ" }, "hLiftMode", liC);
         y += 30;
         const float colW = (s.getWidth() - 36) * 0.5f, cL = s.getX() + 18 + colW * 0.5f, cR = cL + colW;
-        text (g, "LOW", font (Face::CondMedium, 9.5f, 2.0f), ink, R (cL - colW * 0.5f, y, colW, 11), juce::Justification::centred);
-        text (g, "HIGH", font (Face::CondMedium, 9.5f, 2.0f), ink, R (cR - colW * 0.5f, y, colW, 11), juce::Justification::centred);
+        {   // each band's name with its SOLO button beside it (lit when you're hearing just that band)
+            auto bandHead = [&] (float cx, const char* name, const char* soloId)
+            {
+                const auto nf = font (Face::CondMedium, 9.5f, 2.0f);
+                const float nw = textWidth (nf, name);
+                const float x0 = cx - (nw + 6 + 16) * 0.5f;
+                text (g, name, nf, ink, R (x0, y, nw + 2, 11));
+                const R sb (x0 + nw + 6, y - 1.5f, 16, 14);
+                const bool on = pon (soloId);
+                g.setColour (on ? col ("#f2c14e").withAlpha (0.9f) : juce::Colours::black.withAlpha (0.3f)); g.fillRoundedRectangle (sb, 3.5f);
+                g.setColour (on ? col ("#f2c14e") : juce::Colours::white.withAlpha (0.22f)); g.drawRoundedRectangle (sb.reduced (0.5f), 3.5f, 1.0f);
+                text (g, "S", font (Face::SemiBold, 9, 0.0f), on ? col ("#16161a") : grey, sb, juce::Justification::centred);
+                pctl (sb.expanded (3), soloId, 1);
+            };
+            bandHead (cL, "LOW", "hLowSolo");
+            bandHead (cR, "HIGH", "hHighSolo");
+        }
         g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (cL + colW * 0.5f - 0.5f, y + 18, 1.0f, 290.0f);
         y += 20;
         knobCol (cL, y, colW, { { "FREQ", "hLowHz" }, { "THRESH", "hLowThr" }, { "LIFT", "hLowLift" } }, liC, 54.0f);
@@ -3043,21 +3061,40 @@ void Canvas::paintCharContent (juce::Graphics& g, R k)
     {
         const double tms = penv ("PRESS_BREATH") ? std::atof (penv ("PRESS_BREATH")) : juce::Time::getMillisecondCounterHiRes();
         const float ph = penv ("PRESS_CHAR_X") ? (float) std::atof (penv ("PRESS_CHAR_X")) : (float) std::sin (tms / 900.0) * 0.78f;
-        juce::Random rnd (3);
+        // the more THD, the more the light distorts: its colour runs hot (gold > amber > red), splits into red / green / blue
+        // ghosts that drift apart, flickers and jitters - clean and calm at 0, torn and glowing at the top
+        const float d = juce::jlimit (0.0f, 1.0f, thd);
+        juce::Random rnd (3), fl ((juce::int64) (tms / 45.0));   // fl: a new flicker every 45 ms
         for (int i = 24; i >= 1; --i)
         {
             const float age = (float) i / 24.0f;
             const P c = at (ph - (float) i * 0.012f);
-            const auto rc = juce::Colour::fromHSV (std::fmod ((float) i * 0.05f, 1.0f), 0.7f, 1.0f, 1.0f);
-            g.setColour (rc.withAlpha (0.7f * (1.0f - age)));
-            const float r = 1.2f + 3.0f * (1.0f - age), jx = (rnd.nextFloat() - 0.5f) * 16.0f * age, jy = (rnd.nextFloat() - 0.5f) * 16.0f * age;
+            const float hue = std::fmod (0.11f - 0.11f * d + (float) i * (0.012f + 0.05f * d) + 1.0f, 1.0f);   // calm: golds; pushed: the whole spectrum
+            const auto rc = juce::Colour::fromHSV (hue, 0.35f + 0.6f * d, 1.0f, 1.0f);
+            g.setColour (rc.withAlpha ((0.45f + 0.35f * d) * (1.0f - age)));
+            const float spread = 6.0f + 18.0f * d;
+            const float r = 1.2f + (3.0f + 2.0f * d) * (1.0f - age), jx = (rnd.nextFloat() - 0.5f) * spread * age, jy = (rnd.nextFloat() - 0.5f) * spread * age;
             g.fillEllipse (c.x + jx - r * 0.5f, c.y + jy - r * 0.5f, r, r);
         }
-        const P c = at (ph);
-        const auto gold = col ("#ffd27a");
-        g.setGradientFill (juce::ColourGradient (gold.withAlpha (0.6f), c.x, c.y, gold.withAlpha (0.0f), c.x + 16, c.y, true));
-        g.fillEllipse (c.x - 16, c.y - 16, 32, 32);
-        g.setColour (gold.interpolatedWith (juce::Colours::white, 0.45f)); g.fillEllipse (c.x - 4.5f, c.y - 4.5f, 9, 9);
+        const P c0 = at (ph);
+        const P c = c0.translated ((fl.nextFloat() - 0.5f) * 5.0f * d * d, (fl.nextFloat() - 0.5f) * 5.0f * d * d);   // a flicker when it's pushed
+        const auto core = col ("#ffd27a").interpolatedWith (col ("#ff8a2a"), juce::jmin (1.0f, d * 1.6f)).interpolatedWith (col ("#ff2d3d"), juce::jmax (0.0f, d * 1.6f - 0.6f));
+        if (d > 0.04f)   // chromatic split: three tinted ghosts, further apart the harder it's driven
+        {
+            const float off = 1.5f + 7.0f * d, a0 = (float) (tms / 260.0);
+            const juce::Colour gh[3] { col ("#ff3040"), col ("#3dff9a"), col ("#4a7dff") };
+            for (int k = 0; k < 3; ++k)
+            {
+                const float an = a0 + (float) k * 2.094f;
+                const P q = c.translated (off * std::cos (an), off * std::sin (an));
+                g.setGradientFill (juce::ColourGradient (gh[k].withAlpha (0.45f * d), q.x, q.y, gh[k].withAlpha (0.0f), q.x + 9 + 6 * d, q.y, true));
+                g.fillEllipse (q.x - 9 - 6 * d, q.y - 9 - 6 * d, 18 + 12 * d, 18 + 12 * d);
+            }
+        }
+        const float glowR = 16.0f + 8.0f * d * (0.75f + 0.25f * fl.nextFloat());
+        g.setGradientFill (juce::ColourGradient (core.withAlpha (0.6f + 0.25f * d), c.x, c.y, core.withAlpha (0.0f), c.x + glowR, c.y, true));
+        g.fillEllipse (c.x - glowR, c.y - glowR, glowR * 2, glowR * 2);
+        g.setColour (core.interpolatedWith (juce::Colours::white, 0.45f - 0.25f * d)); g.fillEllipse (c.x - 4.5f, c.y - 4.5f, 9, 9);
         g.setColour (juce::Colours::white); g.fillEllipse (c.x - 2, c.y - 2, 4, 4);
     }
     text (g, "IN", font (Face::CondMedium, 9, 1.6f), grey, R (tc.getRight() - 20, tc.getBottom() + 4, 20, 10), juce::Justification::centredRight);
@@ -3264,3 +3301,61 @@ void Canvas::paintDynEqContent (juce::Graphics& g, R k)
     text (g, "TONE", font (Face::CondMedium, 10, 2.0f), col ("#b9b3a7"), R (a.getX(), a.getY() - 30, 110, 12));
     text (g, U8 ("Lift  \xc2\xb7  dynamic EQ, 2 bands"), font (Face::Regular, 10.5f), ink, R (a.getRight() - 240, a.getY() - 31, 240, 13), juce::Justification::centredRight);
 }
+
+// CLEAN and VINTAGE: the last ten seconds of gain reduction along the bottom of the screen, with the average and the
+// deepest reduction - how hard it's working at a glance
+void Canvas::paintGrStrip (juce::Graphics& g)
+{
+    const int n = (int) hGr.size();
+    if (n < 2) return;
+    const R box (PW * 0.5f - 300.0f, 552.0f, 600.0f, 62.0f);
+    const R gr (box.getX() + 12, box.getY() + 19, box.getWidth() - 196, box.getHeight() - 26);
+    fillRound (g, box, 8, col ("#0d0e12", 0.72f)); strokeRound (g, box, 8, juce::Colours::white.withAlpha (0.08f));
+    text (g, U8 ("GAIN REDUCTION  \xc2\xb7  10 s"), font (Face::CondMedium, 8, 1.6f), col ("#b9b3a7"), R (gr.getX(), box.getY() + 5, 200, 10));
+    const float scale = 15.0f;   // dB down to the bottom of the strip
+    for (float db : { 5.0f, 10.0f, 15.0f })
+    {
+        const float y = gr.getY() + db / scale * gr.getHeight();
+        g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (gr.getX(), y, gr.getWidth(), 1.0f);
+        text (g, MINUS + juce::String ((int) db), font (Face::Regular, 7.5f), grey, R (gr.getRight() + 3, y - 5, 20, 10));
+    }
+    // the history: newest on the right, hanging down from the top line, with a soft fill under it
+    float peak = 0.0f; double sum = 0.0; int cnt = 0;
+    juce::Path line, fill;
+    for (int i = 0; i < n; ++i)
+    {
+        const int age = n - 1 - i;
+        const float v = hGr[(size_t) ((hPos - 1 - age + 2 * n) % n)];
+        const float x = gr.getX() + gr.getWidth() * (float) i / (float) (n - 1);
+        const float y = gr.getY() + juce::jlimit (0.0f, 1.0f, v / scale) * gr.getHeight();
+        if (i == 0) { line.startNewSubPath (x, y); fill.startNewSubPath (x, gr.getY()); }
+        line.lineTo (x, y); fill.lineTo (x, y);
+        peak = juce::jmax (peak, v);
+        if (hIn[(size_t) ((hPos - 1 - age + 2 * n) % n)] > -60.0f) { sum += v; ++cnt; }   // the average only counts while there's sound
+    }
+    fill.lineTo (gr.getRight(), gr.getY()); fill.closeSubPath();
+    g.setColour (juce::Colours::white.withAlpha (0.1f)); g.fillRect (gr.getX(), gr.getY(), gr.getWidth(), 1.0f);
+    g.setGradientFill (juce::ColourGradient (grC.withAlpha (0.35f), 0, gr.getY(), grC.withAlpha (0.05f), 0, gr.getBottom(), false)); g.fillPath (fill);
+    g.setColour (grC); g.strokePath (line, juce::PathStrokeType (1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // the peak's level, a fine dashed line across
+    if (peak > 0.1f)
+    {
+        const float py = gr.getY() + juce::jlimit (0.0f, 1.0f, peak / scale) * gr.getHeight();
+        juce::Path dl; dl.startNewSubPath (gr.getX(), py); dl.lineTo (gr.getRight(), py);
+        const float dash[] { 3.0f, 3.0f }; juce::Path d; juce::PathStrokeType (1.0f).createDashedStroke (d, dl, dash, 2);
+        g.setColour (grC.withAlpha (0.4f)); g.fillPath (d);
+    }
+    // the readouts
+    const float avg = cnt > 0 ? (float) (sum / cnt) : 0.0f, now = hGr[(size_t) ((hPos - 1 + n) % n)];
+    auto read = [&] (float x, const char* l, float v, bool bright)
+    {
+        text (g, l, font (Face::CondMedium, 7.5f, 1.4f), grey, R (x, box.getY() + 9, 60, 9));
+        text (g, (v > 0.05f ? MINUS : juce::String()) + juce::String (v, 1), font (Face::Light, 16.0f, 0.3f), bright ? grC.interpolatedWith (juce::Colours::white, 0.35f) : ink, R (x, box.getY() + 22, 60, 20));
+        text (g, "dB", font (Face::Regular, 7.5f), grey, R (x, box.getY() + 43, 30, 9));
+    };
+    const float rx = gr.getRight() + 30;
+    read (rx, "NOW", now, true);
+    read (rx + 50, "AVERAGE", avg, false);
+    read (rx + 104, "PEAK", peak, false);
+}
+

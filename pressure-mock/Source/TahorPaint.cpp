@@ -520,7 +520,7 @@ void Canvas::paintHeader (juce::Graphics& g)
     const float cy = 22.0f;
     text (g, "Pressure", font (Face::Light, 15, 2.2f), ink, R (22, 8, 120, 17));
     text (g, "DYNAMICS", font (Face::Regular, 6, 2.6f), grey, R (22, 26, 100, 8));
-    float x = 22 + 66 + 8;
+    float x = 22 + textWidth (font (Face::Light, 15, 2.2f), "Pressure") + 14;   // PRESSURE: clear of the word (it was touching the undo arrow)
     for (int i = 0; i < 2; ++i)
     {
         R b (x + (float) i * 21.0f, cy - 9.5f, 19, 19);
@@ -722,6 +722,8 @@ void Canvas::paintDisplay (juce::Graphics& g)
     g.reduceClipRegion (shape);   // V5: the arched screen
     g.addTransform (juce::AffineTransform::translation (d.getX(), d.getY()));
     paintBackground (g);
+    const bool tabOff = proc.param (tab == 0 ? "resoOn" : tab == 1 ? "tahorOn" : "charOn") < 0.5f;
+    if (tabOff) g.beginTransparencyLayer (0.3f);   // PRESSURE: the tab is off - the whole screen sits back (still adjustable)
     paintDynScreen (g, tab == 2 ? 1 : tab);   // (VINTAGE uses the same glass screen as CLEAN now)
     if (false)   // (Pressure: no frequency labels)
     {
@@ -733,6 +735,7 @@ void Canvas::paintDisplay (juce::Graphics& g)
     if (tab == 0) paintLevelTab (g);
     if (tab == 1) paintCleanTab (g);
     if (tab == 2) paintCleanTab (g);   // VINTAGE in glass: panels + faceplate (the old chain view: paintCharTab)
+    if (tabOff) g.endTransparencyLayer();
     g.restoreState();
     // V4: the screen fades softly into the header and the bottom bar
     {
@@ -2847,6 +2850,7 @@ void Canvas::paintBottomBar (juce::Graphics& g)
             case 2: it.w = 8 + textWidth (f11, it.a) + 5 + textWidth (f11b, it.b) + 8; break;
             case 3: it.w = 9 + 11 + 6 + textWidth (f11m, it.a) + 6 + textWidth (f9, it.b) + 9; break;
             case 5: it.w = 24; break;   // V13: an icon button
+            case 6: it.w = 24; break;   // PRESSURE: full screen
             default: it.w = 4 + textWidth (f11, it.a) + textWidth (f11, it.b) + 4; break;
         }
     };
@@ -2872,6 +2876,20 @@ void Canvas::paintBottomBar (juce::Graphics& g)
                 zone (b, it.h);
                 break;
             }
+            case 6:   // PRESSURE: full screen - four corners out (or in, to come back)
+            {
+                const R b (x, cy - 9, it.w, 18);
+                const bool hv = b.contains (mouse);
+                fillRound (g, b, 4, col ("#17181b", hv ? 0.95f : 0.7f)); strokeRound (g, b, 4, hv ? juce::Colours::white.withAlpha (0.3f) : it.border);
+                const R r = b.withSizeKeepingCentre (11, 11); const float l = 3.5f;
+                juce::Path pth;
+                auto corner = [&] (float cx0, float cy0, float sx, float sy) { pth.startNewSubPath (cx0 + sx * l, cy0); pth.lineTo (cx0, cy0); pth.lineTo (cx0, cy0 + sy * l); };
+                if (! fullScreen) { corner (r.getX(), r.getY(), 1, 1); corner (r.getRight(), r.getY(), -1, 1); corner (r.getX(), r.getBottom(), 1, -1); corner (r.getRight(), r.getBottom(), -1, -1); }
+                else { const float m = 4.0f; corner (r.getX() + m, r.getY() + m, -1, -1); corner (r.getRight() - m, r.getY() + m, 1, -1); corner (r.getX() + m, r.getBottom() - m, -1, 1); corner (r.getRight() - m, r.getBottom() - m, 1, 1); }
+                g.setColour (hv || fullScreen ? ink : grey); g.strokePath (pth, juce::PathStrokeType (1.4f, juce::PathStrokeType::mitered, juce::PathStrokeType::square));
+                zone (b, it.h);
+                break;
+            }
             default: { text (g, it.a, f11, grey, R (x + 4, cy - 7, 200, 14)); text (g, it.b, f11, ink, R (x + 4 + textWidth (f11, it.a), cy - 7, 200, 14)); zone (R (x, cy - 11, it.w, 22), it.h); break; }
         }
     };
@@ -2885,6 +2903,7 @@ void Canvas::paintBottomBar (juce::Graphics& g)
     std::vector<Item> right {
         { 4, "Scale: ", "60 dB", Hit::Range, {}, {} },   // (Peak / RMS is in the top strip, Internal / External in the sidechain)
         { 4, "Size: ", sz, Hit::Size, {}, {} },
+        { 6, {}, {}, Hit::FullScreen, border, {} },
         { 0, "OUT", {}, Hit::None, {}, {} },
         { 1, dbText (proc.param ("outGain")), {}, Hit::OutBox, border, ink } };
     const float gaps[] { 5, 5, 12, 8, 8, 8 };
@@ -2892,7 +2911,7 @@ void Canvas::paintBottomBar (juce::Graphics& g)
     for (size_t i = 0; i < left.size(); ++i) { measure (left[i]); draw (left[i], x); x += left[i].w + (i < 6 ? gaps[i] : 0); }
     archBot[0] = x + 16;
     float tot = 0;
-    const float rg[] { 10, 12, 5, 5, 5, 5, 5 };
+    const float rg[] { 10, 8, 12, 5, 5, 5, 5 };
     for (size_t i = 0; i < right.size(); ++i) { measure (right[i]); tot += right[i].w + (i + 1 < right.size() ? rg[i] : 0); }
     x = W - 20 - tot;
     archBot[1] = x - 16;

@@ -17,6 +17,7 @@ struct HelperSettings
     bool liftOn = true, rideOn = true, breathOn = true, peakOn = true;
     int  liftMode = 0;                                   // 0 Upward, 1 Dyn EQ
     float lowHz = 120.0f, lowThr = -30.0f, lowLift = 4.0f;
+    bool lowSolo = false, highSolo = false;              // listen to just that band (as Lift shapes it)
     float highHz = 6000.0f, highThr = -34.0f, highLift = 3.0f;
     float rideRange = 6.0f, rideTarget = -16.0f; int rideSpeed = 1;   // 0 Slow, 1 Med, 2 Fast
     float breathDb = -8.0f, breathSense = 55.0f, breathFadeMs = 40.0f;
@@ -67,7 +68,8 @@ public:
         const double inMs = meanSquare (buf, nc, n);
         // ---- LIFT
         float lLow = 0.0f, lHigh = 0.0f;
-        if (s.liftOn && (s.lowLift > 0.05f || s.highLift > 0.05f))
+        const bool solo = s.lowSolo || s.highSolo;
+        if (solo || (s.liftOn && (s.lowLift > 0.05f || s.highLift > 0.05f)))
         {
             const float eK = std::exp (-1.0f / (0.030f * (float) sr));   // 30 ms band followers
             const float gK = std::exp (-1.0f / (0.050f * (float) sr));
@@ -88,14 +90,19 @@ public:
                 const float tl = dl > -70.0f ? liftCurve (dl, s.lowThr, s.lowLift) : 0.0f;
                 const float th = dh > -70.0f ? liftCurve (dh, s.highThr, s.highLift) : 0.0f;
                 gLow = gK * gLow + (1.0f - gK) * tl; gHigh = gK * gHigh + (1.0f - gK) * th;
-                const float al = juce::Decibels::decibelsToGain (gLow) - 1.0f, ah = juce::Decibels::decibelsToGain (gHigh) - 1.0f;
-                for (int c = 0; c < nc; ++c) buf.setSample (c, i, buf.getSample (c, i) + lo[c] * al + hi[c] * ah);
+                const float lg = s.liftOn ? gLow : 0.0f, hg = s.liftOn ? gHigh : 0.0f;
+                const float al = juce::Decibels::decibelsToGain (lg) - 1.0f, ah = juce::Decibels::decibelsToGain (hg) - 1.0f;
+                if (solo)   // SOLO: only the soloed band(s), lifted as Lift would
+                    for (int c = 0; c < nc; ++c) buf.setSample (c, i, (s.lowSolo ? lo[c] * (1.0f + al) : 0.0f) + (s.highSolo ? hi[c] * (1.0f + ah) : 0.0f));
+                else
+                    for (int c = 0; c < nc; ++c) buf.setSample (c, i, buf.getSample (c, i) + lo[c] * al + hi[c] * ah);
                 lLow = juce::jmax (lLow, gLow); lHigh = juce::jmax (lHigh, gHigh);
             }
             lowLvl.store (10.0f * std::log10 (envLow + 1.0e-12f) + 3.0f); highLvl.store (10.0f * std::log10 (envHigh + 1.0e-12f) + 3.0f);
         }
         else { gLow = gHigh = 0.0f; lowLvl.store (-90.0f); highLvl.store (-90.0f); }
         liftLow.store (lLow); liftHigh.store (lHigh);
+        if (solo) { peakGr.store (0.0f); breathRed.store (0.0f); return; }   // soloing a band: hear it alone, nothing after it
 
         // ---- RIDER: short-term loudness (high-passed, ~400 ms) toward Target
         {

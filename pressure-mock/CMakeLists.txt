@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Pressure VERSION 1.6.0)   # raise with every version so hosts rescan
+project(Pressure VERSION 1.10.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -59,6 +59,14 @@ endif()
 #        bat toggles, the 1176 revision, the 2500's Thrust, the top-strip switches, Delta, THD) and its own detector,
 #        curve, timing and colour; the unit arrows choose the unit you hear. Stereo link fixed when one side is quiet
 #        (CLEAN too). The sidechain handle is gone from VINTAGE (its switches are on the top strip).
+#   V7 = a tab switched off dims its whole screen (like a HELPERS module that's off - still adjustable); a full-screen
+#        button in the bottom bar beside Size (like Tahor's); the undo arrow no longer touches "Pressure"
+#   V8 = Solo on Lift's Low and High bands (an S beside each band's name): hear just that band, as Lift shapes it
+#   V9 = the Character drawer's light distorts with THD (runs hot gold > red, splits into red / green / blue ghosts,
+#        flickers); a new Pressure starts with CLEAN and VINTAGE off (the CLEAN presets switch CLEAN on) and
+#        oversampling off
+#   V10 = a gain-reduction strip along the bottom of CLEAN and VINTAGE: the last ten seconds of reduction (with the peak
+#         as a dashed line), and NOW / AVERAGE / PEAK readouts
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -90,7 +98,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(PRESSURE_LATEST_VERSION 6)   # raise this by one for every new version
+set(PRESSURE_LATEST_VERSION 10)   # raise this by one for every new version
 
 # One plug-in, updated in place
 tahor_plugin(Pressure "Mishkal Pressure" Prss com.mishkalaudio.pressure ${PRESSURE_LATEST_VERSION} "${TAHOR_FORMATS}")

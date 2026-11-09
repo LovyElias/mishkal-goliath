@@ -11,13 +11,13 @@ const std::vector<Preset>& tahor::factoryPresets()
     // Pressure V1: CLEAN starting points (each lists only what it changes from the defaults)
     static const std::vector<Preset> list {
         { "Init \xc2\xb7 Default", {  }, "Utility" },
-        { "Vocal \xc2\xb7 Smooth Leveler", { { "cEngine", 0.0f }, { "cThresh", -22.0f }, { "cRatio", 3.0f }, { "cKnee", 8.0f }, { "cAttack", 6.0f }, { "cRelease", 140.0f }, { "cAutoRel", 1.0f }, { "cMakeup", 4.0f } }, "Vocals" },
-        { "Vocal \xc2\xb7 One-Knob Vox", { { "cEngine", 1.0f }, { "cVoxComp", -18.0f }, { "cVoxGate", -50.0f } }, "Vocals" },
-        { "Vocal \xc2\xb7 Upfront Pop", { { "cEngine", 4.0f }, { "cProStyle", 3.0f }, { "cThresh", -26.0f }, { "cRatio", 4.0f }, { "cAttack", 3.0f }, { "cRelease", 90.0f }, { "cMakeup", 5.0f } }, "Vocals" },
-        { "Mix Bus \xc2\xb7 Glue", { { "cEngine", 4.0f }, { "cProStyle", 5.0f }, { "cThresh", -18.0f }, { "cRatio", 2.0f }, { "cAttack", 30.0f }, { "cRelease", 300.0f }, { "cKnee", 6.0f }, { "cMakeup", 2.0f } }, "Mix Bus" },
-        { "Mastering \xc2\xb7 Transparent DS1", { { "cEngine", 2.0f }, { "cThresh", -14.0f }, { "cRatio", 2.0f }, { "cDsKnee", 0.6f }, { "cAttack", 3.0f }, { "cMakeup", 1.5f } }, "Mastering" },
-        { "Mastering \xc2\xb7 Gentle MLA", { { "cEngine", 3.0f }, { "cMlaIn", 6.0f }, { "cMlaRatio", 2.0f }, { "cMakeup", 1.5f } }, "Mastering" },
-        { "Drums \xc2\xb7 Punch", { { "cEngine", 4.0f }, { "cProStyle", 6.0f }, { "cThresh", -20.0f }, { "cRatio", 4.0f }, { "cAttack", 25.0f }, { "cRelease", 80.0f }, { "cMakeup", 4.0f } }, "Drums" },
+        { "Vocal \xc2\xb7 Smooth Leveler", { { "tahorOn", 1.0f }, { "cEngine", 0.0f }, { "cThresh", -22.0f }, { "cRatio", 3.0f }, { "cKnee", 8.0f }, { "cAttack", 6.0f }, { "cRelease", 140.0f }, { "cAutoRel", 1.0f }, { "cMakeup", 4.0f } }, "Vocals" },
+        { "Vocal \xc2\xb7 One-Knob Vox", { { "tahorOn", 1.0f }, { "cEngine", 1.0f }, { "cVoxComp", -18.0f }, { "cVoxGate", -50.0f } }, "Vocals" },
+        { "Vocal \xc2\xb7 Upfront Pop", { { "tahorOn", 1.0f }, { "cEngine", 4.0f }, { "cProStyle", 3.0f }, { "cThresh", -26.0f }, { "cRatio", 4.0f }, { "cAttack", 3.0f }, { "cRelease", 90.0f }, { "cMakeup", 5.0f } }, "Vocals" },
+        { "Mix Bus \xc2\xb7 Glue", { { "tahorOn", 1.0f }, { "cEngine", 4.0f }, { "cProStyle", 5.0f }, { "cThresh", -18.0f }, { "cRatio", 2.0f }, { "cAttack", 30.0f }, { "cRelease", 300.0f }, { "cKnee", 6.0f }, { "cMakeup", 2.0f } }, "Mix Bus" },
+        { "Mastering \xc2\xb7 Transparent DS1", { { "tahorOn", 1.0f }, { "cEngine", 2.0f }, { "cThresh", -14.0f }, { "cRatio", 2.0f }, { "cDsKnee", 0.6f }, { "cAttack", 3.0f }, { "cMakeup", 1.5f } }, "Mastering" },
+        { "Mastering \xc2\xb7 Gentle MLA", { { "tahorOn", 1.0f }, { "cEngine", 3.0f }, { "cMlaIn", 6.0f }, { "cMlaRatio", 2.0f }, { "cMakeup", 1.5f } }, "Mastering" },
+        { "Drums \xc2\xb7 Punch", { { "tahorOn", 1.0f }, { "cEngine", 4.0f }, { "cProStyle", 6.0f }, { "cThresh", -20.0f }, { "cRatio", 4.0f }, { "cAttack", 25.0f }, { "cRelease", 80.0f }, { "cMakeup", 4.0f } }, "Drums" },
     };
     return list;
 }
@@ -56,7 +56,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     B ("bypass", "Bypass", false);
     B ("match", "Match", false);
     C ("phase", "Processing", { "Natural Phase", "Linear Phase", "Linear Phase HQ" }, 0);
-    C ("os", "Oversampling", { "Off", "2x", "4x", "8x", "16x", "32x" }, 1);
+    C ("os", "Oversampling", { "Off", "2x", "4x", "8x", "16x", "32x" }, 0);   // Pressure: off until you turn it on
     C ("osRender", "Render Oversampling", { "Same", "2x", "4x", "8x", "16x", "32x" }, 5);
     F ("inGain", "Input", R (-24.0f, 24.0f, 0.1f), 0.0f, "dB");
     F ("outGain", "Output", R (-24.0f, 24.0f, 0.1f), 0.0f, "dB");
@@ -65,14 +65,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     C ("range", "Range", { juce::String::fromUTF8 ("\xc2\xb1" "3 dB"), juce::String::fromUTF8 ("\xc2\xb1" "6 dB"),
                            juce::String::fromUTF8 ("\xc2\xb1" "12 dB"), juce::String::fromUTF8 ("\xc2\xb1" "30 dB") }, 2);
     B ("resoOn", "Helpers On", true);
-    B ("tahorOn", "Clean On", true);
-    B ("charOn", "Vintage On", true);
+    B ("tahorOn", "Clean On", false);   // Pressure: CLEAN and VINTAGE start off - switch on what you use
+    B ("charOn", "Vintage On", false);
 
     // ===== PRESSURE =====
     // (the three tabs' power buttons keep their old ids: resoOn = HELPERS, tahorOn = CLEAN, charOn = VINTAGE)
     // HELPERS (LE-4)
     B ("hLiftOn", "Lift On", true);  B ("hRideOn", "Rider On", true);  B ("hBreathOn", "Breath On", true);  B ("hPeakOn", "1964 On", true);
     C ("hLiftMode", "Lift Mode", { "Upward", "Dyn EQ" }, 0);
+    B ("hLowSolo", "Lift Low Solo", false);  B ("hHighSolo", "Lift High Solo", false);
     F ("hLowHz", "Lift Low Freq", hz (40.0f, 500.0f), 120.0f, "Hz");
     F ("hLowThr", "Lift Low Thresh", R (-60.0f, 0.0f, 0.1f), -30.0f, "dB");
     F ("hLowLift", "Lift Low Amount", R (0.0f, 12.0f, 0.1f), 4.0f, "dB");
@@ -300,6 +301,7 @@ pressure::HelperSettings TahorProcessor::helperSettings() const
     pressure::HelperSettings s;
     s.liftOn = param ("hLiftOn") > 0.5f; s.rideOn = param ("hRideOn") > 0.5f; s.breathOn = param ("hBreathOn") > 0.5f; s.peakOn = param ("hPeakOn") > 0.5f;
     s.liftMode = (int) param ("hLiftMode");
+    s.lowSolo = param ("hLowSolo") > 0.5f; s.highSolo = param ("hHighSolo") > 0.5f;
     s.lowHz = param ("hLowHz"); s.lowThr = param ("hLowThr"); s.lowLift = param ("hLowLift");
     s.highHz = param ("hHighHz"); s.highThr = param ("hHighThr"); s.highLift = param ("hHighLift");
     s.rideRange = param ("hRideRange"); s.rideTarget = param ("hRideTarget"); s.rideSpeed = (int) param ("hRideSpeed");
