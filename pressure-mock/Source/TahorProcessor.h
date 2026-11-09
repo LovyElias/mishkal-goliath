@@ -6,6 +6,7 @@
 #include "Dsp/VocalChain.h"
 #include "Dsp/PressureClean.h"
 #include "Dsp/PressureHelpers.h"
+#include "Dsp/PressureVintage.h"
 #include "TahorModel.h"
 
 #ifndef TAHOR_VERSION
@@ -138,6 +139,7 @@ public:
     pressure::CleanSettings cleanSettings() const;
     pressure::HelperSettings helperSettings() const;
     pressure::Helpers helpers;   // LE-4 (its readouts are atomics the screen reads)
+    pressure::Vintage vintage;   // the fifteen VINTAGE units
     std::atomic<float> grDb { 0.0f };   // CLEAN's gain reduction right now (dB, >= 0)
 
 private:

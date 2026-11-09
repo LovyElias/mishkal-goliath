@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Pressure VERSION 1.5.0)   # raise with every version so hosts rescan
+project(Pressure VERSION 1.6.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -54,6 +54,11 @@ endif()
 #        power button live; the Rider meter, loudness, Breath light / count, 1964 lights and the Tone drawer show the real
 #        thing. Each tab's on / off is its own labelled button beside the selector. Everything that goes away (drawers,
 #        the knee display, controls that sit back) fades out over 3 seconds.
+#   V6 = VINTAGE works: all fifteen units (LE-76, LE-660, LE-STA, LE-2500, LE-G, LE-IRON, LE-336, LE-8X, LE-160, LE-7,
+#        LE-760, LE-SHM, LE-2A, LE-1B, LE-VSC), each with its own controls live (knobs, stepped switches, push buttons,
+#        bat toggles, the 1176 revision, the 2500's Thrust, the top-strip switches, Delta, THD) and its own detector,
+#        curve, timing and colour; the unit arrows choose the unit you hear. Stereo link fixed when one side is quiet
+#        (CLEAN too). The sidechain handle is gone from VINTAGE (its switches are on the top strip).
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -85,7 +90,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(PRESSURE_LATEST_VERSION 5)   # raise this by one for every new version
+set(PRESSURE_LATEST_VERSION 6)   # raise this by one for every new version
 
 # One plug-in, updated in place
 tahor_plugin(Pressure "Mishkal Pressure" Prss com.mishkalaudio.pressure ${PRESSURE_LATEST_VERSION} "${TAHOR_FORMATS}")

@@ -534,7 +534,7 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
             if (down.kind == Hit::PEngine)
             {
                 if (tab == 1) proc.setParam ("cEngine", (float) (((int) proc.param ("cEngine") + down.a + 5) % 5));
-                else if (tab == 2) preview = (preview + down.a + 15) % 15;
+                else if (tab == 2) proc.setParam ("vUnit", (float) (((int) proc.param ("vUnit") + down.a + 15) % 15));
             }
             if (down.kind == Hit::PDrawer)
             {

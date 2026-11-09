@@ -177,7 +177,11 @@ public:
             // stereo link: 100% = both sides from the louder one; MLA ImageLink keeps short one-sided peaks to themselves
             const float linkAmt = mla ? (s.mlaLink ? 0.85f : 0.0f) : s.link;
             float lvl = mx;
-            if (nc > 1 && linkAmt < 0.999f) lvl = juce::jmax (lv[0], lv[1]) * linkAmt + 0.5f * (lv[0] + lv[1]) * (1.0f - linkAmt);
+            if (nc > 1 && linkAmt < 0.999f)   // the sides' power averaged (a silent side mustn't hide the other)
+            {
+                const float avg = 10.0f * std::log10 (0.5f * (std::pow (10.0f, lv[0] * 0.1f) + std::pow (10.0f, lv[1] * 0.1f)) + 1.0e-12f);
+                lvl = mx * linkAmt + avg * (1.0f - linkAmt);
+            }
             const float target = juce::jmax (-s.rangeDb, curve (s, lvl));   // <= 0
 
             // ---- the envelope

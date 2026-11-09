@@ -26,7 +26,10 @@ const char* Canvas::flagFor (const char* name)
     if (is ("PRESS_RVOX_DEMO")) return tab == 1 && eng == 1 && proc.param ("cVoxComp") < -0.5f ? yes : nullptr;
     if (is ("PRESS_MLA_LAMPOFF")) return proc.grDb.load() < 0.3f ? yes : nullptr;   // green while it isn't compressing
     if (is ("PRESS_LIFTMODE")) return (int) proc.param ("hLiftMode") == 1 ? yes : nullptr;
-    if (is ("PRESS_VUNIT")) { static char b[8]; std::snprintf (b, sizeof (b), "%d", juce::jlimit (0, 14, preview)); return b; }
+    if (is ("PRESS_VUNIT")) { static char b[8]; std::snprintf (b, sizeof (b), "%d", juce::jlimit (0, 14, (int) proc.param ("vUnit"))); return b; }
+    if (is ("PRESS_REV"))    { static char b[8]; std::snprintf (b, sizeof (b), "%d", (int) proc.param ("v0Rev")); return b; }
+    if (is ("PRESS_THRUST")) { static char b[8]; std::snprintf (b, sizeof (b), "%d", (int) proc.param ("v3Thrust")); return b; }
+    if (is ("PRESS_THD"))    { static char b[16]; std::snprintf (b, sizeof (b), "%.1f", proc.param ("vThd")); return b; }
     return nullptr;
 }
 
@@ -104,6 +107,30 @@ juce::String Canvas::pfmt (const juce::String& pid) const
         if (x < 10.0f) return juce::String (x, 1) + " ms";
         return juce::String ((int) std::round (x)) + " ms";
     };
+    // VINTAGE: from the unit's table
+    if (auto* vp = pressure::findVParam (pid))
+    {
+        const juce::String u (vp->unit);
+        auto num = [] (float x, int dec) { return juce::String (x, dec).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."); };
+        if (vp->kind == 'B') return v > 0.5f ? "ON" : "OFF";
+        if (vp->kind == 'C')
+        {
+            auto c = pchoice (pid);
+            if (c.startsWithChar ('-')) c = minus + c.substring (1);
+            if (u == ":1") return c == "INF" || c == "SOFT" || c == "BRICK" ? c : c + " : 1";
+            if (u == "dB") return c + " dB";
+            if (u == "ms") return c + " ms";
+            if (u == "s") return c == "AUTO" ? c : c + " s";
+            return c;
+        }
+        if (u == "dB+" || u == "dBu") return (v < -0.05f ? minus : v > 0.05f ? juce::String ("+") : juce::String()) + num (std::abs (v), 1) + (u == "dBu" ? " dBu" : " dB");
+        if (u == "dB") return (v < -0.05f ? minus : juce::String()) + num (std::abs (v), 1) + " dB";
+        if (u == "ms") return v < 1.0f ? juce::String (v, 2) + " ms" : v >= 1000.0f ? num (v / 1000.0f, 2) + " s" : num (v, v < 10.0f ? 1 : 0) + " ms";
+        if (u == "s") return num (v, 2) + " s";
+        if (u == "%") return juce::String ((int) std::round (v)) + "%";
+        if (u == ":1") return num (v, 1) + " : 1";
+        return num (v, 1);
+    }
     // HELPERS
     if (pid == "hLowHz" || pid == "hHighHz") return v >= 1000.0f ? juce::String (v / 1000.0f, v < 10000.0f ? 1 : 0).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " kHz" : juce::String ((int) std::round (v)) + " Hz";
     if (pid == "hLowThr" || pid == "hHighThr" || pid == "hBreath") return minus + juce::String ((int) std::round (std::abs (v))) + " dB";
@@ -218,7 +245,7 @@ void Canvas::pushHistory()
    #else
     // the real thing: CLEAN's reduction and what comes out (HELPERS and VINTAGE pass the sound through in V1)
     const float out = juce::Decibels::gainToDecibels (juce::jmax (proc.meterL.load(), proc.meterR.load()), -90.0f);
-    hGr[(size_t) hPos] = tab == 1 && proc.param ("tahorOn") > 0.5f ? proc.grDb.load() : tab == 0 ? proc.helpers.peakGr.load() : 0.0f;
+    hGr[(size_t) hPos] = tab == 1 && proc.param ("tahorOn") > 0.5f ? proc.grDb.load() : tab == 0 ? proc.helpers.peakGr.load() : tab == 2 && proc.param ("charOn") > 0.5f ? proc.vintage.grDb.load() : 0.0f;
     hRide[(size_t) hPos] = proc.helpers.rideDb.load();
     hBreath[(size_t) hPos] = -proc.helpers.breathRed.load();
     hOut[(size_t) hPos] = out;
@@ -920,7 +947,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
     // ---- VINTAGE (glass): the unit's controls on the glass panels, its faceplate small at the bottom
     if (gCompMode)
     {
-        const int unit = juce::jlimit (0, kVinUnits - 1, penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : preview);
+        const int unit = juce::jlimit (0, kVinUnits - 1, penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : (int) proc.param ("vUnit"));
         // each unit's own controls - the real panel's knobs, rotary switches, push buttons and toggles, in glass
         mThr = -18.0f; mRatio = 4.0f; mKnee = unit == 1 || unit == 5 || unit == 12 || unit == 13 ? 14.0f : unit == 2 || unit == 11 ? 10.0f : unit == 8 ? 8.0f : 4.0f;   // vari-mu and tube units: soft knees
         auto stepped = [&] (float cx, float y, float sz, const char* lab, const char* val, int n, int at, const char* const* labs)
@@ -993,6 +1020,42 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             }
             return y + 20 + sz + 8 + 18;
         };
+        // PRESSURE: the same controls, tied to the unit's parameters
+        auto steppedP = [&] (float cx, float y, float sz, const char* lab, const char* pid, const char* const* labs)
+        {
+            auto* cp = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (pid));
+            const int n = cp != nullptr ? cp->choices.size() : 2, at = (int) proc.param (pid);
+            pctl (R (cx - sz * 0.5f - 6, y + 30, sz + 12, sz + 12), pid, 0);
+            const juce::String v = pfmt (pid);
+            return stepped (cx, y, sz, lab, v.toRawUTF8(), n, at, labs);
+        };
+        auto pushRowP = [&] (R area, const char* tl, std::initializer_list<const char*> labs, const char* pid, int off)
+        {
+            const int n = (int) labs.size(), lit = (int) proc.param (pid) - off;
+            const float gp = 6, w = (area.getWidth() - gp * (float) (n - 1)) / (float) n, yb = area.getY() + (tl != nullptr ? 18.0f : 0.0f);
+            for (int i = 0; i < n; ++i) pctl (R (area.getX() + (float) i * (w + gp), yb, w, 30), pid, 100 + off + i);
+            return pushRow (area, tl, labs, juce::isPositiveAndBelow (lit, n) ? lit : -1);
+        };
+        auto pushRowT = [&] (R area, const char* tl, std::initializer_list<const char*> labs, std::initializer_list<const char*> pids)
+        {
+            const int n = (int) labs.size(); int mask = 0, i = 0;
+            const float gp = 6, w = (area.getWidth() - gp * (float) (n - 1)) / (float) n, yb = area.getY() + (tl != nullptr ? 18.0f : 0.0f);
+            for (auto* id : pids) { if (pon (id)) mask |= 1 << i; pctl (R (area.getX() + (float) i * (w + gp), yb, w, 30), id, 1); ++i; }
+            return pushRow (area, tl, labs, -1, false, mask);
+        };
+        auto batToggleP = [&] (R area, const char* tl, std::initializer_list<const char*> labs, const char* pid)
+        {
+            const int n = (int) labs.size(); const float w = area.getWidth() / (float) n;
+            for (int i = 0; i < n; ++i) pctl (R (area.getX() + w * (float) i, area.getY() + 14, w, 54), pid, 100 + i);
+            return batToggle (area, tl, labs, (int) proc.param (pid));
+        };
+        auto smallPairP = [&] (float cx, float y, const char* l1, const char* p1, const char* l2, const char* p2)
+        {
+            const juce::String v1 = pfmt (p1), v2 = pfmt (p2);
+            pctl (R (cx - 46 - 32, y + 16, 64, 64), p1, 0); pctl (R (cx + 46 - 32, y + 16, 64, 64), p2, 0);
+            return smallPair (cx, y, l1, v1.toRawUTF8(), pn (p1), l2, v2.toRawUTF8(), pn (p2));
+        };
+        auto valueBarP = [&] (R r, const char* label, const char* pid) { valueBar (g, r, label, pfmt (pid), pn (pid)); pctl (r, pid, 0); };
         const R sL (0, top, pw, ph), sR (PW - pw, top, pw, ph);
         panel (sL, false); panel (sR, true);
         const float cxL = sL.getCentreX(), cxR = sR.getCentreX();
@@ -1003,9 +1066,9 @@ void Canvas::paintCleanTab (juce::Graphics& g)
         {
             case 0:   // LE-76 (1176): Input and Output knobs, Attack and Release, the ratio push buttons and the meter buttons
             {
-                yL = bigKnob (cxL, yL, 104, "INPUT", "+22 dB", 0.55f) + 26;
-                yL = pushRow (atY (rowL, yL, 48), "RATIO", { "4", "8", "12", "20" }, 0) + 10;
-                glassButton (g, atY (rowL, yL, 22), "ALL BUTTONS IN", false);
+                yL = bigKnobP (cxL, yL, 104, "INPUT", "v0In") + 26;
+                yL = pushRowP (atY (rowL, yL, 48), "RATIO", { "4", "8", "12", "20" }, "v0Ratio", 0) + 10;
+                buttonP (atY (rowL, yL, 22), "ALL BUTTONS IN", "v0All");
                 text (g, "the famous all-buttons smash", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 28, 12), juce::Justification::centred);
                 yL += 56;
                 // REVISION: every 1176 there was, one button - each click steps to the next (A, B, C, D, E, F, G, H, LN)
@@ -1026,7 +1089,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                     const auto revC = col (rc[r]);
                     title (atY (rowL, yL, 12), "REVISION");
                     const R rb = atY (rowL, yL + 18, 26);
-                    glassButton (g, rb, (juce::String ("REV ") + rv[r] + "  /  " + rn[r]).toRawUTF8(), true, true);
+                    glassButton (g, rb, (juce::String ("REV ") + rv[r] + "  /  " + rn[r]).toRawUTF8(), true, true); pctl (rb, "v0Rev", 1);
                     {   // its light, glowing the revision's colour (drawn over the button's own dot)
                         const P d (rb.getX() + 12, rb.getCentreY());
                         g.setColour (col ("#1a1a1f")); g.fillEllipse (d.x - 4, d.y - 4, 8, 8);
@@ -1041,31 +1104,31 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                         g.setColour (i == r ? revC : juce::Colours::white.withAlpha (0.2f)); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
                     }
                 }
-                yR = bigKnob (cxR, yR, 76, "ATTACK", "0.25 ms", 0.4f) + 8;
-                yR = bigKnob (cxR, yR, 76, "RELEASE", "250 ms", 0.45f) + 12;
-                yR = smallPair (cxR, yR, "OUTPUT", "+9.0 dB", 0.45f, "MIX", "100%", 1.0f) + 14;
-                pushRow (atY (rowR, yR, 48), "METER", { "GR", "+8", "+4", "OFF" }, 0);
+                yR = bigKnobP (cxR, yR, 76, "ATTACK", "v0Atk") + 8;
+                yR = bigKnobP (cxR, yR, 76, "RELEASE", "v0Rel") + 12;
+                yR = smallPairP (cxR, yR, "OUTPUT", "v0Out", "MIX", "v0Mix") + 14;
+                pushRowP (atY (rowR, yR, 48), "METER", { "GR", "+8", "+4", "OFF" }, "v0Meter", 0);
                 break;
             }
             case 1:   // LE-660 (Fairchild): Input Gain (stepped), Threshold, the 6-position Time Constant switch
             {
                 static const char* ig[6] { "-12", "-8", "-4", "0", "+4", "+8" };
                 static const char* tcl[6] { "1", "2", "3", "4", "5", "6" };
-                yL = stepped (cxL, yL, 104, "INPUT GAIN", "0 dB", 6, 3, ig) + 26;
-                yL = bigKnob (cxL, yL, 80, "THRESHOLD", "4.0", 0.6f) + 20;
-                yR = stepped (cxR, yR, 80, "TIME CONSTANT", "2  -  0.8 s", 6, 1, tcl) + 14;
-                yR = bigKnob (cxR, yR, 64, "OUTPUT", "+6.0 dB", 0.5f) + 12;
-                yR = smallPair (cxR, yR, "DC THRESH", "0", 0.5f, "MIX", "100%", 1.0f);
+                yL = steppedP (cxL, yL, 104, "INPUT GAIN", "v1In", ig) + 26;
+                yL = bigKnobP (cxL, yL, 80, "THRESHOLD", "v1Thr") + 20;
+                yR = steppedP (cxR, yR, 80, "TIME CONSTANT", "v1Tc", tcl) + 14;
+                yR = bigKnobP (cxR, yR, 64, "OUTPUT", "v1Out") + 12;
+                yR = smallPairP (cxR, yR, "DC THRESH", "v1Dc", "MIX", "v1Mix");
                 break;
             }
             case 2:   // LE-STA (Gates Sta-Level): Input and Output, the Single / Double / Triple mode switch, the 6-position release
             {
                 static const char* rl[6] { "1", "2", "3", "4", "5", "6" };
-                yL = bigKnob (cxL, yL, 104, "INPUT", "+10 dB", 0.45f) + 26;
-                yL = batToggle (atY (rowL, yL, 60), "MODE", { "SINGLE", "DOUBLE", "TRIPLE" }, 1);
-                yR = stepped (cxR, yR, 80, "RELEASE", "3", 6, 2, rl) + 18;
-                yR = bigKnob (cxR, yR, 72, "OUTPUT", "+4.0 dB", 0.5f) + 12;
-                yR = bigKnob (cxR, yR, 56, "MIX", "100%", 1.0f);
+                yL = bigKnobP (cxL, yL, 104, "INPUT", "v2In") + 26;
+                yL = batToggleP (atY (rowL, yL, 60), "MODE", { "SINGLE", "DOUBLE", "TRIPLE" }, "v2Mode");
+                yR = steppedP (cxR, yR, 80, "RELEASE", "v2Rel", rl) + 18;
+                yR = bigKnobP (cxR, yR, 72, "OUTPUT", "v2Out") + 12;
+                yR = bigKnobP (cxR, yR, 56, "MIX", "v2Mix");
                 break;
             }
             case 3:   // LE-2500 (API 2500): stepped Threshold / Ratio / Attack / Release, Make-up, and its three toggles
@@ -1073,14 +1136,15 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 static const char* ra[7] { "1.5", "2", "3", "4", "6", "10", "INF" };
                 static const char* at[6] { ".03", ".1", ".3", "1", "3", "10" };
                 static const char* re[6] { ".05", ".1", ".2", ".5", "1", "2" };
-                yL = bigKnob (cxL, yL - 8, 88, "THRESHOLD", U8 ("\xe2\x88\x92" "18 dB"), 0.55f) + 8;
-                yL = stepped (cxL, yL, 60, "RATIO", "4 : 1", 7, 3, ra) + 20;
-                yL = batToggle (atY (rowL, yL, 60), "KNEE", { "HARD", "MED", "SOFT" }, 1) + 4;
+                yL = bigKnobP (cxL, yL - 8, 88, "THRESHOLD", "v3Thr") + 8;
+                yL = steppedP (cxL, yL, 60, "RATIO", "v3Ratio", ra) + 20;
+                yL = batToggleP (atY (rowL, yL, 60), "KNEE", { "HARD", "MED", "SOFT" }, "v3Knee") + 4;
                 // THRUST: like the API's - one click steps NORM > MED > LOUD, and its little curve shows what the detector hears
                 // (MED and LOUD lean the detector away from the lows, so the bass pumps less)
                 {
                     const int th = penv ("PRESS_THRUST") ? juce::jlimit (0, 2, std::atoi (penv ("PRESS_THRUST"))) : 0;
                     const R tile = atY (rowL, yL, 74);
+                    pctl (tile, "v3Thrust", 1);   // click: the next setting
                     // each setting has its own colour: NORM a calm ivory, MED warm amber, LOUD hot ember
                     const juce::Colour tc = th == 0 ? col ("#d8d0c2") : th == 1 ? col ("#e8a24f") : col ("#ff5f3c");
                     title (R (tile.getX(), tile.getY(), tile.getWidth(), 12), "THRUST");
@@ -1144,12 +1208,12 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                     }
                     yL = tile.getBottom();
                 }
-                yR = stepped (cxR, yR, 64, "ATTACK", "1 ms", 6, 3, at) + 6;
-                yR = stepped (cxR, yR, 64, "RELEASE", ".2 s", 6, 2, re) + 2;
-                valueBar (g, atY (rowR, yR, 36), "VAR RELEASE", "1.4 s", 0.55f); yR += 44;   // the variable release beside the stepped one
-                valueBar (g, atY (rowR, yR, 36), "LINK", U8 ("100%  \xc2\xb7  shape HPF"), 1.0f); yR += 46;   // how much the two sides share, and its filter
-                yR = smallPair (cxR, yR, "MAKE-UP", "+4.0 dB", 0.2f, "MIX", "100%", 1.0f) + 8;
-                pushRow (atY (rowR, yR, 30), nullptr, { "COMP IN" }, 0);
+                yR = steppedP (cxR, yR, 64, "ATTACK", "v3Atk", at) + 6;
+                yR = steppedP (cxR, yR, 64, "RELEASE", "v3Rel", re) + 2;
+                valueBarP (atY (rowR, yR, 36), "VAR RELEASE", "v3Var"); yR += 44;   // the variable release beside the stepped one
+                valueBarP (atY (rowR, yR, 36), "LINK", "v3Link"); yR += 46;   // how much the two sides share, and its filter
+                yR = smallPairP (cxR, yR, "MAKE-UP", "v3Mk", "MIX", "v3Mix") + 8;
+                pushRowT (atY (rowR, yR, 30), nullptr, { "COMP IN" }, { "v3In" });
                 break;
             }
             case 4:   // LE-G (SSL G bus): Threshold, the 3-step Ratio, 6-step Attack, 5-step Release with Auto, Make-up, the IN button
@@ -1157,66 +1221,66 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 static const char* ra[3] { "2", "4", "10" };
                 static const char* at[6] { ".1", ".3", "1", "3", "10", "30" };
                 static const char* re[5] { ".1", ".3", ".6", "1.2", "AUTO" };
-                yL = bigKnob (cxL, yL, 104, "THRESHOLD", U8 ("\xe2\x88\x92" "12 dB"), 0.5f) + 22;
-                yL = stepped (cxL, yL, 72, "RATIO", "4 : 1", 3, 1, ra) + 18;
-                pushRow (atY (rowL, yL, 30), nullptr, { "COMP IN" }, 0);
-                yR = stepped (cxR, yR, 72, "ATTACK", "10 ms", 6, 4, at) + 8;
-                yR = stepped (cxR, yR, 72, "RELEASE", "AUTO", 5, 4, re) + 12;
-                yR = smallPair (cxR, yR, "MAKE-UP", "+3.0 dB", 0.15f, "MIX", "100%", 1.0f);
+                yL = bigKnobP (cxL, yL, 104, "THRESHOLD", "v4Thr") + 22;
+                yL = steppedP (cxL, yL, 72, "RATIO", "v4Ratio", ra) + 18;
+                pushRowT (atY (rowL, yL, 30), nullptr, { "COMP IN" }, { "v4In" });
+                yR = steppedP (cxR, yR, 72, "ATTACK", "v4Atk", at) + 8;
+                yR = steppedP (cxR, yR, 72, "RELEASE", "v4Rel", re) + 12;
+                yR = smallPairP (cxR, yR, "MAKE-UP", "v4Mk", "MIX", "v4Mix");
                 break;
             }
             case 5:   // LE-IRON (Manley Vari-Mu): Threshold, Compress / Limit, the HP sidechain, Attack 25-70 ms, 5-step Recovery, Output
             {
                 static const char* rc[5] { ".2", ".4", ".6", "4", "8" };
                 static const char* in[7] { "-12", "-8", "-4", "0", "+4", "+8", "+12" };
-                yL = stepped (cxL, yL - 6, 64, "INPUT", "0 dB", 7, 3, in) + 6;   // the stepped input attenuator
-                yL = bigKnob (cxL, yL, 84, "THRESHOLD", U8 ("\xe2\x88\x92" "20 dB"), 0.5f) + 12;
-                yL = batToggle (atY (rowL, yL, 60), "MODE", { "COMPRESS", "LIMIT" }, 0) + 2;
-                yL = batToggle (atY (rowL, yL, 60), "HP SIDECHAIN", { "OFF", "100 Hz" }, 1);
-                yR = bigKnob (cxR, yR, 72, "ATTACK", "35 ms", 0.25f) + 8;
-                yR = stepped (cxR, yR, 72, "RECOVERY", "0.6 s", 5, 2, rc) + 12;
-                yR = smallPair (cxR, yR, "OUTPUT", "+4.0 dB", 0.5f, "MIX", "100%", 1.0f);
+                yL = steppedP (cxL, yL - 6, 64, "INPUT", "v5In", in) + 6;   // the stepped input attenuator
+                yL = bigKnobP (cxL, yL, 84, "THRESHOLD", "v5Thr") + 12;
+                yL = batToggleP (atY (rowL, yL, 60), "MODE", { "COMPRESS", "LIMIT" }, "v5Mode") + 2;
+                yL = batToggleP (atY (rowL, yL, 60), "HP SIDECHAIN", { "OFF", "100 Hz" }, "v5Hp");
+                yR = bigKnobP (cxR, yR, 72, "ATTACK", "v5Atk") + 8;
+                yR = steppedP (cxR, yR, 72, "RECOVERY", "v5Rec", rc) + 12;
+                yR = smallPairP (cxR, yR, "OUTPUT", "v5Out", "MIX", "v5Mix");
                 break;
             }
             case 7:   // LE-8X (Empirical Labs Distressor EL8-X): four knobs, and everything else on its buttons
             {
-                yL = bigKnob (cxL, yL, 104, "INPUT", "4.5", 0.45f) + 24;
+                yL = bigKnobP (cxL, yL, 104, "INPUT", "v7In") + 24;
                 // RATIO: one button steps through them all, a light for each (Nuke is the brick wall)
-                yL = pushRow (atY (rowL, yL, 48), "RATIO", { "1:1", "2:1", "3:1", "4:1" }, 3) + 6;
-                yL = pushRow (atY (rowL, yL, 30), nullptr, { "6:1", "10:1", "20:1", "NUKE" }, -1) + 12;
+                yL = pushRowP (atY (rowL, yL, 48), "RATIO", { "1:1", "2:1", "3:1", "4:1" }, "v7Ratio", 0) + 6;
+                yL = pushRowP (atY (rowL, yL, 30), nullptr, { "6:1", "10:1", "20:1", "NUKE" }, "v7Ratio", 4) + 12;
                 // the X: British mode (the all-buttons sound, at any ratio)
-                glassButton (g, atY (rowL, yL, 22), "BRIT MODE", false);
+                buttonP (atY (rowL, yL, 22), "BRIT MODE", "v7Brit");
                 text (g, "the all-buttons smash, at any ratio", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 28, 12), juce::Justification::centred);
-                yR = bigKnob (cxR, yR, 68, "ATTACK", "5.0", 0.5f) + 6;
-                yR = bigKnob (cxR, yR, 68, "RELEASE", "5.0", 0.5f) + 10;
-                yR = smallPair (cxR, yR, "OUTPUT", "4.0", 0.4f, "MIX", "100%", 1.0f) + 10;
+                yR = bigKnobP (cxR, yR, 68, "ATTACK", "v7Atk") + 6;
+                yR = bigKnobP (cxR, yR, 68, "RELEASE", "v7Rel") + 10;
+                yR = smallPairP (cxR, yR, "OUTPUT", "v7Out", "MIX", "v7Mix") + 10;
                 // DETECTOR: what it listens with - each can be on (HP filter, band emphasis, stereo link)
-                yR = pushRow (atY (rowR, yR, 48), "DETECTOR", { "HP", "BAND", "LINK" }, -1, false, 0b001) + 8;
+                yR = pushRowT (atY (rowR, yR, 48), "DETECTOR", { "HP", "BAND", "LINK" }, { "v7DetHp", "v7DetBand", "v7DetLink" }) + 8;
                 // AUDIO: what it adds - Dist 2 (tape-like, even), Dist 3 (tube-like, odd), and a gentle HP on the audio
-                pushRow (atY (rowR, yR, 48), "AUDIO", { "DIST 2", "DIST 3", "HP" }, 0);
+                pushRowP (atY (rowR, yR, 48), "AUDIO", { "DIST 2", "DIST 3", "HP" }, "v7Audio", 0);
                 break;
             }
             case 8:   // LE-160 (dbx 160): Threshold, Compression (ratio), Output; OverEasy; the meter's In / Out / GR
             {
-                yL = bigKnob (cxL, yL, 104, "THRESHOLD", U8 ("\xe2\x88\x92" "10 dB"), 0.5f) + 22;
-                yL = bigKnob (cxL, yL, 80, "COMPRESSION", "4 : 1", 0.45f) + 20;
-                glassButton (g, atY (rowL, yL, 22), "OVEREASY", false);
+                yL = bigKnobP (cxL, yL, 104, "THRESHOLD", "v8Thr") + 22;
+                yL = bigKnobP (cxL, yL, 80, "COMPRESSION", "v8Ratio") + 20;
+                buttonP (atY (rowL, yL, 22), "OVEREASY", "v8Easy");
                 text (g, "the soft knee dbx made famous", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 28, 12), juce::Justification::centred);
-                yR = bigKnob (cxR, yR, 84, "OUTPUT GAIN", "+6.0 dB", 0.55f) + 14;
-                yR = bigKnob (cxR, yR, 60, "MIX", "100%", 1.0f) + 18;
-                pushRow (atY (rowR, yR, 48), "METER", { "IN", "OUT", "GR" }, 2);
+                yR = bigKnobP (cxR, yR, 84, "OUTPUT GAIN", "v8Out") + 14;
+                yR = bigKnobP (cxR, yR, 60, "MIX", "v8Mix") + 18;
+                pushRowP (atY (rowR, yR, 48), "METER", { "IN", "OUT", "GR" }, "v8Meter", 0);
                 break;
             }
             case 9:   // LE-7 (Empirical Labs FATSO): Input drives it, Warmth tames the top, Output; the four compressor modes; Tranny
             {
-                yL = bigKnob (cxL, yL, 104, "INPUT", "6.0", 0.6f) + 22;
-                yL = bigKnob (cxL, yL, 80, "WARMTH", "4.0", 0.4f) + 20;
-                pushRow (atY (rowL, yL, 30), nullptr, { "TRANNY" }, 0);
+                yL = bigKnobP (cxL, yL, 104, "INPUT", "v9In") + 22;
+                yL = bigKnobP (cxL, yL, 80, "WARMTH", "v9Warm") + 20;
+                pushRowT (atY (rowL, yL, 30), nullptr, { "TRANNY" }, { "v9Tranny" });
                 text (g, "low-end weight from the transformer", font (Face::Regular, 9.5f), grey, atY (rowL, yL + 36, 12), juce::Justification::centred);
-                yR = bigKnob (cxR, yR, 84, "OUTPUT", "5.0", 0.5f) + 14;
-                yR = bigKnob (cxR, yR, 60, "MIX", "100%", 1.0f) + 18;
-                yR = pushRow (atY (rowR, yR, 48), "COMPRESSOR", { "BUSS", "G.P.", "TRACK" }, 0) + 6;
-                pushRow (atY (rowR, yR, 30), nullptr, { "SPANK" }, -1);
+                yR = bigKnobP (cxR, yR, 84, "OUTPUT", "v9Out") + 14;
+                yR = bigKnobP (cxR, yR, 60, "MIX", "v9Mix") + 18;
+                yR = pushRowP (atY (rowR, yR, 48), "COMPRESSOR", { "BUSS", "G.P.", "TRACK" }, "v9Mode", 0) + 6;
+                pushRowT (atY (rowR, yR, 30), nullptr, { "SPANK" }, { "v9Spank" });
                 break;
             }
             case 10:  // LE-760 (Compex F760X-RS): stepped Threshold / Ratio, attack toggle, 9 releases + Auto; the limiter and expander / gate
@@ -1224,46 +1288,46 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 static const char* th[6] { "-20", "-16", "-12", "-8", "-4", "0" };
                 static const char* ra[6] { "1", "2", "3", "5", "10", "20" };
                 static const char* re[6] { "25ms", ".1", ".4", "1.6", "3.2", "AUTO" };
-                yL = stepped (cxL, yL, 80, "THRESHOLD", "\xe2\x88\x92" "12 dB", 6, 2, th) + 10;
-                yL = stepped (cxL, yL, 64, "RATIO", "3 : 1", 6, 2, ra) + 12;
-                yL = batToggle (atY (rowL, yL, 60), "ATTACK", { "250us", "2.5ms", "25ms" }, 1);
-                yR = stepped (cxR, yR, 64, "RELEASE", "AUTO", 6, 5, re) + 8;
-                yR = batToggle (atY (rowR, yR, 60), "LIMITER", { "OFF", "ON", "PRE-EMP" }, 1) + 2;
-                yR = batToggle (atY (rowR, yR, 60), "EXPANDER", { "OFF", "EXP", "GATE" }, 0) + 6;
-                yR = smallPair (cxR, yR, "OUTPUT", "+3.0 dB", 0.5f, "MIX", "100%", 1.0f);
+                yL = steppedP (cxL, yL, 80, "THRESHOLD", "v10Thr", th) + 10;
+                yL = steppedP (cxL, yL, 64, "RATIO", "v10Ratio", ra) + 12;
+                yL = batToggleP (atY (rowL, yL, 60), "ATTACK", { "250us", "2.5ms", "25ms" }, "v10Atk");
+                yR = steppedP (cxR, yR, 64, "RELEASE", "v10Rel", re) + 8;
+                yR = batToggleP (atY (rowR, yR, 60), "LIMITER", { "OFF", "ON", "PRE-EMP" }, "v10Lim") + 2;
+                yR = batToggleP (atY (rowR, yR, 60), "EXPANDER", { "OFF", "EXP", "GATE" }, "v10Exp") + 6;
+                yR = smallPairP (cxR, yR, "OUTPUT", "v10Out", "MIX", "v10Mix");
                 break;
             }
             case 11:  // LE-SHM (Shadow Hills Mastering Compressor): the optical stage on the left, the discrete stage on the right, the transformers
             {
                 title (atY (rowL, yL - 16, 12), "OPTICAL");
-                yL = bigKnob (cxL, yL + 4, 88, "THRESHOLD", "4.0", 0.4f) + 12;
-                yL = bigKnob (cxL, yL, 64, "GAIN", "+2.0 dB", 0.3f) + 18;
-                yL = pushRow (atY (rowL, yL, 48), "TRANSFORMER", { "NICKEL", "IRON", "STEEL" }, 1) + 8;
+                yL = bigKnobP (cxL, yL + 4, 88, "THRESHOLD", "v11OThr") + 12;
+                yL = bigKnobP (cxL, yL, 64, "GAIN", "v11OGain") + 18;
+                yL = pushRowP (atY (rowL, yL, 48), "TRANSFORMER", { "NICKEL", "IRON", "STEEL" }, "v11Trans", 0) + 8;
                 text (g, "clean  /  thick  /  bright", font (Face::Regular, 9.5f), grey, atY (rowL, yL, 12), juce::Justification::centred);
                 title (atY (rowR, yR - 16, 12), "DISCRETE");
-                yR = smallPair (cxR, yR + 4, "THRESHOLD", "5.0", 0.5f, "RATIO", "2 : 1", 0.3f) + 14;
-                yR = smallPair (cxR, yR, "ATTACK", "3", 0.4f, "RECOVERY", "DUAL", 1.0f) + 14;
-                yR = smallPair (cxR, yR, "GAIN", "+1.5 dB", 0.3f, "MIX", "100%", 1.0f) + 10;
-                pushRow (atY (rowR, yR, 30), nullptr, { "OPTO IN", "DISCRETE IN" }, 0, true);
+                yR = smallPairP (cxR, yR + 4, "THRESHOLD", "v11DThr", "RATIO", "v11DRatio") + 14;
+                yR = smallPairP (cxR, yR, "ATTACK", "v11DAtk", "RECOVERY", "v11DRec") + 14;
+                yR = smallPairP (cxR, yR, "GAIN", "v11DGain", "MIX", "v11Mix") + 10;
+                pushRowT (atY (rowR, yR, 30), nullptr, { "OPTO IN", "DISCRETE IN" }, { "v11OptoIn", "v11DiscIn" });
                 break;
             }
             case 12:  // LE-2A (LA-2A): Peak Reduction and Gain - that's it; Compress / Limit; the meter's GR / +10 / +4
             {
-                yL = bigKnob (cxL, yL, 110, "PEAK REDUCTION", "45", 0.45f) + 26;
-                yL = batToggle (atY (rowL, yL, 60), "MODE", { "COMPRESS", "LIMIT" }, 0);
-                yR = bigKnob (cxR, yR, 96, "GAIN", "50", 0.5f) + 18;
-                yR = bigKnob (cxR, yR, 60, "MIX", "100%", 1.0f) + 18;
-                pushRow (atY (rowR, yR, 48), "METER", { "GR", "+10", "+4" }, 0);
+                yL = bigKnobP (cxL, yL, 110, "PEAK REDUCTION", "v12Peak") + 26;
+                yL = batToggleP (atY (rowL, yL, 60), "MODE", { "COMPRESS", "LIMIT" }, "v12Mode");
+                yR = bigKnobP (cxR, yR, 96, "GAIN", "v12Gain") + 18;
+                yR = bigKnobP (cxR, yR, 60, "MIX", "v12Mix") + 18;
+                pushRowP (atY (rowR, yR, 48), "METER", { "GR", "+10", "+4" }, "v12Meter", 0);
                 break;
             }
             case 13:  // LE-1B (Tube-Tech CL 1B): Threshold, Ratio, Attack, Release, Gain; Fixed / Manual / Fixed-Manual timing
             {
-                yL = bigKnob (cxL, yL, 104, "THRESHOLD", U8 ("\xe2\x88\x92" "16 dB"), 0.5f) + 22;
-                yL = bigKnob (cxL, yL, 80, "RATIO", "4 : 1", 0.4f) + 16;
-                yL = batToggle (atY (rowL, yL, 60), "TIMING", { "FIXED", "MANUAL", "F + M" }, 1);
-                yR = bigKnob (cxR, yR, 72, "ATTACK", "25 ms", 0.45f) + 8;
-                yR = bigKnob (cxR, yR, 72, "RELEASE", "0.5 s", 0.4f) + 12;
-                yR = smallPair (cxR, yR, "GAIN", "+6 dB", 0.4f, "MIX", "100%", 1.0f);
+                yL = bigKnobP (cxL, yL, 104, "THRESHOLD", "v13Thr") + 22;
+                yL = bigKnobP (cxL, yL, 80, "RATIO", "v13Ratio") + 16;
+                yL = batToggleP (atY (rowL, yL, 60), "TIMING", { "FIXED", "MANUAL", "F + M" }, "v13Timing");
+                yR = bigKnobP (cxR, yR, 72, "ATTACK", "v13Atk") + 8;
+                yR = bigKnobP (cxR, yR, 72, "RELEASE", "v13Rel") + 12;
+                yR = smallPairP (cxR, yR, "GAIN", "v13Gain", "MIX", "v13Mix");
                 break;
             }
             case 14:  // LE-VSC (Vertigo VSC-3): Threshold, ratio 2-10 plus Soft and Brick, 10 attacks, 10 releases plus Auto Fast / Slow, Make-up, Peak / RMS
@@ -1271,27 +1335,27 @@ void Canvas::paintCleanTab (juce::Graphics& g)
                 static const char* ra[8] { "SOFT", "2", "3", "4", "6", "8", "10", "BRICK" };
                 static const char* at[6] { ".1", ".3", "1", "3", "10", "40" };
                 static const char* re[6] { ".05", ".1", ".3", "1.2", "A.F", "A.S" };
-                yL = bigKnob (cxL, yL, 96, "THRESHOLD", "+2 dBu", 0.5f) + 14;
-                yL = stepped (cxL, yL, 72, "RATIO", "4 : 1", 8, 3, ra) + 14;
-                yL = batToggle (atY (rowL, yL, 60), "DETECTOR", { "PEAK", "RMS" }, 0);
-                yR = stepped (cxR, yR, 64, "ATTACK", "3 ms", 6, 3, at) + 6;
-                yR = stepped (cxR, yR, 64, "RELEASE", "AUTO SLOW", 6, 5, re) + 10;
-                yR = smallPair (cxR, yR, "MAKE-UP", "+4 dB", 0.2f, "MIX", "100%", 1.0f) + 10;
-                pushRow (atY (rowR, yR, 30), nullptr, { "BYPASS" }, -1);
+                yL = bigKnobP (cxL, yL, 96, "THRESHOLD", "v14Thr") + 14;
+                yL = steppedP (cxL, yL, 72, "RATIO", "v14Ratio", ra) + 14;
+                yL = batToggleP (atY (rowL, yL, 60), "DETECTOR", { "PEAK", "RMS" }, "v14Det");
+                yR = steppedP (cxR, yR, 64, "ATTACK", "v14Atk", at) + 6;
+                yR = steppedP (cxR, yR, 64, "RELEASE", "v14Rel", re) + 10;
+                yR = smallPairP (cxR, yR, "MAKE-UP", "v14Mk", "MIX", "v14Mix") + 10;
+                pushRowT (atY (rowR, yR, 30), nullptr, { "BYPASS" }, { "v14Byp" });
                 break;
             }
             case 6:   // LE-336 (Neve 33609): compressor - Threshold, 5-step Ratio, Fast / Slow, 6-step Recovery; the limiter, Gain
             {
                 static const char* ra[5] { "1.5", "2", "3", "4", "6" };
                 static const char* rc[6] { "100", "400", "800", "1.5k", "A1", "A2" };
-                yL = bigKnob (cxL, yL, 96, "THRESHOLD", U8 ("\xe2\x88\x92" "14 dB"), 0.5f) + 14;
-                yL = stepped (cxL, yL, 72, "RATIO", "3 : 1", 5, 2, ra) + 14;
-                yL = batToggle (atY (rowL, yL, 60), "ATTACK", { "FAST", "SLOW" }, 1);
-                yR = stepped (cxR, yR, 72, "RECOVERY", "A1", 6, 4, rc) + 8;
-                yR = smallPair (cxR, yR, "GAIN", "+6 dB", 0.3f, "LIMIT", "+12 dB", 0.6f) + 4;
+                yL = bigKnobP (cxL, yL, 96, "THRESHOLD", "v6Thr") + 14;
+                yL = steppedP (cxL, yL, 72, "RATIO", "v6Ratio", ra) + 14;
+                yL = batToggleP (atY (rowL, yL, 60), "ATTACK", { "FAST", "SLOW" }, "v6Atk");
+                yR = steppedP (cxR, yR, 72, "RECOVERY", "v6Rec", rc) + 8;
+                yR = smallPairP (cxR, yR, "GAIN", "v6Gain", "LIMIT", "v6Lim") + 4;
                 static const char* lr[5] { "50", "100", "200", "A1", "A2" };
-                yR = stepped (cxR, yR, 56, "LIMIT RECOVERY", "100 ms", 5, 1, lr) + 8;   // the limiter's own recovery
-                pushRow (atY (rowR, yR, 30), nullptr, { "COMP IN", "LIMIT IN" }, 0, true);
+                yR = steppedP (cxR, yR, 56, "LIMIT RECOVERY", "v6LimRec", lr) + 8;   // the limiter's own recovery
+                pushRowT (atY (rowR, yR, 30), nullptr, { "COMP IN", "LIMIT IN" }, { "v6CompIn", "v6LimIn" });
                 break;
             }
         }
@@ -1307,8 +1371,7 @@ void Canvas::paintCleanTab (juce::Graphics& g)
             paintEnvEdge (g, eo);
         }
         juce::ignoreUnused (unit);   // (no faceplate: the glass panels carry the unit)
-        paintTopStripFaded (g);
-        paintScDrawerFaded (g);
+        paintTopStripFaded (g);   // (VINTAGE: each unit has its own sidechain switches up here - no sidechain drawer)
         return;
     }
     // RVox: Goliath's one-knob vocal leveler - pushing COMPRESS levels the vocal and turns it up (like RVox);
@@ -2087,31 +2150,38 @@ void Canvas::paintTopStrip (juce::Graphics& g, bool open)
     if (gCompMode)   // VINTAGE: each unit's own switches, then Delta
     {
         const int u = penv ("PRESS_VUNIT") ? std::atoi (penv ("PRESS_VUNIT")) : 0;
-        std::vector<std::pair<const char*, float>> fl;
+        struct Fl { const char* pre; const char* pid; float w; bool toggle; };
+        std::vector<Fl> fl;
+        const Fl hpf { "SC HPF  ", "vScHpf", 104, false }, link { "LINK", "vLink", 76, true };
         switch (u)
         {
             // (SC HPF: the "bass doesn't pump it" filter, added to the units whose originals have none)
-            case 0:  fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-76: its buttons are on the panels
-            case 1:  fl = { { "LAT / VERT  OFF", 140 }, { "SC HPF  OFF", 104 } }; break;          // LE-660: mid-side ("lateral / vertical")
-            case 2:  fl = { { "METER  GR", 110 }, { "SC HPF  OFF", 104 } }; break;                // LE-STA
-            case 3:  fl = { { "TYPE  NEW", 104 } }; break;                                        // LE-2500: feed-forward (new) or feedback (old)
-            case 4:  fl = { { "AUTO FADE  OFF", 130 } }; break;                                   // LE-G
-            case 5:  fl = { { "LINK", 76 } }; break;                                              // LE-IRON
-            case 6:  fl = { { "LINK", 76 }, { "SC HPF  OFF", 104 } }; break;                      // LE-336
-            case 7:  fl = { { "IMAGE LINK", 104 } }; break;                                       // LE-8X: the X's image link
-            case 8:  fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-160
-            case 9:  fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-7
-            case 10: fl = { { "LINK", 76 } }; break;                                              // LE-760
-            case 11: fl = { { "LINK", 76 }, { "SC FILTER  90 Hz", 140 } }; break;                 // LE-SHM
-            case 12: fl = { { "SC HPF  OFF", 104 } }; break;                                      // LE-2A
-            case 13: fl = { { "SC  INTERNAL", 120 } }; break;                                     // LE-1B
-            default: fl = { { "STEREO SC", 110 }, { "SC FILTER  60 Hz", 140 } }; break;           // LE-VSC
+            case 0:  fl = { hpf }; break;                                                    // LE-76: its buttons are on the panels
+            case 1:  fl = { { "LAT / VERT  ", "v1Lat", 140, false }, hpf }; break;          // LE-660: mid-side ("lateral / vertical")
+            case 2:  fl = { { "METER  ", "v2Meter", 110, false }, hpf }; break;             // LE-STA
+            case 3:  fl = { { "TYPE  ", "v3Type", 104, false } }; break;                    // LE-2500: feed-forward (new) or feedback (old)
+            case 4:  fl = { { "AUTO FADE  ", "v4Fade", 130, false } }; break;               // LE-G
+            case 5:  fl = { link }; break;                                                   // LE-IRON
+            case 6:  fl = { link, hpf }; break;                                              // LE-336
+            case 7:  fl = { { "IMAGE LINK", "vLink", 104, true } }; break;                   // LE-8X: the X's image link
+            case 8:  fl = { hpf }; break;                                                    // LE-160
+            case 9:  fl = { hpf }; break;                                                    // LE-7
+            case 10: fl = { link }; break;                                                   // LE-760
+            case 11: fl = { link, { "SC FILTER  ", "v11ScF", 140, false } }; break;         // LE-SHM
+            case 12: fl = { hpf }; break;                                                    // LE-2A
+            case 13: fl = { { "SC  ", "v13Sc", 120, false } }; break;                        // LE-1B
+            default: fl = { { "STEREO SC", "v14Stereo", 110, true }, { "SC FILTER  ", "v14ScF", 140, false } }; break;   // LE-VSC
         }
         float total = 76;
-        for (auto& f : fl) total += f.second + gap;
+        for (auto& f : fl) total += f.w + gap;
         float x = (x0 + x1) * 0.5f - total * 0.5f;
-        for (auto& f : fl) { flip (R (x, cy - 11, f.second, 22), f.first, ""); x += f.second + gap; }
-        toggle (R (x, cy - 11, 76, 22), "DELTA", false);
+        for (auto& f : fl)
+        {
+            if (f.toggle) toggleP (R (x, cy - 11, f.w, 22), f.pre, f.pid);
+            else flipP (R (x, cy - 11, f.w, 22), f.pre, f.pid);
+            x += f.w + gap;
+        }
+        toggleP (R (x, cy - 11, 76, 22), "DELTA", "vDelta");
         handle (R ((x0 + x1) * 0.5f - 22, 31, 44, 14));
         return;
     }
@@ -2937,6 +3007,7 @@ void Canvas::paintCharContent (juce::Graphics& g, R k)
         const float v = thd, cyT = tc.getBottom() + 34.0f;
         auto fm = font (Face::CondMedium, 10, 1.2f);
         const R box (a.getX() + a.getWidth() * 0.5f - 110, cyT - 12, 220, 24);
+        pctl (box, "vThd", 4);
         g.setColour (juce::Colours::black.withAlpha (0.35f)); g.fillRoundedRectangle (box, 12);
         g.setColour (juce::Colours::white.withAlpha (0.14f)); g.drawRoundedRectangle (box.reduced (0.5f), 12, 1.0f);
         text (g, "THD", fm, col ("#b9b3a7"), R (box.getX() + 14, box.getY(), 30, 24));

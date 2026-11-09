@@ -91,6 +91,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     F ("hPkRel", "1964 Release", R (0.0f, 10.0f, 0.1f), 3.0f);
     C ("hPkMeter", "1964 Meter", { "GR", "+4", "+8" }, 0);
     C ("hPkPad", "1964 Pad", { "Off", "10", "20" }, 0);
+    // VINTAGE: which unit, then every unit's own controls (the table in PressureVintage.h)
+    C ("vUnit", "Vintage Unit", { "LE-76", "LE-660", "LE-STA", "LE-2500", "LE-G", "LE-IRON", "LE-336", "LE-8X", "LE-160", "LE-7", "LE-760", "LE-SHM", "LE-2A", "LE-1B", "LE-VSC" }, 0);
+    for (auto& v : pressure::vintageParams())
+    {
+        if (v.kind == 'B') B (v.id, v.name, v.def > 0.5f);
+        else if (v.kind == 'C') C (v.id, v.name, juce::StringArray::fromTokens (v.choices, "|", ""), (int) v.def);
+        else { R r (v.lo, v.hi, (v.hi - v.lo) / 1000.0f); if (v.centre > 0.0f) r.setSkewForCentre (v.centre); F (v.id, v.name, r, v.def, v.unit); }
+    }
     // CLEAN
     C ("cEngine", "Clean Engine", { "LE-11/25E", "LE-755C", "LE-DS1", "LE-MLA", "LE-580E" }, 0);
     F ("cThresh", "Threshold", R (-60.0f, 0.0f, 0.1f), -24.0f, "dB");
@@ -256,6 +264,7 @@ void TahorProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     prepareOs (maxBlock);
     clean.prepare (sampleRate, maxBlock);
     helpers.prepare (sampleRate);
+    vintage.prepare (sampleRate);
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) maxBlock, 1 };
     for (auto& st : soloC) for (auto& f : st) { f.coefficients = new juce::dsp::IIR::Coefficients<float> (1, 0, 0, 1, 0, 0); f.prepare (spec); }
     for (auto& st : soloF) for (auto& f : st) { f.coefficients = new juce::dsp::IIR::Coefficients<float> (1, 0, 0, 1, 0, 0); f.prepare (spec); }
@@ -387,7 +396,21 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         grDb.store (gr);
         cleanAvgGr.store (0.98f * cleanAvgGr.load() + 0.02f * gr);
     }
-    // VINTAGE (V1: passes the sound through - wired up in a later version)
+    // VINTAGE: the unit on show
+    if (param ("charOn") > 0.5f)
+    {
+        const int unit = (int) param ("vUnit");
+        const auto vs = pressure::vintageFor (unit, [this] (const char* id) { return param (id); });
+        const bool ext = unit == 13 && (int) param ("v13Sc") == 1 && hasSidechain();
+        if (ext && ! scOn)
+        {
+            auto key = getBusBuffer (buffer, true, 1);
+            keyBuf.setSize (2, n, false, false, true);
+            for (int c = 0; c < 2; ++c) keyBuf.copyFrom (c, 0, key, juce::jmin (c, key.getNumChannels() - 1), 0, n);
+        }
+        vintage.process (main, nc, n, ext ? &keyBuf : nullptr, vs);
+    }
+    else vintage.grDb.store (0.0f);
 
     // output: MATCH (equal loudness with the input), OUT, BYPASS
     double msOut = 0.0;
