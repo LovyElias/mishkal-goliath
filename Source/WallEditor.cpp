@@ -185,7 +185,9 @@ void WallCanvas::mouseUp (const juce::MouseEvent& e)
         repaint();
         return;
     }
-    if (! moved && down.kind != Hit::None) click (down, e);
+    // (V8: the second click of a double-tap on a chain tab belongs to the double-tap, not to opening its panel)
+    const bool chainTap = down.kind == Hit::ChainBlock || down.kind == Hit::ChainDot;
+    if (! moved && down.kind != Hit::None && ! (chainTap && e.getNumberOfClicks() >= 2)) click (down, e);
     down = {};
     repaint();
 }
@@ -196,6 +198,14 @@ void WallCanvas::mouseDoubleClick (const juce::MouseEvent& e)
     if (z == nullptr) return;
     if (z->kind == Hit::Knob) openTypeIn (z->pid, z->r);
     if (z->kind == Hit::Learn) openTypeIn ("target", z->r);
+    // V8: double-tap a chain tab to turn that stage off (or back on) - every stage but the limiter
+    if (z->kind == Hit::ChainBlock && z->pid.isEmpty() && z->a < 6)
+    {
+        const int st = proc.order()[(size_t) z->a];
+        if (st == wall::stBands) proc.bandsSwitched (pv ("bandsOn") < 0.5f);
+        else proc.setParam (wall::stageOnId (st), pv (wall::stageOnId (st)) > 0.5f ? 0.0f : 1.0f);
+        repaint();
+    }
 }
 
 void WallCanvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)

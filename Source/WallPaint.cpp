@@ -429,7 +429,7 @@ void WallCanvas::paintGrMeter (juce::Graphics& g)
 {
     const float h = 360, x = 26, y0 = 407 - h / 2, bw = 5, gap = 3, mx = 12;
     fillR (g, x - 8, y0 - 30, 40, h + 70, 10, hex (0x0e0d12, 0.26f)); strokeR (g, x - 8, y0 - 30, 40, h + 70, 10, juce::Colours::white.withAlpha (0.10f));
-    glowText (g, "GR", x + 6, y0 - 17, Face::CondSemiBold, 13, juce::Colours::white, coral, 'c', 2.4f);
+    text (g, "GR", x + 6, y0 - 17, Face::CondSemiBold, 13, juce::Colours::white, 'c', 2.4f);   // V8: plain white, no glow
     auto yOf = [&] (float db) { return y0 + h * std::pow (juce::jlimit (0.0f, mx, db) / mx, 0.75f); };
     for (float db : { 0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f, 12.0f })
     {
@@ -461,7 +461,7 @@ void WallCanvas::paintCrestMeter (juce::Graphics& g)
 {
     const float h = 360, x = W - 26 - 13, y0 = 407 - h / 2, bw = 13, mx = 20;
     fillR (g, x - 14, y0 - 30, 40, h + 70, 10, hex (0x0e0d12, 0.26f)); strokeR (g, x - 14, y0 - 30, 40, h + 70, 10, juce::Colours::white.withAlpha (0.10f));
-    glowText (g, "CREST", x + 6, y0 - 17, Face::CondSemiBold, 11, juce::Colours::white, hex (0x6ee7a0), 'c', 1.8f);
+    text (g, "CREST", x + 6, y0 - 17, Face::CondSemiBold, 11, juce::Colours::white, 'c', 1.8f);   // V8: plain white, no glow
     auto yOf = [&] (float db) { return y0 + h - h * juce::jlimit (0.0f, mx, db) / mx; };
     const std::tuple<float, float, juce::Colour> zonesC[] { { 0.0f, 6.0f, hex (0xff3b30) }, { 6.0f, 9.0f, amber }, { 9.0f, 20.0f, green } };
     for (auto& [a, b2, col] : zonesC) { g.setColour (col.withAlpha (0.10f)); g.fillRect (x, yOf (b2), bw, yOf (a) - yOf (b2)); }
@@ -782,7 +782,7 @@ void WallCanvas::paintChain (juce::Graphics& g)
         if (la >= 0 && on) lamp (g, x + 9, cy, la, false); else dot (g, x + 9, cy, 2, on ? mixc (col, juce::Colours::white, 0.35f) : juce::Colours::white.withAlpha (0.18f));
         const juce::String n = st == 6 ? juce::String ("LIMITER") : juce::String (wall::stageName (st));
         text (g, n, x + 16, cy + 0.5f, Face::CondMedium, 8.5f, on ? ink : grey, 'l', 1);
-        text (g, value (st), x + bw - 6, cy + 0.5f, Face::Regular, 8.5f, on ? label : hex (0x5b5955), 'r');
+        text (g, on ? value (st) : juce::String ("off"), x + bw - 6, cy + 0.5f, Face::Regular, 8.5f, on ? label : hex (0x5b5955), 'r');   // (V8: says off when it's off)
         if (slot < 6 && chainDrag != slot) zone (R (x, cy - 10, bw, 20), Hit::ChainBlock, {}, slot);
         if (slot == 6) zone (R (x, cy - 10, bw, 20), Hit::ChainBlock, {}, 6);
         zone (R (x, cy - 10, 17, 20), Hit::ChainDot, {}, slot);
