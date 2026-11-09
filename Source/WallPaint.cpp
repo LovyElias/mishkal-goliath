@@ -839,7 +839,12 @@ void WallCanvas::paintStage (juce::Graphics& g)
 void WallCanvas::paintPunchChar (juce::Graphics& g, bool isP)
 {
     const float PX = C - 372, PW2 = 744, PY = 556, PH = 196;
-    glassPanel (g, PX, PY, PW2, PH, 0.0f);
+    // V5: Punch 20% smaller (anchored at the bottom centre, like the Leveler)
+    const float sc = isP ? 0.8f : 1.0f, ax = PX + PW2 / 2, ay = PY + PH;
+    glassPanel (g, ax - (ax - PX) * sc, ay - (ay - PY) * sc, PW2 * sc, PH * sc, 0.0f);
+    juce::Graphics::ScopedSaveState sst (g);
+    zoneXf = juce::AffineTransform::translation (-ax, -ay).scaled (sc).translated (ax, ay);
+    g.addTransform (zoneXf);
     const bool on = pv (isP ? "punchOn" : "chOn") > 0.5f;
     panelTitle (g, PX + 20, PY + 20, isP ? "PUNCH" : "CHARACTER", on ? (isP ? juce::String ("TRANSIENTS ") + middot + " UPWARD" : juce::String ("DENSITY ") + middot + " HARMONICS " + middot + " ENHANCE") : juce::String ("OFF ") + middot + " CLICK ITS DOT IN THE CHAIN", isP ? ivory : amber);
     float gx = PX + 20, gy = PY + 38, gw = 270, gh = 138;
@@ -936,6 +941,7 @@ void WallCanvas::paintPunchChar (juce::Graphics& g, bool isP)
         paramKnob (g, "chEnh", x0 + 350, y, 50, "ENHANCE", dbs (pv ("chEnh"), 1, true), ivory, false, 1);
         cycleTab (g, kc, PY + 156, choiceName (proc, "chFlav").toUpperCase(), 130, 1.0f, "chFlav");
     }
+    zoneXf = {};
 }
 
 void WallCanvas::paintLeveler (juce::Graphics& g)
@@ -1065,7 +1071,12 @@ void WallCanvas::paintClipper (juce::Graphics& g)
 void WallCanvas::paintLimiter (juce::Graphics& g)
 {
     const float PX = C - 372, PW2 = 744, PY = 548, PH = 202;
-    glassPanel (g, PX + 80, PY, PW2 - 160, PH, 0.75f);
+    // V5: the Limiter panel 20% smaller (anchored at the bottom centre)
+    const float sc = 0.8f, ax = C, ay = PY + PH;
+    glassPanel (g, ax - (ax - (PX + 80)) * sc, ay - (ay - PY) * sc, (PW2 - 160) * sc, PH * sc, 0.75f);
+    juce::Graphics::ScopedSaveState sst (g);
+    zoneXf = juce::AffineTransform::translation (-ax, -ay).scaled (sc).translated (ax, ay);
+    g.addTransform (zoneXf);
     const bool on = pv ("limOn") > 0.5f;
     panelTitle (g, PX + 100, PY + 22, "LIMITER", on ? juce::String() : juce::String ("OFF ") + middot + " THE CEILING STILL HOLDS", orange, on ? juce::jlimit (0.0f, 1.0f, limShown / 6.0f) : 0.0f);
     const int si = (int) pv ("limStyle");
@@ -1088,6 +1099,7 @@ void WallCanvas::paintLimiter (juce::Graphics& g)
     paramKnob (g, "limStages", x0 + kw * 1.5f, y, 54, "STAGES", juce::String ((int) pv ("limStages")), coral, false, 1);
     paramKnob (g, "limLook", x0 + kw * 2.5f, y, 54, "LOOKAHEAD", juce::String (pv ("limLook"), 1) + " ms", ivory, false, 1);
     paramKnob (g, "limLinkT", x0 + kw * 3.5f, y, 54, juce::String ("LINK T ") + middot + " R", juce::String (juce::roundToInt (pv ("limLinkT"))) + " " + middot + " " + juce::String (juce::roundToInt (pv ("limLinkR"))), ivory, false, 1);
+    zoneXf = {};
 }
 
 // ============================================================================================================
@@ -1303,7 +1315,9 @@ void WallCanvas::paintPreviewBanner (juce::Graphics& g)
     const float d = proc.previewDb.load();
     const juce::String t = juce::String (plat[pvIdx - 1]) + " PREVIEW  " + middot + "  " + (d < -0.05f ? "playing " + juce::String (-d, 1) + " dB quieter, as " + nice[pvIdx - 1] + " will" : juce::String ("no turn-down: it's under ") + nice[pvIdx - 1] + "'s level");
     const float w = tw (t, Face::CondMedium, 10, 1.4f) + 40;
-    fillR (g, C - w / 2, 94, w, 24, 12, hex (0x1ed760, 0.14f)); strokeR (g, C - w / 2, 94, w, 24, 12, hex (0x1ed760, 0.7f));
-    dot (g, C - w / 2 + 14, 106, 3.5f, spot);
-    text (g, t, C + 6, 106.5f, Face::CondMedium, 10, juce::Colours::white, 'c', 1.4f);
+    const float by = 404 - 12;   // V5: in the middle of the screen
+    fillR (g, C - w / 2, by, w, 24, 12, hex (0x0e0e10, 0.55f));   // (so it reads over the wave)
+    fillR (g, C - w / 2, by, w, 24, 12, hex (0x1ed760, 0.14f)); strokeR (g, C - w / 2, by, w, 24, 12, hex (0x1ed760, 0.7f));
+    dot (g, C - w / 2 + 14, by + 12, 3.5f, spot);
+    text (g, t, C + 6, by + 12.5f, Face::CondMedium, 10, juce::Colours::white, 'c', 1.4f);
 }
