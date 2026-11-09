@@ -254,6 +254,8 @@ void Canvas::paint (juce::Graphics& g)
 {
     gPressCanvas = this;
     syncTabWindows();
+    const double paintStart = juce::Time::getMillisecondCounterHiRes();
+    struct PaintTimer { double& out; double t0; ~PaintTimer() { out = 0.7 * out + 0.3 * (juce::Time::getMillisecondCounterHiRes() - t0); } } paintTimer { lastPaintMs, paintStart };
     {   // PRESSURE: the screen's history exists before the first draw (the host can paint before any audio or timer)
         const int n = (int) ((PW - 50.0f) / 2.0f);
         if ((int) hIn.size() != n) { hIn.assign ((size_t) n, -90.0f); hOut = hIn; hGr.assign ((size_t) n, 0.0f); hRide = hGr; hBreath = hGr; hPos = 0; }
@@ -279,7 +281,8 @@ void Canvas::paint (juce::Graphics& g)
     paintMeters (g); lap ("meters");
     paintGrMeter (g); lap ("grmeter");
     paintGateMeter (g); lap ("gate");
-    paintEngineSlide (g); lap ("engine");   // CLEAN / VINTAGE: the unit and its arrows; HELPERS: LE-4
+    paintEngineSlide (g); lap ("engine");
+    paintChainStrip (g);   // V12: over the screen's lower arch, in the middle of the bottom bar   // CLEAN / VINTAGE: the unit and its arrows; HELPERS: LE-4
     if (tab == 0)
     {
         const bool off = proc.param ("resoOn") < 0.5f;   // V9: the panels dim too (still adjustable)

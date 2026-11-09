@@ -12,6 +12,13 @@
 
 namespace pressure
 {
+// V12: the six orders the three sections can run in (0 HELPERS, 1 CLEAN, 2 VINTAGE) - the "order" parameter's choices
+inline constexpr int chainOrders[6][3] { { 0, 1, 2 }, { 0, 2, 1 }, { 1, 0, 2 }, { 1, 2, 0 }, { 2, 0, 1 }, { 2, 1, 0 } };
+inline int chainOrderIndex (int a, int b, int c)
+{
+    for (int i = 0; i < 6; ++i) if (chainOrders[i][0] == a && chainOrders[i][1] == b && chainOrders[i][2] == c) return i;
+    return 0;
+}
 struct HelperSettings
 {
     bool liftOn = true, rideOn = true, breathOn = true, peakOn = true;

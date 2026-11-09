@@ -67,6 +67,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     B ("resoOn", "Helpers On", true);
     B ("tahorOn", "Clean On", false);   // Pressure: CLEAN and VINTAGE start off - switch on what you use
     B ("charOn", "Vintage On", false);
+    // V12: the order the three run in (drag the blocks in the chain strip at the bottom)
+    C ("order", "Chain Order", { "Helpers > Clean > Vintage", "Helpers > Vintage > Clean", "Clean > Helpers > Vintage",
+                                 "Clean > Vintage > Helpers", "Vintage > Helpers > Clean", "Vintage > Clean > Helpers" }, 0);
 
     // ===== PRESSURE =====
     // (the three tabs' power buttons keep their old ids: resoOn = HELPERS, tahorOn = CLEAN, charOn = VINTAGE)
@@ -382,10 +385,15 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     inMeterR.store (main.getMagnitude (nc - 1, 0, n));
     { float r2 = 0; for (int c = 0; c < nc; ++c) r2 = juce::jmax (r2, main.getRMSLevel (c, 0, n)); inRms.store (r2); }   // V10: for the readouts
 
-    // ===== PRESSURE: HELPERS > CLEAN > VINTAGE =====
+    // ===== PRESSURE: HELPERS, CLEAN and VINTAGE, in the chosen order (V12) =====
+    auto runHelpers = [&]
+    {
     // HELPERS (LE-4): Lift > Rider > Breath > 1964
     if (param ("resoOn") > 0.5f) helpers.process (main, nc, n, helperSettings());
     else { helpers.peakGr.store (0.0f); helpers.rideDb.store (0.0f); helpers.breathRed.store (0.0f); helpers.liftLow.store (0.0f); helpers.liftHigh.store (0.0f); }
+    };
+    auto runClean = [&]
+    {
     // CLEAN
     {
         const auto cs = cleanSettings();
@@ -398,6 +406,9 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         grDb.store (gr);
         cleanAvgGr.store (0.98f * cleanAvgGr.load() + 0.02f * gr);
     }
+    };
+    auto runVintage = [&]
+    {
     // VINTAGE: the unit on show
     if (param ("charOn") > 0.5f)
     {
@@ -413,6 +424,11 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         vintage.process (main, nc, n, ext ? &keyBuf : nullptr, vs);
     }
     else vintage.grDb.store (0.0f);
+    };
+    {
+        const int (&ord)[3] = pressure::chainOrders[juce::jlimit (0, 5, (int) param ("order"))];
+        for (int st : ord) { if (st == 0) runHelpers(); else if (st == 1) runClean(); else runVintage(); }
+    }
 
     // output: MATCH (equal loudness with the input), OUT, BYPASS
     double msOut = 0.0;

@@ -45,6 +45,12 @@ float ui::textWidth (const juce::Font& f, const juce::String& s)
 
 void ui::text (juce::Graphics& g, const juce::String& s, const juce::Font& f, juce::Colour c, R box, juce::Justification j)
 {
+    if (! textFadeRect.isEmpty())
+    {
+        const float t = (box.getCentreY() - textFadeRect.getY()) / juce::jmax (1.0f, textFadeRect.getHeight());
+        const float f0 = juce::jlimit (0.0f, 1.0f, juce::jmin (t / 0.16f, (1.0f - t) / 0.16f));
+        c = c.withMultipliedAlpha (f0 * f0 * (3.0f - 2.0f * f0));
+    }
     g.setColour (c);
     g.setFont (f);
     g.drawText (s, box, j, false);
@@ -99,11 +105,6 @@ void Canvas::analyse (std::vector<float>& win, std::vector<float>& smoothDb)
 void Canvas::timerCallback()
 {
     pressCanvas (this, true);
-    if (typeSoonAt > 0.0 && juce::Time::getMillisecondCounterHiRes() - typeSoonAt > 280.0)
-    {
-        typeSoonAt = 0.0;
-        if (typeIn == nullptr) openPressTypeIn (typeSoon);
-    }
     proc.preTap.pull (preWin);
     proc.postTap.pull (postWin);
     if (eqMatch == 1)   // V12: EQ MATCH learning - your sound (pre) and the reference (sidechain)
@@ -185,6 +186,9 @@ void Canvas::timerCallback()
                       : (now - lastWant < 4000.0 ? reveal : juce::jmax (0.0f, reveal - 0.2f));
     }
     pulse = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * (juce::Time::getMillisecondCounterHiRes() * 0.001 / 1.6)));
+    // V12: if a frame takes longer than the time between frames, skip a tick so the host always has room to breathe
+    // (the movement stays even rather than stuttering)
+    if (lastPaintMs > 30.0 && ! dragging && (++skipTick % 2) == 1) return;
     repaint();
 }
 
@@ -255,14 +259,25 @@ static bool isPressureHit (Hit k) { return k == Hit::PCtl || k == Hit::PEngine |
 void Canvas::mouseDown (const juce::MouseEvent& e)
 {
     grabKeyboardFocus();   // V11: so the shortcuts work
+    if (auto* cz = zoneAt (e.position); cz != nullptr && cz->kind == Hit::PChain)   // V12: a block of the chain strip
+    {
+        if (typeIn != nullptr) closeTypeIn (true);
+        down = *cz; downAt = e.position; mouse = e.position; dragging = true; chainDrag = -1; chainDownX = e.position.x;
+        return;
+    }
     if (auto* pzz = zoneAt (e.position); pzz != nullptr && isPressureHit (pzz->kind))
     {
         if (typeIn != nullptr) closeTypeIn (true);
-        typeSoonAt = 0.0;   // (a second click: it's a double-click, not a tap)
         downAt = e.position; mouse = e.position; dragging = true; down = *pzz; dragPid = {}; dragPid2 = {};
         if (down.kind == Hit::PCtl && juce::isPositiveAndBelow (down.a, (int) pz.size()))
         {
             const auto pid = pz[(size_t) down.a];
+            if (e.mods.isPopupMenu() && down.b != 1 && down.b != 2 && down.b < 100)   // V12: right-click - its menu (like Pro-C 3)
+            {
+                const Zone zc = down; dragging = false; down = {};
+                showPressMenu (zc);
+                return;
+            }
             if (e.mods.isAltDown())   // alt-click: back to its default
             {
                 if (auto* p = proc.apvts.getParameter (pid)) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); }
@@ -398,19 +413,27 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
 {
     mouse = e.position;
     const auto d = e.position - downAt;
+    if (down.kind == Hit::PChain)
+    {
+        if (chainDrag < 0 && std::abs (d.x) > 4.0f) chainDrag = down.a;
+        if (chainDrag >= 0) chainDragX = e.position.x;
+        repaint();
+        return;
+    }
     if (isPressureHit (down.kind))
     {
         if (down.kind == Hit::PCtl && dragPid.isNotEmpty())
         {
-            const float sens = e.mods.isShiftDown() ? 1000.0f : 200.0f;   // shift: fine
+            const bool fine = e.mods.isShiftDown() || e.mods.isCommandDown();   // V12: Command (or Shift) - fine, like Pro-C 3
+            const float sens = fine ? 1000.0f : 200.0f;
             float delta = (d.x - d.y) / sens;                                 // knobs and bars: up or right = more
             if (down.b == 3) delta = -delta;                                  // drawn the other way round
-            if (down.b == 4 || down.b == 5) delta = d.x / (e.mods.isShiftDown() ? 1500.0f : 420.0f);   // EQ nodes: across = frequency
+            if (down.b == 4 || down.b == 5) delta = d.x / (fine ? 1500.0f : 420.0f);   // EQ nodes: across = frequency
             static const juce::StringArray kneeIds { "cThresh", "cRatio", "cKnee", "cDsKnee", "cMlaIn", "cMlaRatio", "cVoxComp" };
             if (kneeIds.contains (dragPid)) kneeTouch = juce::Time::getMillisecondCounterHiRes();   // keep the knee display up while turning
             if (auto* p = proc.apvts.getParameter (dragPid)) p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart + delta));
             if (dragPid2.isNotEmpty())
-                if (auto* p2 = proc.apvts.getParameter (dragPid2)) p2->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart2 - d.y / (e.mods.isShiftDown() ? 900.0f : 220.0f)));
+                if (auto* p2 = proc.apvts.getParameter (dragPid2)) p2->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart2 - d.y / (fine ? 900.0f : 220.0f)));
         }
         repaint();
         return;
@@ -519,6 +542,23 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
 
 void Canvas::mouseUp (const juce::MouseEvent& e)
 {
+    if (down.kind == Hit::PChain)
+    {
+        dragging = false;
+        if (chainDrag >= 0)   // dropped: the sections in the order they now sit, left to right
+        {
+            const int (&o)[3] = pressure::chainOrders[juce::jlimit (0, 5, (int) proc.param ("order"))];
+            std::vector<std::pair<float, int>> at;
+            for (int i = 0; i < 3; ++i) at.push_back ({ o[i] == chainDrag ? chainDragX : chainSlot[i], o[i] });
+            std::stable_sort (at.begin(), at.end(), [] (auto& a, auto& b) { return a.first < b.first; });
+            proc.setParam ("order", (float) pressure::chainOrderIndex (at[0].second, at[1].second, at[2].second));
+        }
+        else tab = juce::jlimit (0, 2, down.a);   // a click: its tab
+        chainDrag = -1; down = {};
+        proc.apvts.state.setProperty ("uiTab", tab, nullptr);
+        repaint();
+        return;
+    }
     if (isPressureHit (down.kind))
     {
         dragging = false;
@@ -527,9 +567,9 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
         const bool moved = e.position.getDistanceFrom (downAt) > 3.0f;
         if (! moved)
         {
-            if (down.kind == Hit::PCtl && (down.b == 0 || down.b == 3 || down.b == 4 || down.b == 5) && juce::isPositiveAndBelow (down.a, (int) pz.size())
-                && e.getNumberOfClicks() == 1)
-            { typeSoon = down; typeSoonAt = juce::Time::getMillisecondCounterHiRes(); }   // a tap: type the value in
+            if (down.kind == Hit::PCtl && juce::isPositiveAndBelow (down.a, (int) pz.size()) && e.getNumberOfClicks() == 1
+                && (down.b == 6 || ((down.b == 0 || down.b == 3 || down.b == 4) && std::abs (down.r.getWidth() - down.r.getHeight()) >= 4.0f)))
+                typeSoon = down, typeSoonAt = 1.0;   // V12: a click on a knob's number (or on a value bar): type it
             if (down.kind == Hit::PCtl && down.b >= 100 && juce::isPositiveAndBelow (down.a, (int) pz.size()))   // a segment: pick it
                 proc.setParam (pz[(size_t) down.a], (float) (down.b - 100));
             if (down.kind == Hit::PCtl && (down.b == 1 || down.b == 2) && juce::isPositiveAndBelow (down.a, (int) pz.size()))
@@ -554,6 +594,7 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
             }
         }
         dragPid = {}; dragPid2 = {}; down = {};
+        if (typeSoonAt > 0.0) { typeSoonAt = 0.0; openPressTypeIn (typeSoon); }
         auto& st = proc.apvts.state;
         st.setProperty ("uiTab", tab, nullptr); st.setProperty ("uiPreview", preview, nullptr);
         repaint();
@@ -600,9 +641,9 @@ void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
     if (z == nullptr) return;
     if (z->kind == Hit::PCtl)   // PRESSURE: double-click a knob or bar - back to its default
     {
-        typeSoonAt = 0.0;
-        if ((z->b == 0 || z->b == 3 || z->b == 4) && juce::isPositiveAndBelow (z->a, (int) pz.size()))
-            if (auto* p = proc.apvts.getParameter (pz[(size_t) z->a])) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); }
+        // V12: double-click a knob, bar or dot - type a value (Option-click resets, like Pro-C 3)
+        if ((z->b == 0 || z->b == 3 || z->b == 4 || z->b == 5 || z->b == 6) && juce::isPositiveAndBelow (z->a, (int) pz.size()) && typeIn == nullptr)
+            openPressTypeIn (*z);
         repaint();
         return;
     }
@@ -705,6 +746,41 @@ void Canvas::openTypeIn (const Zone& z)
     t.onReturnKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
     t.onEscapeKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (false); }); };
     t.onFocusLost = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
+}
+
+// V12: right-click a control - type a value, back to its default, or pick a setting (like Pro-C 3)
+void Canvas::showPressMenu (const Zone& z)
+{
+    if (! juce::isPositiveAndBelow (z.a, (int) pz.size())) return;
+    const auto pid = pz[(size_t) z.a];
+    auto* p = proc.apvts.getParameter (pid);
+    if (p == nullptr) return;
+    juce::PopupMenu m;
+    m.addSectionHeader (p->getName (40));
+    const bool isBool = dynamic_cast<juce::AudioParameterBool*> (p) != nullptr;
+    if (! isBool) m.addItem (1, "Type a value...");
+    m.addItem (2, "Back to default  (" + (p->getText (p->getDefaultValue(), 20) + " " + p->getLabel()).trim() + ")");
+    auto* c = dynamic_cast<juce::AudioParameterChoice*> (p);
+    if (c != nullptr && c->choices.size() <= 24)
+    {
+        m.addSeparator();
+        for (int i = 0; i < c->choices.size(); ++i) m.addItem (100 + i, c->choices[i], true, i == c->getIndex());
+    }
+    m.addSeparator();
+    m.addItem (3, "Fine: hold Command while dragging", false, false);
+    m.addItem (4, "Reset: Option-click   Type: double-click", false, false);
+    const juce::Component::SafePointer<Canvas> sp (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r).getSmallestIntegerContainer()),
+        [sp, z, pid] (int r)
+        {
+            if (sp == nullptr || r <= 0) return;
+            auto* q = sp->proc.apvts.getParameter (pid);
+            if (q == nullptr) return;
+            if (r == 1) sp->openPressTypeIn (z);
+            if (r == 2) { q->beginChangeGesture(); q->setValueNotifyingHost (q->getDefaultValue()); q->endChangeGesture(); }
+            if (r >= 100) sp->proc.setParam (pid, (float) (r - 100));
+            sp->repaint();
+        });
 }
 
 void Canvas::openPressTypeIn (const Zone& z)
@@ -1012,6 +1088,26 @@ void Canvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
 {
     auto* z = zoneAt (e.position);
     if (z == nullptr) return;
+    if (z->kind == Hit::PCtl && juce::isPositiveAndBelow (z->a, (int) pz.size()))   // V12: the wheel turns any Pressure control
+    {
+        if (auto* p = proc.apvts.getParameter (pz[(size_t) z->a]))
+        {
+            const float dy = (std::abs (w.deltaY) > std::abs (w.deltaX) ? w.deltaY : w.deltaX) * (w.isReversed ? -1.0f : 1.0f);
+            if (std::abs (dy) < 1.0e-4f) return;
+            const int steps = p->getNumSteps();
+            float nv;
+            if (z->b == 1 || z->b == 2 || z->b >= 100 || (steps > 1 && steps < 40))   // a switch or a stepped control: one step
+                nv = p->getValue() + (dy > 0 ? 1.0f : -1.0f) / (float) juce::jmax (1, steps - 1);
+            else
+            {
+                const bool fine = e.mods.isShiftDown() || e.mods.isCommandDown();
+                nv = p->getValue() + (z->b == 3 ? -dy : dy) * (fine ? 0.01f : 0.06f);
+            }
+            p->beginChangeGesture(); p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, nv)); p->endChangeGesture();
+            repaint();
+        }
+        return;
+    }
     juce::String pid;
     switch (z->kind)
     {
@@ -1480,10 +1576,12 @@ void Canvas::click (const Zone& z, const juce::MouseEvent& e)
             for (int i = 0; i < 5; ++i) m.addItem (1 + i, nm[i], true, ! fullScreen && std::abs (currentScale - sc[i]) < 0.01f);
             m.addSeparator();
             m.addItem (10, "Full screen", true, fullScreen);
+            if (onGpu) { m.addSeparator(); m.addItem (20, "Smooth drawing (graphics card)", true, gpuOn); }
             m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r.toNearestInt())), [this] (int r)
             {
                 if (r >= 1 && r <= 5) { if (fullScreen) fullScreen = false; if (onSize) onSize (sc[r - 1]); }
                 if (r == 10 && onFullScreen) onFullScreen();
+                if (r == 20 && onGpu) onGpu (! gpuOn);
                 repaint();
             });
             break;
@@ -1540,9 +1638,48 @@ TahorEditor::TahorEditor (TahorProcessor& p) : AudioProcessorEditor (p), proc (p
     setResizable (true, false);
     const float s = juce::jlimit (0.6f, 1.6f, (float) proc.apvts.state.getProperty ("uiScale", globalScale (-1.0f)));
     setSize (juce::roundToInt (ui::W * s), juce::roundToInt (ui::H * s));
+   #if PRESSURE_GPU
+    canvas.onGpu = [this] (bool on) { gpuSetting (on ? 1 : 0); useGpu (on); };
+    useGpu (gpuSetting (-1) != 0);
+   #endif
 }
 
-TahorEditor::~TahorEditor() {}
+TahorEditor::~TahorEditor()
+{
+   #if PRESSURE_GPU
+    gl.detach();
+   #endif
+}
+
+// V12: the graphics card draws the window (remembered for every Pressure; on unless you turn it off)
+bool TahorEditor::gpuSetting (int set)
+{
+    juce::PropertiesFile::Options o;
+    o.applicationName = "Pressure"; o.filenameSuffix = "settings"; o.folderName = "Mishkal Audio";
+    o.osxLibrarySubFolder = "Application Support";
+    juce::PropertiesFile f (o);
+    if (set >= 0) { f.setValue ("gpu", set); f.saveIfNeeded(); return set != 0; }
+    return f.getIntValue ("gpu", 1) != 0;
+}
+
+void TahorEditor::useGpu (bool on)
+{
+   #if PRESSURE_GPU
+    if (on == gl.isAttached()) { canvas.gpuOn = on; return; }
+    if (on)
+    {
+        gl.setComponentPaintingEnabled (true);
+        gl.setContinuousRepainting (false);
+        gl.setMultisamplingEnabled (false);
+        gl.attachTo (*this);
+    }
+    else gl.detach();
+    canvas.gpuOn = on;
+    repaint();
+   #else
+    juce::ignoreUnused (on);
+   #endif
+}
 
 // V3: the size you picked last is remembered for every new Tahor (like Pro-Q); pass < 0 to read it
 float TahorEditor::globalScale (float set)

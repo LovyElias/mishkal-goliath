@@ -2,6 +2,9 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
+#if PRESSURE_GPU
+ #include <juce_opengl/juce_opengl.h>
+#endif
 #include "TahorProcessor.h"
 #include <set>
 
@@ -31,6 +34,9 @@ namespace ui
     float textWidth (const juce::Font& f, const juce::String& s);
     void text (juce::Graphics& g, const juce::String& s, const juce::Font& f, juce::Colour c, R box,
                juce::Justification j = juce::Justification::centredLeft);
+    // V12: while a drawer window is drawn straight onto the screen, its words fade towards its top and bottom edges
+    // as they did when it was drawn as a faded picture (empty = no fading)
+    inline R textFadeRect;
 }
 
 enum class Hit
@@ -43,7 +49,8 @@ enum class Hit
     UnitPrev, UnitNext, UnitAdd, UnitKnob, UnitSwitch, PageDot, ChainChip, ChainRemove, CharMode, PeakDot, Glass, FullScreen, CharNode, Hardware, TabCycle, Size, CharKnob, Thd, AddEq, PresetStep, BandSolo, AddPick, AddClose,
     History, Browse, BrowseTag, BrowsePick, BrowseClose, AutoGain, CharSide, ResoPlace, TahorMode,
     BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano, BubbleEdit,
-    PCtl, PEngine, PDrawer   // PRESSURE: a control (knob / button / bar), the engine arrows, a drawer handle
+    PCtl, PEngine, PDrawer,  // PRESSURE: a control (knob / button / bar), the engine arrows, a drawer handle
+    PChain                   // V12: a block in the chain strip (click: its tab; drag: a new order)
 };
 
 // PRESSURE: the mock's look switches (PRESS_DS1, PRESS_KNEE ...) - in the plug-in they come from the parameters and the
@@ -70,6 +77,9 @@ public:
     std::function<void (float scale)> onResize;   // the corner grip
     std::function<void()> onFullScreen;           // V2: the full-screen button
     std::function<void (float)> onSize;           // V3: the size menu (Mini .. Extra Large)
+    std::function<void (bool)> onGpu;             // V12: graphics-card drawing on / off (from the size menu)
+    bool gpuOn = false;
+    double lastPaintMs = 0.0; int skipTick = 0;   // V12: how long the last frame took to draw
     float currentScale = 1.0f;
 
     // UI state (kept in the processor's state tree so it comes back with the session)
@@ -145,7 +155,10 @@ private:
     float fadeOut (int key, bool on);                   // 1 while on, then down to 0 over 3 seconds
     void paintTopStripFaded (juce::Graphics&);
     void paintScDrawerFaded (juce::Graphics&);
-    void paintGrStrip (juce::Graphics&);   // CLEAN / VINTAGE: ten seconds of gain reduction and its readouts
+    void paintGrStrip (juce::Graphics&);
+    void paintChainStrip (juce::Graphics&);   // V12: what's running, in order, along the bottom bar
+    int chainDrag = -1; float chainDragX = 0.0f, chainDownX = 0.0f;   // the block being dragged (its section) and where
+    float chainSlot[3] {};                    // where each place in the strip is (its centre x)   // CLEAN / VINTAGE: ten seconds of gain reduction and its readouts
     juce::String pchoice (const juce::String& pid) const;
     double kneeTouch = -1.0e9;   // when Threshold / Ratio / Knee was last touched (the knee display shows for 4 s)
     void paintSidechainDrawer (juce::Graphics&, ui::R unit);
@@ -209,6 +222,7 @@ private:
     void closeTypeIn (bool commit);
     // Pressure V11: tap any number to type it (opens a moment after the tap, so a double-click still resets)
     void openPressTypeIn (const Zone& z);
+    void showPressMenu (const Zone& z);
     Zone typeSoon; double typeSoonAt = 0.0;
     void paintCursorReadout (juce::Graphics&);   // V14: the dynamic range's grab spots (added after the background)
     std::vector<Zone> zones;
@@ -268,6 +282,11 @@ public:
 
 private:
     TahorProcessor& proc;
+   #if PRESSURE_GPU
+    juce::OpenGLContext gl;   // V12: the graphics card draws the window - smooth at Large, Extra Large and full screen
+   #endif
+    static bool gpuSetting (int set);   // -1 reads
+    void useGpu (bool on);
     tahor::Canvas canvas;
     juce::ComponentBoundsConstrainer limits;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TahorEditor)

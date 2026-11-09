@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Pressure VERSION 1.11.0)   # raise with every version so hosts rescan
+project(Pressure VERSION 1.12.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -71,6 +71,11 @@ endif()
 #         knee open; CLEAN: LE-DS1, 1.5:1, threshold 0, make-up 0, knee/envelope/sidechain open; VINTAGE: LE-660,
 #         In -12, Out +4; oversampling 2x); each tab remembers its own open windows; the gain-reduction strip is
 #         VINTAGE only, lower, on glass; faster drawing (cached glass, smaller layers) and a steady 30 frames a second
+#   V12 = drawn by the graphics card (smooth at Large, Extra Large and full screen; can be switched off in the Size menu),
+#         open windows drawn straight on the screen, frames paced when drawing is slow; knobs work like Pro-C 3
+#         (double-click or click the number: type; Option-click: reset; Command-drag: fine; wheel; right-click menu);
+#         the VINTAGE meter 30% smaller on clearer glass; the CHAIN strip in the bottom bar - what's on, in order,
+#         click for its tab, drag to change the order (new "Chain Order" parameter)
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -96,13 +101,13 @@ function(tahor_plugin target product code bundle version formats)
     target_include_directories(${target} PRIVATE Source Source/Dsp)
     target_compile_definitions(${target} PUBLIC
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0
-        TAHOR_VERSION=15 PRESSURE_VERSION=${version})
+        TAHOR_VERSION=15 PRESSURE_VERSION=${version} PRESSURE_GPU=1)   # V12: drawn by the graphics card
     target_link_libraries(${target}
-        PRIVATE juce::juce_audio_utils juce::juce_dsp TahorAssets
+        PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_opengl TahorAssets
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(PRESSURE_LATEST_VERSION 11)   # raise this by one for every new version
+set(PRESSURE_LATEST_VERSION 12)   # raise this by one for every new version
 
 # One plug-in, updated in place
 tahor_plugin(Pressure "Mishkal Pressure" Prss com.mishkalaudio.pressure ${PRESSURE_LATEST_VERSION} "${TAHOR_FORMATS}")

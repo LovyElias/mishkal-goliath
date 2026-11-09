@@ -81,6 +81,9 @@ int Canvas::pctl (R r, const juce::String& pid, int kind)
     pz.push_back (pid);
     const int idx = (int) pz.size() - 1;
     dz (r, Hit::PCtl, idx, kind);
+    // V12: a knob's number, just under it - click it to type a value (kind 6)
+    if ((kind == 0 || kind == 3) && std::abs (r.getWidth() - r.getHeight()) < 4.0f)
+        dz (R (r.getX() - 14, r.getBottom(), r.getWidth() + 28, 30), Hit::PCtl, idx, 6);
     return idx;
 }
 float Canvas::pn (const juce::String& pid) const
@@ -2087,6 +2090,8 @@ void Canvas::paintKneeContent (juce::Graphics& g, R k)
 // the knee window: drawn into its own picture, then faded out towards the top and the bottom of the screen
 void Canvas::paintKneeOverlay (juce::Graphics& g, R k, float alpha)
 {
+    if (alpha >= 0.999f)   // V12: fully open - drawn straight onto the screen (no picture to build and fade every frame)
+    { g.saveState(); g.reduceClipRegion (k.toNearestInt()); textFadeRect = k; paintKneeContent (g, k); textFadeRect = {}; g.restoreState(); return; }
     const float sc = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     const int iw = juce::roundToInt (k.getWidth() * sc), ih = juce::roundToInt (k.getHeight() * sc);
     juce::Image im (juce::Image::ARGB, juce::jmax (1, iw), juce::jmax (1, ih), true);
@@ -2851,6 +2856,14 @@ void Canvas::paintEngineSlide (juce::Graphics& g)
 // ---- the envelope drawer: how fast - a test hit, the reduction diving in at the attack and climbing back at the release
 void Canvas::paintEnvOverlay (juce::Graphics& g, R k, float alpha)
 {
+    if (alpha >= 0.999f)   // V12: fully open - drawn straight onto the screen
+    {
+        g.saveState(); g.reduceClipRegion (k.toNearestInt());
+        textFadeRect = k;
+        if (gHelperTab) paintDynEqContent (g, k); else if (gCompMode) paintCharContent (g, k); else paintEnvContent (g, k);
+        textFadeRect = {};
+        g.restoreState(); return;
+    }
     const float sc = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     const int iw = juce::roundToInt (k.getWidth() * sc), ih = juce::roundToInt (k.getHeight() * sc);
     juce::Image im (juce::Image::ARGB, juce::jmax (1, iw), juce::jmax (1, ih), true);
@@ -3336,13 +3349,17 @@ void Canvas::paintGrStrip (juce::Graphics& g)
 {
     const int n = (int) hGr.size();
     if (n < 2) return;
+    // V12: 30% smaller (shrunk about the middle of its bottom edge, so it still sits just above the bottom bar)
+    g.saveState();
+    g.addTransform (juce::AffineTransform::scale (0.7f, 0.7f, PW * 0.5f, 676.0f));
+    struct Restore { juce::Graphics& g; ~Restore() { g.restoreState(); } } restore { g };
     // V11: lower, just above the bottom bar, on glass that melts into the window at its edges
     const R box (PW * 0.5f - 300.0f, 614.0f, 600.0f, 62.0f);
     const R gr (box.getX() + 12, box.getY() + 19, box.getWidth() - 196, box.getHeight() - 26);
     drawGlass (g, box.expanded (40, 14), [] (float u, float t)
     {
-        return 0.85f * smoothStep (u / 0.14f) * smoothStep ((1.0f - u) / 0.14f) * smoothStep (t / 0.3f) * smoothStep ((1.0f - t) / 0.3f);
-    }, 0.8f);
+        return 0.6f * smoothStep (u / 0.14f) * smoothStep ((1.0f - u) / 0.14f) * smoothStep (t / 0.3f) * smoothStep ((1.0f - t) / 0.3f);
+    }, 0.8f);   // V12: 30% clearer glass - it melts into the screen
     text (g, U8 ("GAIN REDUCTION  \xc2\xb7  10 s"), font (Face::CondMedium, 8, 1.6f), col ("#b9b3a7"), R (gr.getX(), box.getY() + 5, 200, 10));
     const float scale = 15.0f;   // dB down to the bottom of the strip
     for (float db : { 5.0f, 10.0f, 15.0f })
@@ -3391,3 +3408,87 @@ void Canvas::paintGrStrip (juce::Graphics& g)
     read (rx + 104, "PEAK", peak, false);
 }
 
+
+// V12: the chain - HELPERS, CLEAN and VINTAGE as three blocks in the order the sound goes through them, in the middle of
+// the bottom bar on every tab. A block is lit (in its section's colour) when that section is on and says what's
+// running in it (the HELPERS tools, the CLEAN engine, the VINTAGE unit) and how much it's taking off right now.
+// Click a block: its tab. Drag a block left or right: the sound follows the new order.
+void Canvas::paintChainStrip (juce::Graphics& g)
+{
+    const float cy = 782.0f, bh = 20.0f, bw = 132.0f, arrowW = 18.0f;
+    const float total = 3 * bw + 2 * arrowW;
+    const float mid = (archBot[0] + archBot[1]) * 0.5f;
+    const float x0 = juce::jlimit (archBot[0], juce::jmax (archBot[0], archBot[1] - total), mid - total * 0.5f + 16.0f);
+    const int ord = juce::jlimit (0, 5, (int) proc.param ("order"));
+    static const char* cleanCols[5] { "#a8916a", "#e8a98f", "#efe5cf", "#ecd59c", "#c9a24e" };
+    static const char* vintCols[15] { "#8a3a3f", "#b5763e", "#c4a27a", "#6b4a3a", "#5f6b4e", "#2f4a6b", "#7a5a8a", "#3f7a5e",
+                                      "#c9a227", "#3d8a8a", "#7d8590", "#e6d6b8", "#b9767a", "#5677ab", "#d0682f" };
+    text (g, "CHAIN", font (Face::CondMedium, 8.5f, 1.6f), grey, R (x0 - 44, cy - 6, 40, 12), juce::Justification::centredRight);
+    for (int i = 0; i < 3; ++i) chainSlot[i] = x0 + (float) i * (bw + arrowW) + bw * 0.5f;
+    auto info = [&] (int sec, juce::String& name, juce::String& what, juce::Colour& c, bool& on, float& gr)
+    {
+        if (sec == 0)
+        {
+            name = "HELPERS"; c = col ("#b08d57"); on = proc.param ("resoOn") > 0.5f;
+            juce::StringArray t;
+            if (proc.param ("hLiftOn") > 0.5f) t.add ("LIFT");
+            if (proc.param ("hRideOn") > 0.5f) t.add ("RIDE");
+            if (proc.param ("hBreathOn") > 0.5f) t.add ("BREATH");
+            if (proc.param ("hPeakOn") > 0.5f) t.add ("1964");
+            what = t.isEmpty() ? juce::String ("none") : t.joinIntoString (U8 (" \xc2\xb7 "));
+            gr = juce::jmax (proc.helpers.peakGr.load(), proc.helpers.breathRed.load());
+            if (t.isEmpty()) on = false;
+        }
+        else if (sec == 1)
+        {
+            name = "CLEAN"; on = proc.param ("tahorOn") > 0.5f;
+            const int e = juce::jlimit (0, 4, (int) proc.param ("cEngine"));
+            c = col (cleanCols[e]); what = pchoice ("cEngine"); gr = proc.grDb.load();
+        }
+        else
+        {
+            name = "VINTAGE"; on = proc.param ("charOn") > 0.5f;
+            const int u = juce::jlimit (0, 14, (int) proc.param ("vUnit"));
+            c = col (vintCols[u]); what = pchoice ("vUnit"); gr = proc.vintage.grDb.load();
+        }
+    };
+    auto block = [&] (int sec, float x, bool lifted)
+    {
+        juce::String name, what; juce::Colour c; bool on = false; float gr = 0.0f;
+        info (sec, name, what, c, on, gr);
+        const R b (x, cy - bh * 0.5f, bw, bh);
+        const bool hv = b.contains (mouse) || lifted;
+        const bool here = (tab == sec);
+        fillRound (g, b, 5, on ? c.withAlpha (lifted ? 0.28f : 0.14f) : col ("#17181b", 0.8f));
+        strokeRound (g, b, 5, on ? c.withAlpha (hv ? 0.9f : 0.55f) : juce::Colours::white.withAlpha (hv ? 0.25f : 0.1f));
+        if (here) { g.setColour ((on ? c : grey).withAlpha (0.9f)); g.fillRoundedRectangle (b.getX() + 10, b.getBottom() - 2.0f, b.getWidth() - 20, 1.6f, 0.8f); }
+        // the light: lit while on, glowing brighter as it works
+        const P d (b.getX() + 10, b.getCentreY());
+        const float work = on ? juce::jlimit (0.0f, 1.0f, gr / 6.0f) : 0.0f;
+        if (on) { g.setColour (c.withAlpha (0.25f + 0.45f * work)); g.fillEllipse (d.x - 5, d.y - 5, 10, 10); }
+        g.setColour (on ? c.interpolatedWith (juce::Colours::white, 0.35f) : juce::Colours::white.withAlpha (0.18f)); g.fillEllipse (d.x - 2.5f, d.y - 2.5f, 5, 5);
+        const auto fN = font (Face::CondMedium, 8.5f, 1.2f), fW = font (Face::Regular, 9.0f);
+        const float nw = textWidth (fN, name);
+        text (g, name, fN, on ? ink : grey, R (b.getX() + 18, cy - 6, nw + 2, 12));
+        const juce::String grs = on && gr > 0.1f ? MINUS + juce::String (gr, 1) : juce::String();
+        const float gw = grs.isEmpty() ? 0.0f : textWidth (fW, grs) + 6;
+        if (gw > 0) text (g, grs, fW, c.interpolatedWith (juce::Colours::white, 0.5f), R (b.getRight() - gw - 4, cy - 6, gw, 12), juce::Justification::centredRight);
+        text (g, what, fW, on ? col ("#b9b3a7") : col ("#5b5955"), R (b.getX() + 18 + nw + 6, cy - 6, b.getRight() - 4 - gw - (b.getX() + 18 + nw + 6), 12));
+        if (! lifted) zone (b, Hit::PChain, sec);
+    };
+    const int (&o)[3] = pressure::chainOrders[ord];
+    for (int i = 0; i < 3; ++i)
+    {
+        if (i < 2)   // the arrow to the next one
+        {
+            const float ax = x0 + (float) i * (bw + arrowW) + bw + arrowW * 0.5f;
+            juce::Path a; a.startNewSubPath (ax - 4, cy); a.lineTo (ax + 3, cy);
+            a.startNewSubPath (ax, cy - 3); a.lineTo (ax + 3.5f, cy); a.lineTo (ax, cy + 3);
+            g.setColour (juce::Colours::white.withAlpha (0.3f)); g.strokePath (a, juce::PathStrokeType (1.1f));
+        }
+        if (o[i] == chainDrag) { strokeRound (g, R (x0 + (float) i * (bw + arrowW), cy - bh * 0.5f, bw, bh), 5, juce::Colours::white.withAlpha (0.12f)); continue; }
+        block (o[i], x0 + (float) i * (bw + arrowW), false);
+    }
+    if (chainDrag >= 0)   // the one in your hand, following the mouse
+        block (chainDrag, juce::jlimit (x0 - 20, x0 + total - bw + 20, chainDragX - bw * 0.5f), true);
+}
