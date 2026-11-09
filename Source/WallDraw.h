@@ -89,7 +89,7 @@ inline void miniGraph (juce::Graphics& g, float x, float y, float w, float h, co
 // frosted glass (`clear`: higher = more see-through)
 inline void glassPanel (juce::Graphics& g, float x, float y, float w, float h, float clear)
 {
-    fillR (g, x, y, w, h, 14, hex (0x121016, 0.52f - 0.3f * clear));
+    fillR (g, x, y, w, h, 14, hex (0x121016, 0.30f - 0.17f * clear));   // V4: more glass
     {
         juce::Graphics::ScopedSaveState s (g);
         juce::Path p; p.addRoundedRectangle (x, y, w, h, 14.0f); g.reduceClipRegion (p);

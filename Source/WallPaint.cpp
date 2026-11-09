@@ -428,7 +428,7 @@ void WallCanvas::paintMeters (juce::Graphics& g)
 void WallCanvas::paintGrMeter (juce::Graphics& g)
 {
     const float h = 360, x = 26, y0 = 407 - h / 2, bw = 5, gap = 3, mx = 12;
-    fillR (g, x - 8, y0 - 30, 40, h + 70, 10, hex (0x0e0d12, 0.45f)); strokeR (g, x - 8, y0 - 30, 40, h + 70, 10, juce::Colours::white.withAlpha (0.10f));
+    fillR (g, x - 8, y0 - 30, 40, h + 70, 10, hex (0x0e0d12, 0.26f)); strokeR (g, x - 8, y0 - 30, 40, h + 70, 10, juce::Colours::white.withAlpha (0.10f));
     glowText (g, "GR", x + 6, y0 - 17, Face::CondSemiBold, 13, juce::Colours::white, coral, 'c', 2.4f);
     auto yOf = [&] (float db) { return y0 + h * std::pow (juce::jlimit (0.0f, mx, db) / mx, 0.75f); };
     for (float db : { 0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f, 12.0f })
@@ -460,7 +460,7 @@ void WallCanvas::paintGrMeter (juce::Graphics& g)
 void WallCanvas::paintCrestMeter (juce::Graphics& g)
 {
     const float h = 360, x = W - 26 - 13, y0 = 407 - h / 2, bw = 13, mx = 20;
-    fillR (g, x - 14, y0 - 30, 40, h + 70, 10, hex (0x0e0d12, 0.45f)); strokeR (g, x - 14, y0 - 30, 40, h + 70, 10, juce::Colours::white.withAlpha (0.10f));
+    fillR (g, x - 14, y0 - 30, 40, h + 70, 10, hex (0x0e0d12, 0.26f)); strokeR (g, x - 14, y0 - 30, 40, h + 70, 10, juce::Colours::white.withAlpha (0.10f));
     glowText (g, "CREST", x + 6, y0 - 17, Face::CondSemiBold, 11, juce::Colours::white, hex (0x6ee7a0), 'c', 1.8f);
     auto yOf = [&] (float db) { return y0 + h - h * juce::jlimit (0.0f, mx, db) / mx; };
     const std::tuple<float, float, juce::Colour> zonesC[] { { 0.0f, 6.0f, hex (0xff3b30) }, { 6.0f, 9.0f, amber }, { 9.0f, 20.0f, green } };
@@ -625,7 +625,7 @@ void WallCanvas::paintSides (juce::Graphics& g)
 void WallCanvas::paintLoudStrip (juce::Graphics& g)
 {
     const float x = 268, w = W - 268 * 2, y = 622, h = 126;
-    fillR (g, x, y, w, h, 12, hex (0x101014, 0.62f));
+    fillR (g, x, y, w, h, 12, hex (0x101014, 0.36f));   // V4: more glass
     {
         juce::Graphics::ScopedSaveState s (g); juce::Path p; p.addRoundedRectangle (x, y, w, h, 12.0f); g.reduceClipRegion (p);
         g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.05f), 0, y, juce::Colours::white.withAlpha (0.0f), 0, y + 26, false)); g.fillRect (x, y, w, 26.0f);
@@ -1216,7 +1216,7 @@ void WallCanvas::paintLoudView (juce::Graphics& g)
 {
     {
         juce::Graphics::ScopedSaveState s (g); juce::Path p; p.addRoundedRectangle (236, 126, W - 236 - 250, 372, 14.0f); g.reduceClipRegion (p);
-        g.setColour (hex (0x0c0b0f, 0.45f)); g.fillRect (R (0, 0, W, H));
+        g.setColour (hex (0x0c0b0f, 0.26f)); g.fillRect (R (0, 0, W, H));   // V4: more glass
     }
     strokeR (g, 236, 126, W - 236 - 250, 372, 14, juce::Colours::white.withAlpha (0.08f));
     const float X0 = 262, X1 = W - 268, Y0 = 140, Y1 = 470;
