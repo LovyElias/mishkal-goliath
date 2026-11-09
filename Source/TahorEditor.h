@@ -45,7 +45,8 @@ enum class Hit
     UnitPrev, UnitNext, UnitAdd, UnitKnob, UnitSwitch, PageDot, ChainChip, ChainRemove, CharMode, PeakDot, Glass, FullScreen, CharNode, Hardware, TabCycle, Size, CharKnob, Thd, AddEq, PresetStep, BandSolo, AddPick, AddClose,
     History, Browse, BrowseTag, BrowsePick, BrowseClose, AutoGain, CharSide, ResoPlace, TahorMode,
     BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano, BubbleEdit,
-    KnobValue, Chain   // V16: the number under a knob (click: type it) · a block of the chain strip
+    KnobValue, Chain,   // V16
+    Instances   // V19: the instance list button: the number under a knob (click: type it) · a block of the chain strip
 };
 
 class Canvas : public juce::Component, private juce::Timer
@@ -198,6 +199,9 @@ private:
     float drift = 0.0f;
     // V16: frame pacing and the drawing benchmark (only in the stand-alone app with Desktop/Mishkal Projects/Tahor-bench.on)
     double lastPaintMs = 0.0; int skipTick = 0;
+    std::set<int> showInst; std::vector<tahor::ShareHub::Snap> instSnaps; int instTick = 0;   // V19: the other Tahors shown behind ours
+    static juce::Colour instColour (const tahor::ShareHub::Snap&);
+    float breathLvl = 0.0f, charDots = 1.0f;   // V19: the Character line's glow follows the music
     float freeze = 0.0f; int playTicks = 0; bool nearPeak = false; int grabSolo = -1; bool grabbing = false; int lastAdded = -1; double lastAddMs = 0.0;   // V18   // V17: 1 = the analyzer held still (the mouse is over the graph)
     int benchStep = -1; double benchAt = 0.0, benchSum = 0.0, benchMax = 0.0; int benchFrames = 0, benchSlow = 0; bool benchOn = false;
     void benchTick();

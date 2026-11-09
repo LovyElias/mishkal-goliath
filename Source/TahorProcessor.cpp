@@ -91,11 +91,20 @@ TahorProcessor::TahorProcessor()
 {
     for (auto* p : getParameters())
         if (auto* wp = dynamic_cast<juce::AudioProcessorParameterWithID*> (p)) apvts.addParameterListener (wp->paramID, &dirtyListener);
+    shareId = tahor::ShareHub::get().join();   // V19: the instance list
     startTimerHz (20);
+}
+
+// V19: the host tells us the track's name and colour - the other Tahors show them in their instance list
+void TahorProcessor::updateTrackProperties (const TrackProperties& p)
+{
+    tahor::ShareHub::get().setInfo (shareId, p.name, p.colour);
 }
 
 TahorProcessor::~TahorProcessor()
 {
+    stopTimer();
+    tahor::ShareHub::get().leave (shareId);
     for (auto* p : getParameters())
         if (auto* wp = dynamic_cast<juce::AudioProcessorParameterWithID*> (p)) apvts.removeParameterListener (wp->paramID, &dirtyListener);
 }
@@ -585,6 +594,7 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         for (int c = 0; c < nc; ++c) main.copyFrom (c, 0, dry, c, 0, n);
 
     postTap.push (main);
+    shareTap.push (main);   // V19
     meterL.store (main.getMagnitude (0, 0, n));
     meterR.store (main.getMagnitude (nc - 1, 0, n));
     { float r2 = 0; for (int c = 0; c < nc; ++c) r2 = juce::jmax (r2, main.getRMSLevel (c, 0, n)); outRms.store (r2); }   // V10
@@ -797,6 +807,11 @@ void TahorProcessor::switchAB (int slot)
 
 void TahorProcessor::timerCallback()
 {
+    {   // V19: share this track's output spectrum with the other Tahors - only while one of them is showing the others
+        auto& hub = tahor::ShareHub::get();
+        shareTap.pull (shareWin);
+        if (hub.count() > 1 && hub.wanted()) hub.publish (shareId, shareAna.update (shareWin), juce::jmax (8000.0, preparedRate));
+    }
     if (! loadingPreset) recordHistory();
     // V9: AUTO GAIN - how much louder or quieter the EQs make things (weighted to where the ear lives), undone at the output
     {

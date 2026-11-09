@@ -129,6 +129,13 @@ void Canvas::timerCallback()
     }
     analyse (preWin, preDb);
     analyse (postWin, postDb);
+    if (! showInst.empty() && tab == 1)   // V19: the other Tahors' spectrums (they publish only while someone looks)
+    {
+        auto& hub = tahor::ShareHub::get();
+        hub.want (proc.shareId);
+        if (instTick++ % 2 == 0) instSnaps = hub.others (proc.shareId);
+    }
+    else if (! instSnaps.empty()) instSnaps.clear();
 
     // what Reso removes, per display column (held a little so it reads)
     auto& r = proc.activeReso();
@@ -1284,7 +1291,7 @@ void Canvas::flipCharUnit (int from, int to)
     const auto itFrom = std::find (ch.begin(), ch.end(), from);
     if (std::find (ch.begin(), ch.end(), to) != ch.end()) return;   // already in use: leave it as it is
     const double sr = 48000.0;
-    constexpr int NG = 48;
+    static constexpr int NG = 48;   // (static: MSVC needs it to size arrays inside the lambdas)
     float hz[NG]; for (int i = 0; i < NG; ++i) hz[i] = 25.0f * std::pow (18000.0f / 25.0f, (float) i / (float) (NG - 1));
     auto curve = [&] (int u, const float* v, float* out)
     {
@@ -1321,6 +1328,14 @@ void Canvas::flipCharUnit (int from, int to)
         for (int j = 0; j < unitValues; ++j) proc.setParam (uid (to, j), v[j]);
     }
     if (itFrom != ch.end()) { *itFrom = to; proc.setChain (ch); }   // it takes the old one's place in the chain
+}
+
+// V19: an instance's colour - its track's colour if the host gives one, otherwise one of six that don't clash with ours
+juce::Colour Canvas::instColour (const tahor::ShareHub::Snap& s)
+{
+    if (s.colour.getAlpha() > 0) return s.colour.withSaturation (juce::jmin (0.75f, s.colour.getSaturation())).withBrightness (juce::jmax (0.8f, s.colour.getBrightness()));
+    static const juce::uint32 pal[6] { 0xff7fd3ff, 0xffff8fb8, 0xff8ef0a8, 0xffc9a8ff, 0xffffd27a, 0xff7ff0e6 };
+    return juce::Colour (pal[(size_t) ((s.id - 1) % 6)]);
 }
 
 void Canvas::addTahorBand (P at)
@@ -1550,6 +1565,25 @@ void Canvas::click (const Zone& z, const juce::MouseEvent& e)
             break;
         case Hit::DynPower: toggle (bid (z.a, "Dyn")); proc.setParam (bid (z.a, "Spec"), 0.0f); break;
         case Hit::Piano: pianoOn = ! pianoOn; st.setProperty ("uiPiano", pianoOn, nullptr); break;   // V13
+        case Hit::Instances:   // V19: pick which other Tahors to show behind this one
+        {
+            auto others = tahor::ShareHub::get().others (proc.shareId);
+            juce::PopupMenu m;
+            m.addSectionHeader ("Show other Tahors behind this one");
+            if (others.empty()) m.addItem (-1, "No other Tahor in this session yet", false);
+            for (auto& o : others) m.addColouredItem (1000 + o.id, o.name, instColour (o), true, showInst.count (o.id) > 0);
+            if (others.size() > 1) { m.addSeparator(); m.addItem (1, "Show all"); m.addItem (2, "Hide all"); }
+            std::vector<int> ids; for (auto& o : others) ids.push_back (o.id);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (z.r).getSmallestIntegerContainer()),
+                [this, ids] (int r)
+                {
+                    if (r == 1) for (int id : ids) showInst.insert (id);
+                    else if (r == 2) showInst.clear();
+                    else if (r >= 1000) { if (showInst.count (r - 1000)) showInst.erase (r - 1000); else showInst.insert (r - 1000); }
+                    instTick = 0; repaint();
+                });
+            break;
+        }
         case Hit::EqMatch:
             if (eqMatch == 0) { eqMatch = 1; eqCount = 0; accPre.assign (4097, 0.0f); accKey.assign (4097, 0.0f); }
             else { applyEqMatch(); eqMatch = 0; }

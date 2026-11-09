@@ -902,6 +902,67 @@ void Canvas::paintSpectrumInner (juce::Graphics& g, int mode)
         fade (col ("#e8d2b0", 0.14f)); g.strokePath (edge, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         fade (col ("#f4ead8", 0.6f));  g.strokePath (edge, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
+    // V19: the instance list - the other Tahors' spectrums behind ours, each in its colour, and where they clash with
+    // this track (both loud at the same frequencies, within ~4 dB of each other) the spot lights up
+    if (tab == 1 && ! instSnaps.empty())
+    {
+        if (postCol.empty()) columns (postDb, postCol);
+        std::vector<float> oc;
+        std::vector<int> clash (postCol.size(), 0);
+        std::vector<float> clashY (postCol.size(), 670.0f);
+        for (auto& o : instSnaps)
+        {
+            if (! showInst.count (o.id) || o.db.size() != (size_t) tahor::ShareHub::bins) continue;
+            const float obin = (float) o.rate / 8192.0f;
+            oc.assign (postCol.size(), 0.0f);
+            // the same third-octave columns as ours, at that instance's sample rate
+            for (size_t i = 0; i < oc.size(); ++i)
+            {
+                const float hz = xf ((float) i * 3.0f), lo = hz * 0.891f, hi = hz * 1.122f;
+                const int k0 = juce::jlimit (1, 4095, (int) std::floor (lo / obin)), k1 = juce::jlimit (k0 + 1, 4096, (int) std::ceil (hi / obin));
+                double pw = 0.0; int nb = 0;
+                for (int k = k0; k <= k1; ++k) { pw += std::pow (10.0, o.db[(size_t) k] / 10.0); ++nb; }
+                const float m = (float) (10.0 * std::log10 (pw / juce::jmax (1, nb) + 1.0e-14)) + 3.0f * std::log2 (hz / 1000.0f);
+                oc[i] = juce::jlimit (0.0f, 670.0f, (-m - 22.0f) / 72.0f * 670.0f);
+            }
+            const auto c = instColour (o).withMultipliedAlpha (o.live ? 1.0f : 0.4f);
+            auto fillP = shape (oc, true);
+            g.setGradientFill (juce::ColourGradient (c.withAlpha (0.10f), 0, topOf (oc), c.withAlpha (0.0f), 0, 670, false));
+            g.fillPath (fillP);
+            g.setGradientFill (juce::ColourGradient (c.withAlpha (0.75f), 0, 520, c.withAlpha (0.0f), 0, 664, false));
+            g.strokePath (shape (oc, false), juce::PathStrokeType (1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            if (o.live)
+                for (size_t i = 0; i < oc.size() && i < postCol.size(); ++i)
+                    if (oc[i] < 440.0f && postCol[i] < 440.0f && std::abs (oc[i] - postCol[i]) < 30.0f) { clash[i] = 1; clashY[i] = juce::jmin (clashY[i], 0.5f * (oc[i] + postCol[i])); }
+            // its name at its loudest point
+            size_t top = 0; for (size_t i = 1; i < oc.size(); ++i) if (oc[i] < oc[top]) top = i;
+            if (oc[top] < 600.0f)
+            {
+                auto fn = font (Face::Medium, 9.5f);
+                const float tw = textWidth (fn, o.name) + 12;
+                const R nb (juce::jlimit (4.0f, PW - tw - 4, (float) top * 3.0f - tw * 0.5f), juce::jmax (4.0f, oc[top] - 22.0f), tw, 15);
+                fillRound (g, nb, 7.5f, col ("#0e0e10", 0.7f)); strokeRound (g, nb, 7.5f, c.withAlpha (0.6f));
+                text (g, o.name, fn, c, nb, juce::Justification::centred);
+            }
+        }
+        // the clashes: a soft warm glow where the two meet, and a short bright mark on top
+        for (size_t i = 0; i < clash.size();)
+        {
+            if (! clash[i]) { ++i; continue; }
+            size_t j = i; float sy = 0.0f;
+            while (j < clash.size() && clash[j]) { sy += clashY[j]; ++j; }
+            if (j - i >= 3)
+            {
+                const float x0 = (float) i * 3.0f, x1 = (float) (j - 1) * 3.0f, cx = 0.5f * (x0 + x1), cy = sy / (float) (j - i);
+                const float rx = juce::jmax (14.0f, 0.5f * (x1 - x0) + 10.0f), ry = 26.0f;
+                juce::ColourGradient gl (col ("#ff8a50", 0.38f), cx, cy, col ("#ff8a50", 0.0f), cx + rx, cy, true);
+                g.setGradientFill (gl);
+                g.fillEllipse (cx - rx, cy - ry, rx * 2.0f, ry * 2.0f);
+                g.setColour (col ("#ffc08a", 0.85f)); g.fillRoundedRectangle (x0, cy - 1.0f, juce::jmax (4.0f, x1 - x0), 2.0f, 1.0f);
+            }
+            i = j;
+        }
+    }
 }
 
 void Canvas::paintResoLayer (juce::Graphics& g)
@@ -1188,7 +1249,20 @@ void Canvas::paintCurves (juce::Graphics& g)
             neon (pathOf (perR[i]), col (units()[(size_t) u].col).interpolatedWith (col ("#ff8fb8"), 0.4f), hoverUnit == u ? 2.2f : 1.6f, 0.45f * (on ? 1.0f : 0.4f));
         }
     if (std::find (ch.begin(), ch.end(), preview) == ch.end()) neon (pathOf (curveOf (preview)), col (units()[(size_t) preview].col), 1.5f, 0.45f);
-    if (! anySplit) neon (pathOf (sum), col ("#fff4dc"), 3.5f, on ? 1.0f : 0.4f);
+    if (! anySplit)
+    {   // V19: the combined line breathes - a slow four-second pulse, brighter on the loud parts of the music, with a faint
+        // warm gold halo at its brightest
+        const double tms = juce::Time::getMillisecondCounterHiRes();
+        const float b = 0.5f + 0.5f * (float) std::sin (tms * juce::MathConstants<double>::twoPi / 4000.0);
+        const float lvl = juce::jlimit (0.0f, 1.0f, (juce::jmax (meterDb[2], meterDb[3]) + 42.0f) / 36.0f);
+        breathLvl += (lvl - breathLvl) * (lvl > breathLvl ? 0.25f : 0.06f);
+        const float k = (b * (1.0f - breathLvl) + breathLvl * (0.6f + 0.4f * b)) * (on ? 1.0f : 0.4f);
+        const auto path = pathOf (sum);
+        g.setColour (col ("#ffcf7a", 0.16f * k * k)); g.strokePath (path, juce::PathStrokeType (18.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (col ("#ffe2a8", 0.10f + 0.16f * k)); g.strokePath (path, juce::PathStrokeType (9.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (col ("#fff4dc", (0.18f + 0.14f * k))); g.strokePath (path, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (col ("#fff8ec", (on ? 0.72f : 0.35f) + 0.28f * k)); g.strokePath (path, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
     else
     {   // V9: left and right combined, apart
         neon (pathOf (sum), col ("#cfeeff"), 3.0f, on ? 1.0f : 0.4f);
@@ -1198,31 +1272,7 @@ void Canvas::paintCurves (juce::Graphics& g)
         fillRound (g, R (PW - 46, yr + 4, 16, 14), 4, col ("#0e0e10", 0.85f)); text (g, "R", font (Face::SemiBold, 10), col ("#ff8fb8"), R (PW - 46, yr + 4, 16, 14), juce::Justification::centred);
     }
 
-    // peak dots: each unit's biggest boost (the number only on hover)
-    for (size_t i = 0; i < ch.size(); ++i)
-    {
-        const int u = ch[i];
-        float best = 0.0f; int bi = 250;
-        for (int k = 0; k <= NP; ++k) if (per[i][(size_t) k] > best) { best = per[i][(size_t) k]; bi = k; }
-        if (best <= 0.05f) continue;
-        const float x = juce::jmin (PW - 40.0f, (float) bi), y = yOf (best);
-        const bool hv = hoverUnit == u;
-        const auto c = col (units()[(size_t) u].col);
-        const float s = hv ? 10.0f : 8.0f;
-        g.setColour (c.withAlpha (0.35f)); g.fillEllipse (x - s * 0.5f - (hv ? 6 : 3), y - s * 0.5f - (hv ? 6 : 3), s + (hv ? 12 : 6), s + (hv ? 12 : 6));
-        g.setColour (juce::Colours::black.withAlpha (0.5f)); g.fillEllipse (x - s * 0.5f - 2, y - s * 0.5f - 2, s + 4, s + 4);
-        g.setColour (c.withAlpha (hv ? 1.0f : 0.75f)); g.fillEllipse (x - s * 0.5f, y - s * 0.5f, s, s);
-        zone (R (x - 8, y - 8, 16, 16).translated (display.getX(), display.getY()), Hit::PeakDot, u);
-        if (hv)
-        {
-            const auto t = "+" + juce::String (best, 1) + " dB";
-            auto f = font (Face::Medium, 11);
-            const float w = textWidth (f, t) + 14;
-            R b (x + 10, y - 26, w, 18);
-            fillRound (g, b, 9, col ("#0e0e10", 0.85f)); strokeRound (g, b, 9, c.withAlpha ((float) 0x66 / 255.0f));
-            text (g, t, f, c, b, juce::Justification::centred);
-        }
-    }
+    // V19: (no glowing peak dots on the line any more - the combined line itself breathes instead)
 }
 
 void Canvas::paintLegend (juce::Graphics& g)
@@ -1263,6 +1313,25 @@ void Canvas::paintLegend (juce::Graphics& g)
         text (g, t, fm, eqMatch == 1 ? col ("#7fd3ff") : col ("#b9b3a7"), bm.withTrimmedLeft (eqMatch == 1 ? 8.0f : 0.0f), juce::Justification::centred);
         zone (bm.translated (display.getX(), display.getY() - 22.0f), Hit::EqMatch);
         x = bm.getRight() + 6;
+        // V19: INSTANCES - the other Tahors in the session, shown behind this one (each in its own colour)
+        {
+            const int nOthers = tahor::ShareHub::get().count() - 1;
+            const int nShown = (int) showInst.size();
+            const juce::String ti = nShown > 0 ? "INSTANCES  " + juce::String (nShown) : (nOthers > 0 ? "INSTANCES  " + juce::String (nOthers) : juce::String ("INSTANCES"));
+            const float wi = textWidth (fm, ti) + 22 + (nShown > 0 ? 10.0f : 0.0f);
+            const R bi (x, 4, wi, 18);
+            const bool act = nShown > 0;
+            fillRound (g, bi, 9, act ? col ("#2a2318", 0.95f) : col ("#17181b", 0.9f));
+            strokeRound (g, bi, 9, act ? amber.withAlpha (0.8f) : juce::Colours::white.withAlpha (0.14f));
+            if (act)
+            {
+                int k = 0;
+                for (auto& o : instSnaps) if (showInst.count (o.id) && k < 3) { g.setColour (instColour (o)); g.fillEllipse (bi.getX() + 7 + (float) k * 3.0f, bi.getCentreY() - 2.5f, 5, 5); ++k; }
+            }
+            text (g, ti, fm, act ? amber : (nOthers > 0 ? col ("#b9b3a7") : col ("#6b6864")), bi.withTrimmedLeft (act ? 10.0f : 0.0f), juce::Justification::centred);
+            zone (bi.translated (display.getX(), display.getY() - 22.0f), Hit::Instances);
+            x = bi.getRight() + 6;
+        }
     }
     // V5: Clean / Subtle / Warm in the top row (Character only), small to match
     if (tab == 2)
@@ -2509,6 +2578,11 @@ void Canvas::paintCharTab (juce::Graphics& g)
         auto yOf = [rng] (float db) { return 335.0f - juce::jlimit (-rng * 0.95f, rng * 0.95f, db) / rng * 335.0f; };
         const bool split = proc.unitSplit (preview);
         const auto& nodes = unitNodes (preview);
+        // V19: the band dots only show while the mouse is on the graph - otherwise the line breathes on its own, clean
+        const bool wantDots = (display.contains (mouse) && mouse.y < display.getY() + 560.0f) || dragging || typeIn != nullptr;
+        charDots += ((wantDots ? 1.0f : 0.0f) - charDots) * (wantDots ? 0.35f : 0.08f);
+        const bool dotsLayer = charDots < 0.99f;
+        if (dotsLayer) g.beginTransparencyLayer (charDots);
         for (int pass = 0; pass < (split ? 2 : 1); ++pass)
         {
             const int side = split ? (pass == 0 ? 1 - charSide : charSide) : 0;   // the side on show drawn last (on top)
@@ -2586,6 +2660,7 @@ void Canvas::paintCharTab (juce::Graphics& g)
                 zone (R (x - 12, y - 12, 24, 24).translated (o.x, o.y), Hit::CharNode, i, side);
             }
         }
+        if (dotsLayer) g.endTransparencyLayer();
     }
 
     if (charBubble.kind != Hit::None) zones.push_back (charBubble);

@@ -59,6 +59,8 @@ namespace tahor
     using AnalyzerTap = vox::AnalyzerTap;
 }
 
+#include "TahorShare.h"
+
 class TahorProcessor : public juce::AudioProcessor, private juce::Timer
 {
 public:
@@ -123,7 +125,9 @@ public:
     double getRate() const { return preparedRate; }
 
     // for the screen
-    tahor::AnalyzerTap preTap, postTap, keyTap;   // V12: keyTap = the sidechain (EQ Match's reference)
+    tahor::AnalyzerTap preTap, postTap, keyTap, shareTap;   // V19: shareTap = the output, for the other Tahors (instance list)
+    int shareId = 0;   // V19: this instance in the hub
+    void updateTrackProperties (const TrackProperties& p) override;   // V12: keyTap = the sidechain (EQ Match's reference)
     std::atomic<float> meterL { 0.0f }, meterR { 0.0f }, inMeterL { 0.0f }, inMeterR { 0.0f }, inRms { 0.0f }, outRms { 0.0f };   // V10: + RMS
     std::array<std::atomic<float>, vox::numCleanBands> dynDb {};
     tahor::ResoPro& activeReso() { const int li = param ("rsLowLat") > 0.5f ? 1 : 0; return resoIsSplit.load() ? resoSplit[(size_t) li][0] : (li ? resoLow : reso); }
@@ -141,6 +145,7 @@ public:
     bool hasSidechain() const;
 
 private:
+    tahor::ShareAnalyzer shareAna; std::vector<float> shareWin = std::vector<float> (8192, 0.0f);   // V19
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void timerCallback() override;
     int latencyNow() const;
