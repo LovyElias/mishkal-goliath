@@ -248,6 +248,12 @@ float dbRange (TahorProcessor& p) { static const float r[4] { 3.0f, 6.0f, 12.0f,
 //==============================================================================
 void Canvas::paint (juce::Graphics& g)
 {
+    struct PaintTimer { Canvas& c; double t0; ~PaintTimer()   // V16: how long each frame takes (pacing + the benchmark)
+    {
+        const double d = juce::Time::getMillisecondCounterHiRes() - t0;
+        c.lastPaintMs = 0.7 * c.lastPaintMs + 0.3 * d;
+        if (c.benchOn) { c.benchSum += d; c.benchMax = juce::jmax (c.benchMax, d); ++c.benchFrames; if (d > 40.0) ++c.benchSlow; }
+    } } paintTimer { *this, juce::Time::getMillisecondCounterHiRes() };
     zones.clear();
     glassRects.clear();
     revealRects.clear();
@@ -272,6 +278,7 @@ void Canvas::paint (juce::Graphics& g)
     if (tab != 0) resoSolo = -1;
     proc.charSoloHz.store (soloHzUi); proc.charSoloQ.store (soloQUi);
 
+    paintChainStrip (g);   // V16: what runs, in order, in the middle of the bottom bar
     // the resize corner: diagonal stripes
     {
         const R c (W - 17, H - 17, 14, 14);
@@ -732,14 +739,15 @@ void Canvas::paintBackground (juce::Graphics& g)
 {
     const R d (-display.getX(), -70.0f, W, 800.0f);
     const float k = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
-    const int dq = (int) (drift * 180.0f);
+    const int dq = 0;   // V16: the glows stay put - rebuilding the whole background as they drifted made the big sizes stutter
     const int key = tab * 1000 + (int) proc.param ("range") * 10;
     if (! bgCache.isValid() || std::abs (bgScale - k) > 0.001f || bgKey != key || bgDrift != dq)
     {
         const int iw = juce::roundToInt (W * k), ih = juce::roundToInt (800.0f * k);
-        if (! bgCache.isValid() || bgCache.getWidth() != iw || bgCache.getHeight() != ih) bgCache = juce::Image (juce::Image::ARGB, iw, ih, true);
-        else bgCache.clear (bgCache.getBounds());
+        // V16: an opaque picture (nothing see-through to blend) - copied to the screen many times faster (as Pressure V13)
+        if (! bgCache.isValid() || bgCache.getWidth() != iw || bgCache.getHeight() != ih) bgCache = juce::Image (juce::Image::RGB, iw, ih, true);
         juce::Graphics ig (bgCache);
+        ig.fillAll (col ("#0d0d10"));
         ig.addTransform (juce::AffineTransform::translation (-d.getX(), -d.getY()).scaled (k));
         const float keep = drift; drift = (float) dq / 180.0f;
         paintBackgroundInner (ig);
@@ -2531,11 +2539,11 @@ void Canvas::paintCharTab (juce::Graphics& g)
     }
 
     if (charBubble.kind != Hit::None) zones.push_back (charBubble);
-    const float sc = 0.4f;                      // V4: the hardware at 40% of its size, solid, shown only while a band is touched
+    const float sc = 0.52f;                     // V16: 30% bigger (was 40% of its size)   // V4: solid, always shown
     const float plateH = unitPlateH (preview);
     const float bw = 905.0f * sc, bh = (plateH + 9.0f) * sc;   // V10: two-unit gear is taller (the extra unit on top)
     const float kp = 0.84f;                     // V6: the node panel, 20% bigger, at the bottom
-    const float hwTop = 662.0f - 76.0f * kp - 8.0f - bh;   // the hardware always on show, just above the panels' row
+    const float hwTop = 662.0f - 76.0f * kp - 8.0f - bh + 40.0f;   // V16: lower on the screen   // the hardware always on show, just above the panels' row
     auto zChar = zones.size();
     // the hardware: < faceplate >, 60% of its size, very see-through until the mouse is over it
     {
@@ -2543,7 +2551,7 @@ void Canvas::paintCharTab (juce::Graphics& g)
         const R area (left, hwTop, bw, bh);
         const R areaS = area.translated (o.x, o.y).expanded (4);
         const bool hv = areaS.contains (mouse) || (dragging && areaS.contains (downAt));
-        g.beginTransparencyLayer (1.0f);   // V5: always on screen, solid
+        // (V16: no see-through layer at full strength around it - it cost a whole extra picture every frame)
         g.saveState();
         const auto tr = juce::AffineTransform::scale (sc).translated (left, hwTop);
         g.addTransform (tr);
@@ -2568,7 +2576,6 @@ void Canvas::paintCharTab (juce::Graphics& g)
             text (g, juce::String (unitHint (preview)).toUpperCase() + (inChain ? juce::String() : DOT + "DOUBLE-CLICK TO ADD"), fh, col ("#e6dfd2", 0.92f), R (PW * 0.5f - 260, hwTop - 27, 520, 14), juce::Justification::centred);   // V11: higher, quieter
         }
         for (auto i = n0; i < zones.size(); ++i) zones[i].r = zones[i].r.transformedBy (tr).translated (o.x, o.y);
-        g.endTransparencyLayer();
         // the hardware's own zone sits under its controls (so hovering anywhere on it lights it up)
         zones.insert (zones.begin() + (long) n0, Zone { areaS, Hit::Hardware });
     }
@@ -2811,3 +2818,71 @@ void Canvas::paintBottomBar (juce::Graphics& g)
 }
 
 float Canvas::activeResoReduction() { return proc.activeReso().reductionNow.load(); }
+
+// V16: the chain - RESO, TAHOR and CHARACTER as three small blocks in the order the sound goes through them, in the
+// middle of the bottom bar on every tab. A block is lit (in its tab's colour) while that part is on and says what's in
+// it. Click a block: its tab. Drag a block left or right: the sound follows the new order.
+void Canvas::paintChainStrip (juce::Graphics& g)
+{
+    const float cy = 782.0f, bh = 18.0f, arrowW = 12.0f;
+    const float room = archBot[1] - archBot[0];
+    const float bw = juce::jlimit (70.0f, 112.0f, (room - 2.0f * arrowW) / 3.0f);
+    const float total = 3.0f * bw + 2.0f * arrowW;
+    const float x0 = (archBot[0] + archBot[1]) * 0.5f - total * 0.5f;
+    const int ord = juce::jlimit (0, 5, (int) proc.param ("order"));
+    for (int i = 0; i < 3; ++i) chainSlot[i] = x0 + (float) i * (bw + arrowW) + bw * 0.5f;
+    auto info = [&] (int sec, juce::String& name, juce::String& what, juce::Colour& c, bool& on)
+    {
+        if (sec == 0)
+        {
+            name = "RESO"; c = col ("#e0525a"); on = proc.param ("resoOn") > 0.5f;
+            const float r = activeResoReduction();
+            what = on && r > 0.1f ? MINUS + juce::String (r, 1) : juce::String();
+        }
+        else if (sec == 1)
+        {
+            name = "TAHOR"; c = col ("#a99bff"); on = proc.param ("tahorOn") > 0.5f;
+            int nb = 0; for (int b = 0; b < numBands; ++b) if (proc.param (bid (b, "On")) > 0.5f) ++nb;
+            what = nb == 0 ? juce::String ("flat") : juce::String (nb) + (nb == 1 ? " band" : " bands");
+        }
+        else
+        {
+            name = "CHARACTER"; c = col ("#e3a04a"); on = proc.param ("charOn") > 0.5f;
+            const auto ch = proc.chain();
+            what = ch.empty() ? juce::String ("empty") : juce::String (units()[(size_t) ch[0]].name) + (ch.size() > 1 ? " +" + juce::String ((int) ch.size() - 1) : juce::String());
+            if (ch.empty()) on = false;
+        }
+    };
+    auto block = [&] (int sec, float x, bool lifted)
+    {
+        juce::String name, what; juce::Colour c; bool on = false;
+        info (sec, name, what, c, on);
+        const R b (x, cy - bh * 0.5f, bw, bh);
+        const bool hv = b.contains (mouse) || lifted;
+        fillRound (g, b, 5, on ? c.withAlpha (lifted ? 0.26f : 0.12f) : col ("#17181b", 0.85f));
+        strokeRound (g, b, 5, on ? c.withAlpha (hv ? 0.9f : 0.5f) : juce::Colours::white.withAlpha (hv ? 0.25f : 0.1f));
+        if (tab == sec) { g.setColour ((on ? c : grey).withAlpha (0.9f)); g.fillRoundedRectangle (b.getX() + 8, b.getBottom() - 2.0f, b.getWidth() - 16, 1.5f, 0.75f); }
+        const P d (b.getX() + 8, b.getCentreY());
+        if (on) { g.setColour (c.withAlpha (0.3f)); g.fillEllipse (d.x - 4, d.y - 4, 8, 8); }
+        g.setColour (on ? c.interpolatedWith (juce::Colours::white, 0.35f) : juce::Colours::white.withAlpha (0.18f)); g.fillEllipse (d.x - 2, d.y - 2, 4, 4);
+        const auto fN = font (Face::CondMedium, 8.0f, 1.0f), fW = font (Face::Regular, 8.5f);
+        const float nw = textWidth (fN, name);
+        text (g, name, fN, on ? ink : grey, R (b.getX() + 14, cy - 6, nw + 2, 12));
+        text (g, what, fW, on ? col ("#b9b3a7") : col ("#5b5955"), R (b.getX() + 14 + nw + 4, cy - 6, b.getRight() - 4 - (b.getX() + 14 + nw + 4), 12));
+        if (! lifted) zone (b, Hit::Chain, sec);
+    };
+    const int (&o)[3] = tahor::chainOrders[ord];
+    for (int i = 0; i < 3; ++i)
+    {
+        if (i < 2)
+        {
+            const float ax = x0 + (float) i * (bw + arrowW) + bw + arrowW * 0.5f;
+            juce::Path a; a.startNewSubPath (ax - 3.5f, cy); a.lineTo (ax + 2.5f, cy);
+            a.startNewSubPath (ax - 0.5f, cy - 2.5f); a.lineTo (ax + 2.5f, cy); a.lineTo (ax - 0.5f, cy + 2.5f);
+            g.setColour (juce::Colours::white.withAlpha (0.3f)); g.strokePath (a, juce::PathStrokeType (1.0f));
+        }
+        if (o[i] == tchainDrag) { strokeRound (g, R (x0 + (float) i * (bw + arrowW), cy - bh * 0.5f, bw, bh), 5, juce::Colours::white.withAlpha (0.12f)); continue; }
+        block (o[i], x0 + (float) i * (bw + arrowW), false);
+    }
+    if (tchainDrag >= 0) block (tchainDrag, juce::jlimit (x0 - 20, x0 + total - bw + 20, tchainDragX - bw * 0.5f), true);
+}

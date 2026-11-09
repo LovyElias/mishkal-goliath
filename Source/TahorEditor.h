@@ -42,7 +42,8 @@ enum class Hit
     TahorNode, TahorType, TahorPlace, TahorKnob, TahorChip, TahorBand, AddBand, TahorBg,
     UnitPrev, UnitNext, UnitAdd, UnitKnob, UnitSwitch, PageDot, ChainChip, ChainRemove, CharMode, PeakDot, Glass, FullScreen, CharNode, Hardware, TabCycle, Size, CharKnob, Thd, AddEq, PresetStep, BandSolo, AddPick, AddClose,
     History, Browse, BrowseTag, BrowsePick, BrowseClose, AutoGain, CharSide, ResoPlace, TahorMode,
-    BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano, BubbleEdit
+    BandPower, DynPower, DynRange, SpecPeak, EqMatch, Piano, BubbleEdit,
+    KnobValue, Chain   // V16: the number under a knob (click: type it) · a block of the chain strip
 };
 
 class Canvas : public juce::Component, private juce::Timer
@@ -110,7 +111,7 @@ private:
     float anaAlpha = 0.0f, hwArrowA = 0.0f;
     float pkHold[2] { -90.0f, -90.0f }, avgDb[2] { -90.0f, -90.0f }; double pkTime[2] { 0, 0 };
     // V12
-    std::array<bool, 8> dynView {};                 // a band panel showing its dynamic controls (Dynamic stays on either way)
+    std::array<bool, numBands> dynView {};                 // a band panel showing its dynamic controls (Dynamic stays on either way)
     std::set<int> selSet;                           // several Tahor bands selected together
     bool lasso = false; ui::P lassoA, lassoB;
     std::vector<std::pair<float, float>> groupStart; // each selected band's frequency / gain when a group drag began
@@ -138,16 +139,30 @@ private:
     float resizeFrom = 1.0f;
 
     // hit zones, rebuilt on every paint
-    struct Zone { ui::R r; Hit kind; int a = 0, b = 0; };
+    struct Zone { ui::R r; Hit kind; int a = 0, b = 0; Hit k0 = Hit::None; };   // k0: a KnobValue's knob
     std::vector<Zone> rangeZones;
     // V14: type a value straight into a bubble (frequency, gain, Q)
     std::unique_ptr<juce::TextEditor> typeIn;
     juce::String typeInPid; int typeInKind = 0;
     void openTypeIn (const Zone& z);
     void closeTypeIn (bool commit);
+    // V16: Pro-Q 4 style on every knob - type any value, and a right-click menu
+    void openParamTypeIn (const juce::String& pid, ui::R near);
+    void showParamMenu (const juce::String& pid, ui::R near);
+    juce::String pidOf (const Zone& z) const { if (z.kind == Hit::KnobValue) { Zone k = z; k.kind = z.k0; return knobPid (k, false); } return knobPid (z, false); }
     void paintCursorReadout (juce::Graphics&);   // V14: the dynamic range's grab spots (added after the background)
     std::vector<Zone> zones;
-    void zone (ui::R r, Hit k, int a = 0, int b = 0) { zones.push_back ({ r, k, a, b }); }
+    static bool isKnobHit (Hit k) { return k == Hit::ResoKnob || k == Hit::TiltKnob || k == Hit::LinkKnob || k == Hit::ResoNodeKnob || k == Hit::TahorKnob || k == Hit::CharKnob; }
+    void zone (ui::R r, Hit k, int a = 0, int b = 0)
+    {
+        zones.push_back ({ r, k, a, b });
+        // V16: a knob's number sits just under it - click it to type a value (like Pro-Q 4)
+        if (isKnobHit (k) && std::abs (r.getWidth() - r.getHeight()) < 6.0f)
+        {
+            const bool beside = k == Hit::ResoKnob || k == Hit::TiltKnob || k == Hit::LinkKnob;   // Reso's side panels: name and number to the right
+            zones.push_back ({ beside ? ui::R (r.getRight(), r.getY(), 96, r.getHeight()) : ui::R (r.getX() - 12, r.getBottom(), r.getWidth() + 24, 22), Hit::KnobValue, a, b, k });
+        }
+    }
     const Zone* zoneAt (ui::P p) const;
     void resetAt (const Zone&);   // V12: what alt-click (and double-click, outside Character) does
     std::vector<ui::R> glassRects;   // translucent panels: solid while the mouse is over them
@@ -179,6 +194,14 @@ private:
     float pulse = 0.0f;             // the Tron outline's breathing (0..1)
     float meterDb[4] { -90.0f, -90.0f, -90.0f, -90.0f };   // in L / R, out L / R
     float drift = 0.0f;
+    // V16: frame pacing and the drawing benchmark (only in the stand-alone app with Desktop/Mishkal Projects/Tahor-bench.on)
+    double lastPaintMs = 0.0; int skipTick = 0;
+    int benchStep = -1; double benchAt = 0.0, benchSum = 0.0, benchMax = 0.0; int benchFrames = 0, benchSlow = 0; bool benchOn = false;
+    void benchTick();
+    // V16: the chain strip (RESO / TAHOR / CHARACTER order)
+    void paintChainStrip (juce::Graphics&);
+    void chainMouseUp (const juce::MouseEvent&);
+    int tchainDrag = -1; float tchainDragX = 0.0f; float chainSlot[3] {};
     double lastWant = 0.0;
     float reveal = 0.0f;                 // V3: the tab's controls fade in when the mouse touches a dot or their home
     std::vector<ui::R> revealRects;                                     // V2: the background's slow movement

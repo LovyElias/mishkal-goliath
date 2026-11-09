@@ -70,7 +70,9 @@ Canvas::Canvas (TahorProcessor& p) : proc (p)
     hann.resize (8192);
     for (int i = 0; i < 8192; ++i) hann[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / 8192.0f);
     resoShown.assign ((size_t) PW + 1, 0.0f);
-    startTimerHz (60);   // V6: smoother movement; V14: 60 a second now the drawing is lighter
+    if (juce::JUCEApplicationBase::isStandaloneApp()   // V16: (the stand-alone app only - never inside a host)
+        && juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile ("Mishkal Projects/Tahor-bench.on").existsAsFile()) benchStep = 0;
+    startTimerHz (60);   // V6: smoother movement; V14: 60 a second (V16: frames are paced if drawing ever runs long)
 }
 
 Canvas::~Canvas()
@@ -176,7 +178,46 @@ void Canvas::timerCallback()
                       : (now - lastWant < 4000.0 ? reveal : juce::jmax (0.0f, reveal - 0.2f));
     }
     pulse = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * (juce::Time::getMillisecondCounterHiRes() * 0.001 / 1.6)));
+    if (benchStep >= 0) benchTick();
+    // V16: if a frame takes longer than the time between frames, skip a tick so the host always has room to breathe
+    if (lastPaintMs > 15.0 && ! dragging && (++skipTick % 2) == 1) return;
     repaint();
+}
+
+// V16: the drawing benchmark - each tab at Medium, Large, Extra Large, Extra Large with the tabs off, and 1.6x, four
+// seconds each; the times go to Tahor-bench.log next to the switch file, then the switch is renamed so it runs once
+static juce::String benchVersion()
+{
+   #ifdef JucePlugin_VersionString
+    return JucePlugin_VersionString;
+   #else
+    return "dev";
+   #endif
+}
+void Canvas::benchTick()
+{
+    static const float sc[5] { 1.0f, 1.2f, 1.4f, 1.4f, 1.6f };
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const auto dir = juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile ("Mishkal Projects");
+    auto start = [&]
+    {
+        tab = benchStep % 3;
+        const float onOff = benchStep / 3 == 3 ? 0.0f : 1.0f;
+        proc.setParam ("resoOn", onOff); proc.setParam ("tahorOn", onOff); proc.setParam ("charOn", onOff);
+        if (onSize) onSize (sc[benchStep / 3]);
+        benchAt = now; benchSum = benchMax = 0.0; benchFrames = benchSlow = 0; benchOn = false;
+    };
+    if (benchAt == 0.0) { dir.getChildFile ("Tahor-bench.log").appendText ("\n=== Tahor " + benchVersion() + " ===\n"); start(); return; }
+    if (now - benchAt > 1000.0) benchOn = true;
+    if (now - benchAt > 5000.0)
+    {
+        const juce::String line = "tab " + juce::String (benchStep % 3) + (benchStep / 3 == 3 ? " (off)" : "") + "  size " + juce::String (sc[benchStep / 3], 1)
+            + "  frames/s " + juce::String (benchFrames / 4.0, 1) + "  slow(>40ms) " + juce::String (benchSlow)
+            + "  paint avg " + juce::String (benchFrames > 0 ? benchSum / benchFrames : 0.0, 1) + " ms  max " + juce::String (benchMax, 1);
+        dir.getChildFile ("Tahor-bench.log").appendText (line + "\n");
+        if (++benchStep >= 15) { benchStep = -1; benchOn = false; dir.getChildFile ("Tahor-bench.on").moveFileTo (dir.getChildFile ("Tahor-bench.done")); return; }
+        start();
+    }
 }
 
 const Canvas::Zone* Canvas::zoneAt (P p) const
@@ -244,10 +285,17 @@ void Canvas::mouseDown (const juce::MouseEvent& e)
 {
     grabKeyboardFocus();   // V11: so the shortcuts work
     if (e.mods.isAltDown())   // V11: alt-click resets
+    {
         if (auto* z0 = zoneAt (e.position))
             if (z0->kind == Hit::ResoKnob || z0->kind == Hit::TiltKnob || z0->kind == Hit::LinkKnob || z0->kind == Hit::ResoNodeKnob || z0->kind == Hit::TahorKnob
                 || z0->kind == Hit::InBox || z0->kind == Hit::OutBox || z0->kind == Hit::UnitKnob || z0->kind == Hit::CharKnob || z0->kind == Hit::CharNode)
             { resetAt (*z0); repaint(); return; }
+            else if (z0->kind == Hit::KnobValue) { Zone k = *z0; k.kind = z0->k0; resetAt (k); repaint(); return; }
+    }
+    if (e.mods.isPopupMenu())   // V16: right-click a knob or its number - type, default, or pick (like Pro-Q 4)
+        if (auto* z0 = zoneAt (e.position))
+            if (isKnobHit (z0->kind) || z0->kind == Hit::KnobValue || z0->kind == Hit::UnitKnob || z0->kind == Hit::InBox || z0->kind == Hit::OutBox)
+            { if (typeIn != nullptr) closeTypeIn (true); showParamMenu (pidOf (*z0), z0->r); return; }
     if (e.mods.isPopupMenu())   // V12: right-click (or two-finger click) on a dot - its menu
         if (auto* z0 = zoneAt (e.position))
             if (z0->kind == Hit::TahorNode || z0->kind == Hit::ResoNode || z0->kind == Hit::CharNode)
@@ -260,7 +308,9 @@ void Canvas::mouseDown (const juce::MouseEvent& e)
             }
     if (typeIn != nullptr) closeTypeIn (true);
     if (auto* zt = zoneAt (e.position))
-        if (zt->kind == Hit::BubbleEdit) { openTypeIn (*zt); return; }   // V14: click a value in the bubble to type it
+        if (zt->kind == Hit::BubbleEdit) { openTypeIn (*zt); return; }
+    if (auto* zc = zoneAt (e.position); zc != nullptr && zc->kind == Hit::Chain)   // V16: a block of the chain strip
+    { down = *zc; downAt = e.position; mouse = e.position; dragging = true; tchainDrag = -1; dragPid = {}; dragPid2 = {}; return; }   // V14: click a value in the bubble to type it
     downAt = e.position; mouse = e.position;
     dragging = true;
     dragPid = {}; dragPid2 = {};
@@ -362,6 +412,13 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
 {
     mouse = e.position;
     const auto d = e.position - downAt;
+    if (down.kind == Hit::Chain)
+    {
+        if (tchainDrag < 0 && std::abs (d.x) > 4.0f) tchainDrag = down.a;
+        if (tchainDrag >= 0) tchainDragX = e.position.x;
+        repaint();
+        return;
+    }
     switch (down.kind)
     {
         case Hit::ResoKnob: case Hit::TiltKnob: case Hit::LinkKnob: case Hit::ResoNodeKnob: case Hit::TahorKnob:
@@ -369,7 +426,8 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
             if (dragPid.isNotEmpty())
                 if (auto* p = proc.apvts.getParameter (dragPid))
                 {
-                    const float sens = e.mods.isShiftDown() && down.kind != Hit::TahorKnob ? 1000.0f : 200.0f;
+                    const bool fine = e.mods.isCommandDown() || (e.mods.isShiftDown() && down.kind != Hit::TahorKnob);   // V16: Command = fine (Pro-Q 4)
+                    const float sens = fine ? 1000.0f : 200.0f;
                     p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart - d.y / sens));
                 }
             break;
@@ -464,8 +522,32 @@ void Canvas::mouseDrag (const juce::MouseEvent& e)
     repaint();
 }
 
+void Canvas::chainMouseUp (const juce::MouseEvent&)
+{
+    dragging = false;
+    if (tchainDrag >= 0)   // dropped: the parts in the order they now sit, left to right
+    {
+        const int (&o)[3] = tahor::chainOrders[juce::jlimit (0, 5, (int) proc.param ("order"))];
+        std::vector<std::pair<float, int>> at;
+        for (int i = 0; i < 3; ++i) at.push_back ({ o[i] == tchainDrag ? tchainDragX : chainSlot[i], o[i] });
+        std::stable_sort (at.begin(), at.end(), [] (auto& a, auto& b) { return a.first < b.first; });
+        proc.setParam ("order", (float) tahor::chainOrderIndex (at[0].second, at[1].second, at[2].second));
+    }
+    else tab = juce::jlimit (0, 2, down.a);   // a click: its tab
+    tchainDrag = -1; down = {};
+    proc.apvts.state.setProperty ("uiTab", tab, nullptr);
+    repaint();
+}
+
 void Canvas::mouseUp (const juce::MouseEvent& e)
 {
+    if (down.kind == Hit::KnobValue && e.position.getDistanceFrom (downAt) <= 3.0f && e.getNumberOfClicks() == 1)   // V16: a click on a knob's number
+    {
+        dragging = false; const auto z = down; down = {};
+        openParamTypeIn (pidOf (z), z.r);
+        return;
+    }
+    if (down.kind == Hit::Chain) { chainMouseUp (e); return; }
     dragging = false;
     if (dragPid.isNotEmpty()) proc.endGesture (dragPid);
     if (dragPid2.isNotEmpty()) proc.endGesture (dragPid2);
@@ -506,11 +588,13 @@ void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
     auto* z = zoneAt (e.position);
     if (z == nullptr) return;
     auto reset = [this] (const juce::String& pid) { if (auto* p = proc.apvts.getParameter (pid)) { p->beginChangeGesture(); p->setValueNotifyingHost (p->getDefaultValue()); p->endChangeGesture(); } };
+    juce::ignoreUnused (reset);
     switch (z->kind)
     {
         case Hit::ResoKnob: case Hit::TiltKnob: case Hit::LinkKnob: case Hit::ResoNodeKnob: case Hit::TahorKnob:
-        case Hit::InBox: case Hit::OutBox: case Hit::UnitKnob: case Hit::CharKnob:
-            reset (knobPid (*z, false)); break;
+        case Hit::InBox: case Hit::OutBox: case Hit::UnitKnob: case Hit::CharKnob: case Hit::KnobValue:
+            if (typeIn == nullptr) openParamTypeIn (pidOf (*z), z->r);   // V16: double-click types a value (Option-click resets), like Pro-Q 4
+            break;
         case Hit::Thd: proc.setParam ("charThd", 50.0f); break;
         case Hit::ResoNode: proc.setParam (nid (z->a, "On"), 0.0f); break;
         case Hit::TahorNode: proc.setParam (bid (z->a, "On"), 0.0f); break;
@@ -605,11 +689,119 @@ void Canvas::openTypeIn (const Zone& z)
     t.onFocusLost = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
 }
 
+// V16: type any knob's value (double-click it, click its number, or "Type a value..." on its right-click menu)
+void Canvas::openParamTypeIn (const juce::String& pid, R near)
+{
+    auto* p = proc.apvts.getParameter (pid);
+    if (p == nullptr || dynamic_cast<juce::AudioParameterBool*> (p) != nullptr) return;
+    if (typeIn != nullptr) closeTypeIn (true);
+    typeInKind = 9;
+    typeInPid = pid;
+    typeIn = std::make_unique<juce::TextEditor>();
+    auto& t = *typeIn;
+    t.setFont (ui::font (ui::Face::Regular, 12.0f));
+    t.setJustification (juce::Justification::centred);
+    t.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1c1c22));
+    t.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    t.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xffe9a23b));
+    t.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (0xffe9a23b));
+    t.setColour (juce::TextEditor::highlightColourId, juce::Colour (0x66e9a23b));
+    t.setIndents (4, 3);
+    juce::String now;
+    if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p)) now = c->getCurrentChoiceName();
+    else
+    {
+        const float v = proc.param (pid);
+        const auto range = proc.apvts.getParameterRange (pid);
+        const int dec = range.interval >= 1.0f ? 0 : (std::abs (v) >= 100.0f ? 0 : (range.interval >= 0.1f || range.interval <= 0.0f ? 1 : 2));
+        now = std::abs (v) >= 10000.0f ? juce::String (v / 1000.0f, 1) + "k" : juce::String (v, dec);
+        if (now.containsChar ('.')) now = now.trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+    }
+    t.setText (now, false);
+    auto r = near.withSizeKeepingCentre (juce::jlimit (64.0f, 110.0f, near.getWidth()), 22.0f);
+    r = r.constrainedWithin (getLocalBounds().toFloat().reduced (4));
+    t.setBounds (r.getSmallestIntegerContainer());
+    addAndMakeVisible (t);
+    t.selectAll();
+    t.grabKeyboardFocus();
+    const juce::Component::SafePointer<Canvas> sp (this);
+    t.onReturnKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
+    t.onEscapeKey = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (false); }); };
+    t.onFocusLost = [sp] { juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->closeTypeIn (true); }); };
+    repaint();
+}
+
+// V16: right-click a knob - type a value, back to its default, or pick a setting
+void Canvas::showParamMenu (const juce::String& pid, R near)
+{
+    auto* p = proc.apvts.getParameter (pid);
+    if (p == nullptr) return;
+    juce::PopupMenu m;
+    m.addSectionHeader (p->getName (40));
+    if (dynamic_cast<juce::AudioParameterBool*> (p) == nullptr) m.addItem (1, "Type a value...");
+    m.addItem (2, "Back to default  (" + (p->getText (p->getDefaultValue(), 20) + " " + p->getLabel()).trim() + ")");
+    auto* c = dynamic_cast<juce::AudioParameterChoice*> (p);
+    if (c != nullptr && c->choices.size() <= 40)
+    {
+        m.addSeparator();
+        for (int i = 0; i < c->choices.size(); ++i) m.addItem (100 + i, c->choices[i], true, i == c->getIndex());
+    }
+    m.addSeparator();
+    m.addItem (3, "Fine: hold Command while dragging", false, false);
+    m.addItem (4, "Reset: Option-click   Type: double-click", false, false);
+    const juce::Component::SafePointer<Canvas> sp (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (near).getSmallestIntegerContainer()),
+        [sp, pid, near] (int r)
+        {
+            if (sp == nullptr || r <= 0) return;
+            auto* q = sp->proc.apvts.getParameter (pid);
+            if (q == nullptr) return;
+            if (r == 1) sp->openParamTypeIn (pid, near);
+            if (r == 2) { q->beginChangeGesture(); q->setValueNotifyingHost (q->getDefaultValue()); q->endChangeGesture(); }
+            if (r >= 100) sp->proc.setParam (pid, (float) (r - 100));
+            sp->repaint();
+        });
+}
+
 void Canvas::closeTypeIn (bool commit)
 {
     if (typeIn == nullptr) return;
     float v = 0.0f;
-    if (commit && parseTyped (typeIn->getText(), typeInKind, v))
+    bool ok = false;
+    if (commit && typeInKind == 9)   // Pressure: any number; a choice by its name or the nearest of its values
+    {
+        const auto txt = typeIn->getText().trim();
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (typeInPid)))
+        {
+            auto numOf = [] (juce::String s, float& f)
+            {
+                s = s.toLowerCase().replace (",", ".");
+                const float m = s.containsChar ('k') ? 1000.0f : 1.0f;
+                const auto n = s.retainCharacters ("-0123456789.");
+                if (! n.containsAnyOf ("0123456789")) return false;
+                f = n.getFloatValue() * m; return true;
+            };
+            for (int i = 0; i < c->choices.size() && ! ok; ++i)
+                if (c->choices[i].trim().equalsIgnoreCase (txt)) { v = (float) i; ok = true; }
+            float want = 0.0f;
+            if (! ok && numOf (txt, want))
+            {
+                float best = 1.0e9f;
+                for (int i = 0; i < c->choices.size(); ++i)
+                    if (float f = 0.0f; numOf (c->choices[i], f) && std::abs (f - want) < best) { best = std::abs (f - want); v = (float) i; ok = true; }
+                if (! ok && want >= 1.0f && want <= (float) c->choices.size()) { v = want - 1.0f; ok = true; }   // or its place in the list
+            }
+        }
+        else
+        {
+            auto s = txt.toLowerCase().replace (",", ".");
+            const float m = s.containsChar ('k') ? 1000.0f : 1.0f;
+            auto n = s.retainCharacters ("-+0123456789.");
+            if (n.containsAnyOf ("0123456789")) { v = n.getFloatValue() * m; ok = true; }
+        }
+    }
+    else if (commit) ok = parseTyped (typeIn->getText(), typeInKind, v);
+    if (ok)
         if (auto* p = proc.apvts.getParameter (typeInPid))
         {
             const auto range = proc.apvts.getParameterRange (typeInPid);

@@ -33,7 +33,7 @@
 
 namespace tahor
 {
-    inline constexpr int numBands = vox::numCleanBands;   // 8
+    inline constexpr int numBands = vox::numCleanBands;   // V16: 30 (was 8)
     inline juce::String bid (int band, const char* what) { return "t" + juce::String (band) + what; }
     inline juce::String nid (int node, const char* what) { return "rn" + juce::String (node) + what; }
     inline juce::String uid (int unit, int v) { return "u" + juce::String (unit) + "v" + juce::String (v); }
@@ -41,7 +41,14 @@ namespace tahor
     struct Preset { const char* name; std::vector<std::pair<const char*, float>> values; const char* tag = "Utility"; };
     const std::vector<Preset>& factoryPresets();
 
-    // the colours of the five default band colours (cycled for bands 6..8)
+    // V16: the six orders RESO (0), TAHOR (1) and CHARACTER (2) can run in - the "order" parameter's choices
+    inline constexpr int chainOrders[6][3] { { 0, 1, 2 }, { 0, 2, 1 }, { 1, 0, 2 }, { 1, 2, 0 }, { 2, 0, 1 }, { 2, 1, 0 } };
+    inline int chainOrderIndex (int a, int b, int c)
+    {
+        for (int i = 0; i < 6; ++i) if (chainOrders[i][0] == a && chainOrders[i][1] == b && chainOrders[i][2] == c) return i;
+        return 0;
+    }
+    // the band colours (eight, cycled through the thirty bands)
     inline juce::Colour bandColour (int b)
     {
         static const juce::uint32 c[8] { 0xff46b7c9, 0xffef6c6c, 0xfff3a93c, 0xff7ad08a, 0xffa78bfa, 0xffff6fae, 0xff4f8cff, 0xffe6c46a };

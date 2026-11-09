@@ -127,6 +127,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     B ("resoOn", "Reso On", true);
     B ("tahorOn", "Tahor On", true);
     B ("charOn", "Character On", true);
+    // V16: the order the three run in (drag the blocks in the chain strip at the bottom)
+    C ("order", "Chain Order", { "Reso > Tahor > Character", "Reso > Character > Tahor", "Tahor > Reso > Character",
+                                 "Tahor > Character > Reso", "Character > Reso > Tahor", "Character > Tahor > Reso" }, 0);
 
     // RESO
     F ("rsDepth", "Reso Depth", R (0.0f, 10.0f, 0.1f), 2.0f);   // V5: starts at nine o'clock
@@ -168,7 +171,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
     // TAHOR
     struct TB { bool on; int type; float hz, db, q; int slope, place; bool dyn, sc; };
     // V3: Tahor starts flat - every band off (they keep their places for when you switch one on)
-    const TB td[numBands] { { false, 3, 40.0f, 0.0f, 0.71f, 1, 0, false, false },
+    const TB td8[8] { { false, 3, 40.0f, 0.0f, 0.71f, 1, 0, false, false },
                             { false, 0, 280.0f, 0.0f, 1.4f, 1, 0, false, false },
                             { false, 0, 2800.0f, 0.0f, 1.0f, 1, 0, false, false },
                             { false, 0, 3800.0f, 0.0f, 1.0f, 1, 0, false, false },
@@ -176,26 +179,31 @@ juce::AudioProcessorValueTreeState::ParameterLayout TahorProcessor::createLayout
                             { false, 0, 600.0f, 0.0f, 1.0f, 1, 0, false, false },
                             { false, 0, 1200.0f, 0.0f, 1.0f, 1, 0, false, false },
                             { false, 0, 6000.0f, 0.0f, 1.0f, 1, 0, false, false } };
+    // V16: thirty bands - the first eight keep their old homes, the rest wait (off) until you add them
+    std::array<TB, numBands> td;
+    for (int b = 0; b < numBands; ++b) td[(size_t) b] = b < 8 ? td8[b] : TB { false, 0, 1000.0f, 0.0f, 1.0f, 1, 0, false, false };
+    juce::StringArray pairNames { "-" };
+    for (int b = 0; b < numBands; ++b) pairNames.add (juce::String (b + 1));
     for (int b = 0; b < numBands; ++b)
     {
         const auto n = "Band " + juce::String (b + 1) + " ";
-        B (bid (b, "On"), n + "On", td[b].on);
-        C (bid (b, "Type"), n + "Shape", { "Bell", "Low shelf", "High shelf", "Low cut", "High cut", "Notch" }, td[b].type);
-        F (bid (b, "Hz"), n + "Freq", hz (10.0f, 30000.0f), td[b].hz, "Hz");
-        F (bid (b, "Gain"), n + "Gain", R (-30.0f, 30.0f, 0.1f), td[b].db, "dB");
-        { R r (0.1f, 30.0f, 0.01f); r.setSkewForCentre (1.0f); F (bid (b, "Q"), n + "Q", r, td[b].q); }
-        C (bid (b, "Slope"), n + "Slope", { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct" }, td[b].slope);
-        C (bid (b, "Place"), n + "Stereo", { "ST", "M", "S", "L", "R" }, td[b].place);
-        B (bid (b, "Dyn"), n + "Dynamic", td[b].dyn);
+        B (bid (b, "On"), n + "On", td[(size_t) b].on);
+        C (bid (b, "Type"), n + "Shape", { "Bell", "Low shelf", "High shelf", "Low cut", "High cut", "Notch" }, td[(size_t) b].type);
+        F (bid (b, "Hz"), n + "Freq", hz (10.0f, 30000.0f), td[(size_t) b].hz, "Hz");
+        F (bid (b, "Gain"), n + "Gain", R (-30.0f, 30.0f, 0.1f), td[(size_t) b].db, "dB");
+        { R r (0.1f, 30.0f, 0.01f); r.setSkewForCentre (1.0f); F (bid (b, "Q"), n + "Q", r, td[(size_t) b].q); }
+        C (bid (b, "Slope"), n + "Slope", { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct" }, td[(size_t) b].slope);
+        C (bid (b, "Place"), n + "Stereo", { "ST", "M", "S", "L", "R" }, td[(size_t) b].place);
+        B (bid (b, "Dyn"), n + "Dynamic", td[(size_t) b].dyn);
         F (bid (b, "Thr"), n + "Threshold", R (-60.0f, 0.0f, 0.1f), -30.0f, "dB");
         F (bid (b, "Rng"), n + "Range", R (-24.0f, 24.0f, 0.1f), -6.0f, "dB");
         B (bid (b, "Spec"), n + "Spectral", false);
-        B (bid (b, "Sc"), n + "Sidechain", td[b].sc);
+        B (bid (b, "Sc"), n + "Sidechain", td[(size_t) b].sc);
         B (bid (b, "Solo"), n + "Solo", false);
         { R r (0.1f, 200.0f, 0.1f); r.setSkewForCentre (10.0f); F (bid (b, "Att"), n + "Attack", r, 5.0f, "ms"); }      // V9
         { R r (5.0f, 2000.0f, 1.0f); r.setSkewForCentre (120.0f); F (bid (b, "Rel"), n + "Release", r, 120.0f, "ms"); }  // V9
         F (bid (b, "Sel"), n + "Selectivity", R (1.0f, 8.0f, 0.1f), 3.0f, "x");                                         // V9: spectral
-        C (bid (b, "Pair"), n + "Partner", { "-", "1", "2", "3", "4", "5", "6", "7", "8" }, 0);                         // V9: its other side
+        C (bid (b, "Pair"), n + "Partner", pairNames, 0);                         // V9: its other side
         B (bid (b, "Byp"), n + "Disabled", false);                                                                      // V12: off, settings kept
     }
 
@@ -409,6 +417,9 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     inMeterR.store (main.getMagnitude (nc - 1, 0, n));
     { float r2 = 0; for (int c = 0; c < nc; ++c) r2 = juce::jmax (r2, main.getRMSLevel (c, 0, n)); inRms.store (r2); }   // V10: for the readouts
 
+    // V16: RESO, TAHOR and CHARACTER run in the chosen order (drag the blocks in the chain strip)
+    auto runReso = [&]
+    {
     // RESO
     {
         bool split = false;   // V9: a node on one side only - left and right each get their own Reso
@@ -433,6 +444,7 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
             }
         }
     }
+    };
 
     // TAHOR (L / R bands run in their own Natural EQ)
     const int osIdx = isNonRealtime() && (int) param ("osRender") > 0 ? (int) param ("osRender") : (int) param ("os");
@@ -448,6 +460,8 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         if (param (bid (b, "Solo")) > 0.5f && param (bid (b, "On")) > 0.5f && ! anySolo) { anySolo = true; soloBand = b; }
     }
     const bool tahorOn = param ("tahorOn") > 0.5f;
+    auto runTahor = [&]
+    {
     tahorStage.keyL = scOn ? keyBuf.getReadPointer (0) : nullptr;
     tahorStage.keyR = scOn ? keyBuf.getReadPointer (1) : nullptr;
     tahorStage.keyLen = n;
@@ -471,7 +485,10 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
                 for (int i = 0; i < n; ++i) x[i] = soloF[(size_t) c][(size_t) st].processSample (x[i]);
             }
     }
+    };
 
+    auto runChar = [&]
+    {
     // CHARACTER: the units' EQs, then their colour (oversampled)
     const bool charOn = param ("charOn") > 0.5f && ! anySolo;
     const int mode = (int) param ("charMode");
@@ -543,6 +560,11 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
                 auto* x = main.getWritePointer (c);
                 for (int i = 0; i < n; ++i) x[i] = soloC[(size_t) c][(size_t) st].processSample (x[i]);
             }
+    }
+    };
+    {
+        const int (&ord)[3] = tahor::chainOrders[juce::jlimit (0, 5, (int) param ("order"))];
+        for (int st : ord) { if (st == 0) runReso(); else if (st == 1) runTahor(); else runChar(); }
     }
 
     // output: MATCH (equal loudness with the input), OUT, BYPASS

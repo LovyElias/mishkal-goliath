@@ -14,7 +14,7 @@ namespace vox
 {
 
 enum class BandType { Bell = 0, LowShelf, HighShelf, LowCut, HighCut, Notch };
-inline constexpr int numCleanBands = 8;
+inline constexpr int numCleanBands = 30;   // Tahor V16: thirty bands (Pro-Q 4 has 24)
 
 struct CleanBand
 {
