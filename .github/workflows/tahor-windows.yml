@@ -1,0 +1,65 @@
+# Builds the Windows tester installer for "Mishkal Tahor" (VST3, 64-bit) on GitHub's Windows machines.
+# Runs on every push to the tahor-windows branch. The finished zip appears under the run's "Artifacts".
+name: Tahor Windows beta
+
+on:
+  push:
+    branches: [ tahor-windows ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which version is the beta
+        id: ver
+        shell: bash
+        run: echo "v=$(grep -E '^set\(TAHOR_LATEST_VERSION' CMakeLists.txt | grep -oE '[0-9]+' | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure (downloads JUCE)
+        run: cmake -B build -A x64
+
+      - name: Build (VST3)
+        run: cmake --build build --config Release --target Tahor_VST3 --parallel
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Make the installer
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          $vst3 = "build\Tahor_artefacts\Release\VST3\Mishkal Tahor.vst3"
+          if (!(Test-Path $vst3)) { throw "The VST3 wasn't built" }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMKVER=$v" "/DSRC=$((Resolve-Path $vst3).Path)" "/Odist" "installer\Tahor.iss"
+
+      - name: Add the manual and the READ ME
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          $out = "dist\Mishkal Tahor Beta V$v - Windows"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Move-Item "dist\Install Mishkal Tahor Beta V$v.exe" $out
+          if (Test-Path "docs\Mishkal Tahor - User Manual.pdf") { Copy-Item "docs\Mishkal Tahor - User Manual.pdf" $out }
+          Copy-Item "installer\READ ME FIRST.txt" $out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mishkal Tahor Beta V${{ steps.ver.outputs.v }} - Windows
+          path: dist/Mishkal Tahor Beta V${{ steps.ver.outputs.v }} - Windows
+
+      - name: Attach the zip to a draft release (private until published)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          $name = "Mishkal Tahor Beta V$v - Windows"
+          Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip" -Force
+          gh release create "tahor-v$v-windows-${{ github.run_number }}" "dist\$name.zip" --draft --title "$name" --notes "Tester build (draft)" --target tahor-windows
