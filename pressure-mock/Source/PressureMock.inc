@@ -1,5 +1,5 @@
 // ===== PRESSURE: switches and controls =====
-static double gLapT = 0; static void plap (const char* nm) { static const bool on = std::getenv ("PAINTPROF") != nullptr; if (! on) return; const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "    %s %.2f\n", nm, t - gLapT); gLapT = t; }
+static double gLapT = 0; static void plap (const char* nm) { tahor::ui::benchLap (nm); static const bool on = std::getenv ("PAINTPROF") != nullptr; if (! on) return; const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "    %s %.2f\n", nm, t - gLapT); gLapT = t; }
 const char* tahor::penv (const char* name)
 {
    #if PRESSURE_MOCK

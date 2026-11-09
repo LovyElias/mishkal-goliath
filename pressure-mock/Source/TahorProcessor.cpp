@@ -1,4 +1,6 @@
 #include "TahorProcessor.h"
+#include <map>
+#include <set>
 #include "TahorEditor.h"
 
 using namespace tahor;
@@ -267,6 +269,8 @@ void TahorProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     charWas.fill (-1);
     prepareOs (maxBlock);
     clean.prepare (sampleRate, maxBlock);
+    tapLen = (int) juce::nextPowerOfTwo ((int) sampleRate);
+    for (int c = 0; c < 2; ++c) { tapC[c].assign ((size_t) tapLen, 0.0f); tapV[c].assign ((size_t) tapLen, 0.0f); }
     helpers.prepare (sampleRate);
     vintage.prepare (sampleRate);
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) maxBlock, 1 };
@@ -314,6 +318,11 @@ pressure::HelperSettings TahorProcessor::helperSettings() const
 }
 
 pressure::CleanSettings TahorProcessor::cleanSettings() const
+{
+    return cleanSettingsFrom ([this] (const char* id) { return param (id); });
+}
+
+pressure::CleanSettings TahorProcessor::cleanSettingsFrom (const std::function<float (const char*)>& param)
 {
     pressure::CleanSettings s;
     s.engine = (int) param ("cEngine");
@@ -386,6 +395,14 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     { float r2 = 0; for (int c = 0; c < nc; ++c) r2 = juce::jmax (r2, main.getRMSLevel (c, 0, n)); inRms.store (r2); }   // V10: for the readouts
 
     // ===== PRESSURE: HELPERS, CLEAN and VINTAGE, in the chosen order (V12) =====
+    auto writeTap = [&] (std::vector<float>* t, std::atomic<int>& pos)
+    {
+        if (tapLen <= 0) return;
+        int p = pos.load();
+        for (int i = 0; i < n; ++i, p = (p + 1) & (tapLen - 1))
+            for (int c = 0; c < 2; ++c) t[c][(size_t) p] = main.getSample (juce::jmin (c, nc - 1), i);
+        pos.store (p);
+    };
     auto runHelpers = [&]
     {
     // HELPERS (LE-4): Lift > Rider > Breath > 1964
@@ -401,6 +418,7 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         if (param ("tahorOn") > 0.5f)
         {
             const bool ext = cs.external && hasSidechain();
+            writeTap (tapC, tapCPos);
             gr = clean.process (main, nc, n, ext ? &keyBuf : nullptr, cs);
         }
         grDb.store (gr);
@@ -421,6 +439,7 @@ void TahorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
             keyBuf.setSize (2, n, false, false, true);
             for (int c = 0; c < 2; ++c) keyBuf.copyFrom (c, 0, key, juce::jmin (c, key.getNumChannels() - 1), 0, n);
         }
+        writeTap (tapV, tapVPos);
         vintage.process (main, nc, n, ext ? &keyBuf : nullptr, vs);
     }
     else vintage.grDb.store (0.0f);
@@ -659,6 +678,7 @@ void TahorProcessor::switchAB (int slot)
 
 void TahorProcessor::timerCallback()
 {
+    applyMatch();
     if (! loadingPreset) recordHistory();
     // AUTO GAIN (header): gives back about half of what CLEAN takes on average
     autoGainDb.store (juce::jlimit (0.0f, 24.0f, cleanAvgGr.load() * 0.5f));
@@ -676,3 +696,243 @@ void TahorProcessor::timerCallback()
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new TahorProcessor(); }
+
+
+//==============================================================================
+// V13: flip a VINTAGE unit (or a CLEAN engine) and the new one keeps the sound you had: about the same reduction and
+// the same output level, with the nearest ratio and timing. Worked out on a copy of the last second of your audio
+// (or a test signal when nothing is playing), on a background thread, then set in one go.
+namespace
+{
+struct Snap
+{
+    std::map<juce::String, float> v;
+    std::map<juce::String, juce::NormalisableRange<float>> range;
+    std::set<juce::String> choice;
+    float get (const char* id) const { auto it = v.find (id); return it == v.end() ? 0.0f : it->second; }
+};
+const char* const vDrive[15] { "v0In", "v1Thr", "v2In", "v3Thr", "v4Thr", "v5Thr", "v6Thr", "v7In", "v8Thr", "v9In", "v10Thr", "v11DThr", "v12Peak", "v13Thr", "v14Thr" };
+const char* const vOut[15]   { "v0Out", "v1Out", "v2Out", "v3Mk", "v4Mk", "v5Out", "v6Gain", "v7Out", "v8Out", "v9Out", "v10Out", "v11DGain", "v12Gain", "v13Gain", "v14Mk" };
+const char* const vRatio[15] { "v0Ratio", "", "", "v3Ratio", "v4Ratio", "", "v6Ratio", "v7Ratio", "v8Ratio", "", "v10Ratio", "v11DRatio", "", "v13Ratio", "v14Ratio" };
+const std::vector<const char*> vTiming[15] { { "v0Atk", "v0Rel" }, { "v1Tc" }, { "v2Rel" }, { "v3Atk", "v3Rel" }, { "v4Atk", "v4Rel" }, { "v5Atk", "v5Rec" },
+                                             { "v6Atk", "v6Rec" }, { "v7Atk", "v7Rel" }, {}, {}, { "v10Atk", "v10Rel" }, { "v11DAtk", "v11DRec" }, {}, { "v13Atk", "v13Rel" }, { "v14Atk", "v14Rel" } };
+const char* const cDrive[5] { "cThresh", "cVoxComp", "cThresh", "cMlaIn", "cThresh" };
+const char* const cOut[5]   { "cMakeup", "cVoxGain", "cMakeup", "cMakeup", "cMakeup" };
+
+// the values a control can take (every step of a switch; 33 points along a knob)
+std::vector<float> candidates (const Snap& s, const juce::String& pid)
+{
+    std::vector<float> out;
+    auto it = s.range.find (pid);
+    if (it == s.range.end()) return out;
+    const auto& r = it->second;
+    if (s.choice.count (pid) || r.interval >= 1.0f)
+    { for (float x = r.start; x <= r.end + 0.001f && out.size() < 64; x += juce::jmax (1.0f, r.interval)) out.push_back (x); }
+    else for (int i = 0; i <= 32; ++i) out.push_back (r.convertFrom0to1 ((float) i / 32.0f));
+    return out;
+}
+
+struct Measure { float gr = 0.0f, outDb = -100.0f; };
+Measure runVintage (int unit, const Snap& s, const juce::AudioBuffer<float>& src, double sr)
+{
+    pressure::Vintage v; v.prepare (sr);
+    auto vs = pressure::vintageFor (unit, [&s] (const char* id) { return s.get (id); });
+    vs.delta = false;
+    // twice through: the first pass settles it (as if it had been running), the second is measured
+    juce::AudioBuffer<float> b (src);
+    const int n = b.getNumSamples(), skip = 0;
+    for (int i = 0; i < n; i += 64)
+    { const int m = juce::jmin (64, n - i); juce::AudioBuffer<float> blk (b.getArrayOfWritePointers(), 2, i, m); v.process (blk, 2, m, nullptr, vs); }
+    b.makeCopyOf (src);
+    double g = 0.0, ms = 0.0; int gc = 0, mc = 0;
+    for (int i = 0; i < n; i += 64)
+    {
+        const int m = juce::jmin (64, n - i);
+        juce::AudioBuffer<float> blk (b.getArrayOfWritePointers(), 2, i, m);
+        v.process (blk, 2, m, nullptr, vs);
+        if (i >= skip)
+        {
+            g += v.grDb.load(); ++gc;
+            for (int c = 0; c < 2; ++c) for (int k = 0; k < m; ++k) { const float x = blk.getSample (c, k); ms += (double) x * x; ++mc; }
+        }
+    }
+    return { gc > 0 ? (float) (g / gc) : 0.0f, (float) (10.0 * std::log10 (ms / juce::jmax (1, mc) + 1.0e-12)) };
+}
+Measure runClean (const Snap& s, const juce::AudioBuffer<float>& src, double sr)
+{
+    pressure::CleanCompressor c; c.prepare (sr, 64);
+    auto cs = TahorProcessor::cleanSettingsFrom ([&s] (const char* id) { return s.get (id); });
+    cs.delta = false; cs.listen = false; cs.external = false;
+    juce::AudioBuffer<float> b (src);
+    const int n = b.getNumSamples(), skip = 0;
+    for (int i = 0; i < n; i += 64)
+    { const int m = juce::jmin (64, n - i); juce::AudioBuffer<float> blk (b.getArrayOfWritePointers(), 2, i, m); c.process (blk, 2, m, nullptr, cs); }
+    b.makeCopyOf (src);
+    double g = 0.0, ms = 0.0; int gc = 0, mc = 0;
+    for (int i = 0; i < n; i += 64)
+    {
+        const int m = juce::jmin (64, n - i);
+        juce::AudioBuffer<float> blk (b.getArrayOfWritePointers(), 2, i, m);
+        const float gr = c.process (blk, 2, m, nullptr, cs);
+        if (i >= skip)
+        {
+            g += gr; ++gc;
+            for (int ch = 0; ch < 2; ++ch) for (int k = 0; k < m; ++k) { const float x = blk.getSample (ch, k); ms += (double) x * x; ++mc; }
+        }
+    }
+    return { gc > 0 ? (float) (g / gc) : 0.0f, (float) (10.0 * std::log10 (ms / juce::jmax (1, mc) + 1.0e-12)) };
+}
+const pressure::VStage& mainStage (int unit, const pressure::VintageSettings& vs) { return unit == 11 ? vs.st[1] : vs.st[0]; }
+float ratioOfClean (int e, const Snap& s)
+{
+    if (e == pressure::EMla) return pressure::mlaRatios[juce::jlimit (0, 8, (int) s.get ("cMlaRatio"))];
+    if (e == pressure::E755) return 0.0f;   // (its own, program-dependent)
+    return s.get ("cRatio");
+}
+
+// set one control so a measure lands as close as it can to a target (a sweep for switches, halving for knobs)
+template <typename F>
+void fit (Snap& s, const juce::String& pid, float target, F&& measure)
+{
+    auto it = s.range.find (pid);
+    if (it == s.range.end()) return;
+    const auto keep = s.v[pid];
+    const auto& r = it->second;
+    if (s.choice.count (pid) || r.interval >= 1.0f)
+    {
+        float best = keep, bestErr = 1.0e9f;
+        for (float x : candidates (s, pid)) { s.v[pid] = x; const float e = std::abs (measure() - target); if (e < bestErr) { bestErr = e; best = x; } }
+        s.v[pid] = best; return;
+    }
+    s.v[pid] = r.start; const float a = measure();
+    s.v[pid] = r.end;   const float b = measure();
+    if (std::abs (a - b) < 0.5f) { s.v[pid] = keep; return; }   // (this control barely changes it - leave it)
+    float lo = 0.0f, hi = 1.0f;
+    const bool up = b > a;
+    if ((up && target <= a) || (! up && target >= a)) { s.v[pid] = r.start; return; }
+    if ((up && target >= b) || (! up && target <= b)) { s.v[pid] = r.end; return; }
+    for (int k = 0; k < 9; ++k)
+    {
+        const float mid = 0.5f * (lo + hi);
+        s.v[pid] = r.convertFrom0to1 (mid);
+        const float m = measure();
+        if ((m < target) == up) lo = mid; else hi = mid;
+    }
+    s.v[pid] = r.snapToLegalValue (r.convertFrom0to1 (0.5f * (lo + hi)));
+}
+}
+
+void TahorProcessor::matchSwitch (bool vintageSide, int from, int to)
+{
+    if (from == to || tapLen <= 0) return;
+    Snap s;
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+        {
+            s.v[rp->paramID] = rp->convertFrom0to1 (rp->getValue());
+            s.range[rp->paramID] = rp->getNormalisableRange();
+            if (dynamic_cast<juce::AudioParameterChoice*> (rp) != nullptr || dynamic_cast<juce::AudioParameterBool*> (rp) != nullptr) s.choice.insert (rp->paramID);
+        }
+    // the last ~1.4 s that went into this section (or, if it's quiet, a test signal: noise in bursts, like a phrase)
+    const double sr = preparedRate;
+    const int len = juce::jmin (tapLen - 1, (int) (1.4 * sr));
+    juce::AudioBuffer<float> sig (2, len);
+    {
+        auto* t = vintageSide ? tapV : tapC;
+        const int end = (vintageSide ? tapVPos : tapCPos).load();
+        double ms = 0.0;
+        for (int i = 0; i < len; ++i)
+            for (int c = 0; c < 2; ++c) { const float x = t[c][(size_t) ((end - len + i + tapLen) & (tapLen - 1))]; sig.setSample (c, i, x); ms += (double) x * x; }
+        if (ms / (2.0 * len) < 1.0e-5)   // quieter than about -50 dB: use the test signal
+        {
+            juce::Random rnd (7);
+            float lp[2] {};
+            for (int i = 0; i < len; ++i)
+            {
+                const float env = (std::fmod ((float) i / (float) sr, 0.25f) < 0.17f) ? 0.5f : 0.08f;
+                for (int c = 0; c < 2; ++c) { lp[c] += 0.25f * ((rnd.nextFloat() * 2.0f - 1.0f) - lp[c]); sig.setSample (c, i, lp[c] * env * 1.4f); }
+            }
+        }
+    }
+    const int gen = ++matchGen;
+    matching.store (true);
+    matchPool.addJob ([this, s, sig, sr, vintageSide, from, to, gen]() mutable
+    {
+        std::vector<std::pair<juce::String, float>> out;
+        auto changed = [&] (const Snap& a, const juce::String& pid) { out.push_back ({ pid, a.v.at (pid) }); };
+        if (vintageSide)
+        {
+            const int f = juce::jlimit (0, 14, from), t = juce::jlimit (0, 14, to);
+            const auto was = runVintage (f, s, sig, sr);
+            const auto vsF = pressure::vintageFor (f, [&s] (const char* id) { return s.get (id); });
+            const auto& sf = mainStage (f, vsF);
+            // the same blend
+            const juce::String mixF = "v" + juce::String (f) + "Mix", mixT = "v" + juce::String (t) + "Mix";
+            s.v[mixT] = s.v[mixF];
+            // the nearest ratio, then the nearest timing
+            if (*vRatio[t] && *vRatio[f])
+            {
+                const float want = std::log (juce::jmax (1.01f, sf.ratio));
+                fit (s, vRatio[t], want, [&] { return std::log (juce::jmax (1.01f, mainStage (t, pressure::vintageFor (t, [&s] (const char* id) { return s.get (id); })).ratio)); });
+            }
+            for (auto* tp : vTiming[t])
+            {
+                const juce::String pid (tp);
+                float best = s.v[pid], bestErr = 1.0e9f;
+                for (float x : candidates (s, pid))
+                {
+                    s.v[pid] = x;
+                    const auto vsT = pressure::vintageFor (t, [&s] (const char* id) { return s.get (id); });
+                    const auto& st = mainStage (t, vsT);
+                    const float e = std::abs (std::log (juce::jmax (0.01f, st.attackMs) / juce::jmax (0.01f, sf.attackMs)))
+                                  + std::abs (std::log (juce::jmax (1.0f, st.releaseMs) / juce::jmax (1.0f, sf.releaseMs)));
+                    if (e < bestErr) { bestErr = e; best = x; }
+                }
+                s.v[pid] = best;
+            }
+            // the same reduction, then the same level out
+            fit (s, vDrive[t], was.gr, [&] { return runVintage (t, s, sig, sr).gr; });
+            fit (s, vOut[t], was.outDb, [&] { return runVintage (t, s, sig, sr).outDb; });
+            changed (s, mixT);
+            if (*vRatio[t]) changed (s, vRatio[t]);
+            for (auto* tp : vTiming[t]) changed (s, tp);
+            changed (s, vDrive[t]); changed (s, vOut[t]);
+        }
+        else
+        {
+            const int f = juce::jlimit (0, 4, from), t = juce::jlimit (0, 4, to);
+            Snap a = s; a.v["cEngine"] = (float) f;
+            const auto was = runClean (a, sig, sr);
+            const float rF = ratioOfClean (f, a);
+            s.v["cEngine"] = (float) t;
+            if (rF > 0.0f)
+            {
+                if (t == pressure::EMla) fit (s, "cMlaRatio", std::log (rF), [&] { return std::log (ratioOfClean (t, s)); });
+                else if (t != pressure::E755) { s.v["cRatio"] = juce::jlimit (1.0f, 20.0f, rF); changed (s, "cRatio"); }
+            }
+            fit (s, cDrive[t], was.gr, [&] { return runClean (s, sig, sr).gr; });
+            fit (s, cOut[t], was.outDb, [&] { return runClean (s, sig, sr).outDb; });
+            if (t == pressure::EMla) changed (s, "cMlaRatio");
+            changed (s, cDrive[t]); changed (s, cOut[t]);
+        }
+        if (gen == matchGen.load())
+        {
+            const juce::ScopedLock sl (matchLock);
+            matchResult = std::move (out); matchReady = true;
+        }
+    });
+}
+
+void TahorProcessor::applyMatch()
+{
+    std::vector<std::pair<juce::String, float>> r;
+    {
+        const juce::ScopedLock sl (matchLock);
+        if (! matchReady) return;
+        r = std::move (matchResult); matchReady = false;
+    }
+    for (auto& [pid, v] : r)
+        if (auto* p = apvts.getParameter (pid))
+        { p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (v)); p->endChangeGesture(); }
+    matching.store (false);
+}

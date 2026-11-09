@@ -77,6 +77,8 @@ Canvas::Canvas (TahorProcessor& p) : proc (p)
     hann.resize (8192);
     for (int i = 0; i < 8192; ++i) hann[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / 8192.0f);
     resoShown.assign ((size_t) PW + 1, 0.0f);
+    if (juce::JUCEApplicationBase::isStandaloneApp()   // (the stand-alone app only - never inside a host)
+        && juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile ("Mishkal Projects/Pressure-bench.on").existsAsFile()) benchStep = 0;
     startTimerHz (30);   // Pressure V11: 30 a second keeps every frame on time in the host   // V6: smoother movement; V14: 60 a second now the drawing is lighter
 }
 
@@ -102,9 +104,46 @@ void Canvas::analyse (std::vector<float>& win, std::vector<float>& smoothDb)
     }
 }
 
+// V13: the drawing benchmark - each tab at Medium, Large and Extra Large for four seconds; the times go to
+// Pressure-bench.log next to the switch file, then the switch file is renamed so it runs once
+static juce::String benchVersion()
+{
+   #ifdef JucePlugin_VersionString
+    return JucePlugin_VersionString;
+   #else
+    return "dev";
+   #endif
+}
+void Canvas::benchTick()
+{
+    static const float sc[5] { 1.0f, 1.2f, 1.4f, 1.4f, 1.6f };   // (the fourth: Extra Large with the tabs switched off)
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const auto dir = juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile ("Mishkal Projects");
+    auto start = [&]
+    {
+        tab = benchStep % 3;
+        const float onOff = benchStep / 3 == 3 ? 0.0f : 1.0f;
+        proc.setParam ("resoOn", onOff); proc.setParam ("tahorOn", onOff); proc.setParam ("charOn", onOff);
+        if (onSize) onSize (sc[benchStep / 3]);
+        benchAt = now; benchSum = benchMax = 0.0; benchFrames = 0; benchSlow = 0; gBenchAcc.clear(); gBench = false;
+    };
+    if (benchAt == 0.0) { dir.getChildFile ("Pressure-bench.log").appendText ("\n=== Pressure " + benchVersion() + "  gpu " + juce::String (gpuOn ? 1 : 0) + " ===\n"); start(); return; }
+    if (now - benchAt > 1000.0) gBench = true;   // (a second to settle first)
+    if (now - benchAt > 5000.0)
+    {
+        juce::String line = "tab " + juce::String (benchStep % 3) + (benchStep / 3 == 3 ? " (off)" : "") + "  size " + juce::String (sc[benchStep / 3], 1) + "  phys " + juce::String (getTopLevelComponent()->getWidth())
+            + "  frames/s " + juce::String (benchFrames / 4.0, 1) + "  slow(>40ms) " + juce::String (benchSlow) + "  paint avg " + juce::String (benchFrames > 0 ? benchSum / benchFrames : 0.0, 1) + " ms  max " + juce::String (benchMax, 1) + " |";
+        for (auto& [k, v] : gBenchAcc) if (benchFrames > 0 && v / benchFrames > 0.3) line << " " << k << " " << juce::String (v / benchFrames, 1);
+        dir.getChildFile ("Pressure-bench.log").appendText (line + "\n");
+        if (++benchStep >= 15) { benchStep = -1; gBench = false; dir.getChildFile ("Pressure-bench.on").moveFileTo (dir.getChildFile ("Pressure-bench.done")); return; }
+        start();
+    }
+}
+
 void Canvas::timerCallback()
 {
     pressCanvas (this, true);
+    if (benchStep >= 0) benchTick();
     proc.preTap.pull (preWin);
     proc.postTap.pull (postWin);
     if (eqMatch == 1)   // V12: EQ MATCH learning - your sound (pre) and the reference (sidechain)
@@ -582,8 +621,18 @@ void Canvas::mouseUp (const juce::MouseEvent& e)
                 }
             if (down.kind == Hit::PEngine)
             {
-                if (tab == 1) proc.setParam ("cEngine", (float) (((int) proc.param ("cEngine") + down.a + 5) % 5));
-                else if (tab == 2) proc.setParam ("vUnit", (float) (((int) proc.param ("vUnit") + down.a + 15) % 15));
+                if (tab == 1)
+                {
+                    const int was = (int) proc.param ("cEngine"), now = (was + down.a + 5) % 5;
+                    proc.setParam ("cEngine", (float) now);
+                    proc.matchSwitch (false, was, now);   // V13: the new engine keeps the sound
+                }
+                else if (tab == 2)
+                {
+                    const int was = (int) proc.param ("vUnit"), now = (was + down.a + 15) % 15;
+                    proc.setParam ("vUnit", (float) now);
+                    proc.matchSwitch (true, was, now);    // V13: the new unit keeps the sound
+                }
             }
             if (down.kind == Hit::PDrawer)
             {
@@ -1651,7 +1700,7 @@ TahorEditor::~TahorEditor()
    #endif
 }
 
-// V12: the graphics card draws the window (remembered for every Pressure; on unless you turn it off)
+// V12: the graphics card draws the window (remembered for every Pressure; V13: off unless you turn it on)
 bool TahorEditor::gpuSetting (int set)
 {
     juce::PropertiesFile::Options o;
@@ -1659,7 +1708,7 @@ bool TahorEditor::gpuSetting (int set)
     o.osxLibrarySubFolder = "Application Support";
     juce::PropertiesFile f (o);
     if (set >= 0) { f.setValue ("gpu", set); f.saveIfNeeded(); return set != 0; }
-    return f.getIntValue ("gpu", 1) != 0;
+    return f.getIntValue ("gpu", 0) != 0;   // V13: off unless you turn it on (the Mac draws this look faster itself)
 }
 
 void TahorEditor::useGpu (bool on)

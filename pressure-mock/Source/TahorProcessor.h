@@ -137,6 +137,11 @@ public:
     bool hasSidechain() const;
     // PRESSURE
     pressure::CleanSettings cleanSettings() const;
+    static pressure::CleanSettings cleanSettingsFrom (const std::function<float (const char*)>& get);
+    // V13: flipping VINTAGE units (or CLEAN engines) keeps the sound - the new one is set to take off about the same
+    // and come out at the same level, with the nearest ratio and timing (worked out on the last second of your audio)
+    void matchSwitch (bool vintageSide, int from, int to);
+    std::atomic<bool> matching { false };
     pressure::HelperSettings helperSettings() const;
     pressure::Helpers helpers;   // LE-4 (its readouts are atomics the screen reads)
     pressure::Vintage vintage;   // the fifteen VINTAGE units
@@ -170,6 +175,11 @@ private:
     float inSmooth = 1.0f, outSmooth = 1.0f;
     pressure::CleanCompressor clean;
     std::atomic<float> cleanAvgGr { 0.0f };
+    // V13: the last second going into CLEAN and into VINTAGE (for matching the sound when you flip)
+    std::vector<float> tapC[2], tapV[2]; std::atomic<int> tapCPos { 0 }, tapVPos { 0 }; int tapLen = 0;
+    std::atomic<int> matchGen { 0 };
+    juce::CriticalSection matchLock; std::vector<std::pair<juce::String, float>> matchResult; bool matchReady = false;
+    void applyMatch();
 
     // undo / A-B
     std::vector<float> snapshot() const;
@@ -189,5 +199,6 @@ private:
         void parameterChanged (const juce::String&, float) override { if (! p.loadingPreset) p.presetDirty = true; }
     } dirtyListener { *this };
 
+    juce::ThreadPool matchPool { 1 };   // V13: (last, so it finishes before the rest goes)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TahorProcessor)
 };

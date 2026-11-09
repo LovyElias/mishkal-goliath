@@ -255,7 +255,12 @@ void Canvas::paint (juce::Graphics& g)
     gPressCanvas = this;
     syncTabWindows();
     const double paintStart = juce::Time::getMillisecondCounterHiRes();
-    struct PaintTimer { double& out; double t0; ~PaintTimer() { out = 0.7 * out + 0.3 * (juce::Time::getMillisecondCounterHiRes() - t0); } } paintTimer { lastPaintMs, paintStart };
+    struct PaintTimer { Canvas& c; double t0; ~PaintTimer()
+    {
+        const double d = juce::Time::getMillisecondCounterHiRes() - t0;
+        c.lastPaintMs = 0.7 * c.lastPaintMs + 0.3 * d;
+        if (gBench) { c.benchSum += d; c.benchMax = juce::jmax (c.benchMax, d); ++c.benchFrames; if (d > 40.0) ++c.benchSlow; }
+    } } paintTimer { *this, paintStart };
     {   // PRESSURE: the screen's history exists before the first draw (the host can paint before any audio or timer)
         const int n = (int) ((PW - 50.0f) / 2.0f);
         if ((int) hIn.size() != n) { hIn.assign ((size_t) n, -90.0f); hOut = hIn; hGr.assign ((size_t) n, 0.0f); hRide = hGr; hBreath = hGr; hPos = 0; }
@@ -273,7 +278,8 @@ void Canvas::paint (juce::Graphics& g)
 
     static const bool prof = std::getenv ("PAINTPROF") != nullptr;
     double t0 = juce::Time::getMillisecondCounterHiRes();
-    auto lap = [&] (const char* nm) { if (prof) { const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "%s %.2f\n", nm, t - t0); t0 = t; } };
+    auto lap = [&] (const char* nm) { benchLap (nm); if (prof) { const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "%s %.2f\n", nm, t - t0); t0 = t; } };
+    gBenchT = t0;
     lap ("bg");
     paintHeader (g); lap ("header");
     paintBottomBar (g); lap ("bottom");      // V5: before the screen, so the screen's arches can open into the header and the bar
@@ -731,7 +737,7 @@ void Canvas::paintDisplay (juce::Graphics& g)
     g.addTransform (juce::AffineTransform::translation (d.getX(), d.getY()));
     static const bool prof2 = std::getenv ("PAINTPROF") != nullptr;
     double q0 = juce::Time::getMillisecondCounterHiRes();
-    auto lap2 = [&] (const char* nm) { if (prof2) { const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "  %s %.2f\n", nm, t - q0); q0 = t; } };
+    auto lap2 = [&] (const char* nm) { benchLap (nm); if (prof2) { const double t = juce::Time::getMillisecondCounterHiRes(); fprintf (stderr, "  %s %.2f\n", nm, t - q0); q0 = t; } };
     paintBackground (g); lap2 ("background");
     const bool tabOff = proc.param (tab == 0 ? "resoOn" : tab == 1 ? "tahorOn" : "charOn") < 0.5f;
     if (tabOff) g.beginTransparencyLayer (0.3f);   // PRESSURE: the tab is off - the whole screen sits back (still adjustable)
@@ -766,20 +772,24 @@ void Canvas::paintBackground (juce::Graphics& g)
 {
     const R d (-display.getX(), -70.0f, W, 800.0f);
     const float k = juce::jlimit (0.25f, 8.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
-    const int dq = (int) (drift * 180.0f);
+    const int dq = 0;   // V13: the glows stay put - redrawing the whole background (every third of a second as they drifted) made Large and Extra Large stutter
     const int key = tab * 1000 + (int) proc.param ("range") * 10;
     if (! bgCache.isValid() || std::abs (bgScale - k) > 0.001f || bgKey != key || bgDrift != dq)
     {
         const int iw = juce::roundToInt (W * k), ih = juce::roundToInt (800.0f * k);
-        if (! bgCache.isValid() || bgCache.getWidth() != iw || bgCache.getHeight() != ih) bgCache = juce::Image (juce::Image::ARGB, iw, ih, true);
+        // V13: an opaque picture (no see-through edge to blend) - copied to the screen much faster
+        if (! bgCache.isValid() || bgCache.getWidth() != iw || bgCache.getHeight() != ih) bgCache = juce::Image (juce::Image::RGB, iw, ih, true);
         else bgCache.clear (bgCache.getBounds());
         juce::Graphics ig (bgCache);
         ig.addTransform (juce::AffineTransform::translation (-d.getX(), -d.getY()).scaled (k));
+        ig.fillAll (col ("#0d0d10"));   // (opaque: the corners the glows don't reach)
         const float keep = drift; drift = (float) dq / 180.0f;
         paintBackgroundInner (ig);
         drift = keep;
         bgScale = k; bgKey = key; bgDrift = dq;
+        benchLap ("bg-rebuild");
     }
+    benchLap ("bg-check");
     g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
     g.drawImageTransformed (bgCache, juce::AffineTransform::scale (1.0f / k).translated (d.getX(), d.getY()));
     g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);

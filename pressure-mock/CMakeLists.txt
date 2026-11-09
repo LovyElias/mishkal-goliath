@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Pressure VERSION 1.12.0)   # raise with every version so hosts rescan
+project(Pressure VERSION 1.13.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -76,6 +76,8 @@ endif()
 #         (double-click or click the number: type; Option-click: reset; Command-drag: fine; wheel; right-click menu);
 #         the VINTAGE meter 30% smaller on clearer glass; the CHAIN strip in the bottom bar - what's on, in order,
 #         click for its tab, drag to change the order (new "Chain Order" parameter)
+#   V13 = flipping a VINTAGE unit or CLEAN engine keeps the sound (same reduction and output level, nearest ratio and
+#         timing, worked out on the last second and a half of your audio); faster drawing at Large and Extra Large
 function(tahor_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -107,7 +109,7 @@ function(tahor_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(PRESSURE_LATEST_VERSION 12)   # raise this by one for every new version
+set(PRESSURE_LATEST_VERSION 13)   # raise this by one for every new version
 
 # One plug-in, updated in place
 tahor_plugin(Pressure "Mishkal Pressure" Prss com.mishkalaudio.pressure ${PRESSURE_LATEST_VERSION} "${TAHOR_FORMATS}")

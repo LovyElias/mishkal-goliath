@@ -7,6 +7,7 @@
 #endif
 #include "TahorProcessor.h"
 #include <set>
+#include <map>
 
 namespace tahor
 {
@@ -34,6 +35,9 @@ namespace ui
     float textWidth (const juce::Font& f, const juce::String& s);
     void text (juce::Graphics& g, const juce::String& s, const juce::Font& f, juce::Colour c, R box,
                juce::Justification j = juce::Justification::centredLeft);
+    // V13: a drawing benchmark (only when ~/Desktop/Mishkal Projects/Pressure-bench.on exists): time spent per part
+    inline bool gBench = false; inline double gBenchT = 0.0; inline std::map<juce::String, double> gBenchAcc;
+    inline void benchLap (const char* nm) { if (! gBench) return; const double t = juce::Time::getMillisecondCounterHiRes(); gBenchAcc[nm] += t - gBenchT; gBenchT = t; }
     // V12: while a drawer window is drawn straight onto the screen, its words fade towards its top and bottom edges
     // as they did when it was drawn as a faded picture (empty = no fading)
     inline R textFadeRect;
@@ -80,6 +84,8 @@ public:
     std::function<void (bool)> onGpu;             // V12: graphics-card drawing on / off (from the size menu)
     bool gpuOn = false;
     double lastPaintMs = 0.0; int skipTick = 0;   // V12: how long the last frame took to draw
+    int benchStep = -1; double benchAt = 0.0, benchSum = 0.0, benchMax = 0.0; int benchFrames = 0, benchSlow = 0;   // V13
+    void benchTick();
     float currentScale = 1.0f;
 
     // UI state (kept in the processor's state tree so it comes back with the session)
