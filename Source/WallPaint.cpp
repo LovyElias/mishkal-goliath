@@ -1226,12 +1226,14 @@ void WallCanvas::paintBands (juce::Graphics& g)
 // LOUDNESS: the song's loudness so far, with the integrated, your target and the platform's, and the loud stretches
 void WallCanvas::paintLoudView (juce::Graphics& g)
 {
+    // V6: the glass box and everything in it centred on the screen (left / right and top / bottom)
+    const float BW = 766, BH = 372, BXx = C - BW / 2, BYy = 407 - BH / 2;
     {
-        juce::Graphics::ScopedSaveState s (g); juce::Path p; p.addRoundedRectangle (236, 126, W - 236 - 250, 372, 14.0f); g.reduceClipRegion (p);
+        juce::Graphics::ScopedSaveState s (g); juce::Path p; p.addRoundedRectangle (BXx, BYy, BW, BH, 14.0f); g.reduceClipRegion (p);
         g.setColour (hex (0x0c0b0f, 0.26f)); g.fillRect (R (0, 0, W, H));   // V4: more glass
     }
-    strokeR (g, 236, 126, W - 236 - 250, 372, 14, juce::Colours::white.withAlpha (0.08f));
-    const float X0 = 262, X1 = W - 268, Y0 = 140, Y1 = 470;
+    strokeR (g, BXx, BYy, BW, BH, 14, juce::Colours::white.withAlpha (0.08f));
+    const float X0 = BXx + 26, X1 = BXx + BW - 18, Y0 = BYy + 14, Y1 = BYy + BH - 28;
     const float tgt = pv ("target"), span18 = (float) (proc.ui ("loudRange") >= 36 ? 36 : 18), hiL = std::ceil ((std::max (tgt, proc.lufsI.load()) + span18 * 4 / 18) / 2) * 2, loL = hiL - span18;   // (V3: room for the song when it runs above the target)
     auto ly = [&] (float l) { return Y1 - (juce::jlimit (loL, hiL, l) - loL) / (hiL - loL) * (Y1 - Y0); };
     for (float l = loL + 2; l <= hiL; l += (span18 > 20 ? 8.0f : 4.0f)) { g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (X0, ly (l), X1 - X0, 1.0f); text (g, dbs (l, 0), X0 - 8, ly (l) + 0.5f, Face::Regular, 8.5f, faint, 'r'); }
@@ -1315,8 +1317,7 @@ void WallCanvas::paintPreviewBanner (juce::Graphics& g)
     const float d = proc.previewDb.load();
     const juce::String t = juce::String (plat[pvIdx - 1]) + " PREVIEW  " + middot + "  " + (d < -0.05f ? "playing " + juce::String (-d, 1) + " dB quieter, as " + nice[pvIdx - 1] + " will" : juce::String ("no turn-down: it's under ") + nice[pvIdx - 1] + "'s level");
     const float w = tw (t, Face::CondMedium, 10, 1.4f) + 40;
-    const float by = 404 - 12;   // V5: in the middle of the screen
-    fillR (g, C - w / 2, by, w, 24, 12, hex (0x0e0e10, 0.55f));   // (so it reads over the wave)
+    const float by = 94;   // (V6: back at the top, as before)
     fillR (g, C - w / 2, by, w, 24, 12, hex (0x1ed760, 0.14f)); strokeR (g, C - w / 2, by, w, 24, 12, hex (0x1ed760, 0.7f));
     dot (g, C - w / 2 + 14, by + 12, 3.5f, spot);
     text (g, t, C + 6, by + 12.5f, Face::CondMedium, 10, juce::Colours::white, 'c', 1.4f);
