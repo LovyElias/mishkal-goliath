@@ -124,8 +124,9 @@ void Canvas::timerCallback()
     {   // V17: the mouse over the graph eases the analyzer to a stop (so a peak can be grabbed); leaving lets it run again
         playTicks = juce::jmax (meterDb[0], meterDb[1]) > -70.0f ? playTicks + 1 : 0;   // (only once it has been showing the music a moment)
         // V18: only when the mouse reaches for a peak - and never a full stop: it keeps moving, slowly enough to grab (Pro-Q 4)
-        const bool over = display.contains (mouse) && mouse.y > display.getY() + 30 && tab == 1 && typeIn == nullptr && playTicks > 20 && nearPeak;
-        freeze += ((over ? 0.9f : 0.0f) - freeze) * (over ? 0.12f : 0.2f);
+        // V20: 35% slower again (6.5% speed, was 10%), and it stays slow while you hold the grabbed band
+        const bool over = (display.contains (mouse) && mouse.y > display.getY() + 30 && tab == 1 && typeIn == nullptr && playTicks > 20 && nearPeak) || grabbing;
+        freeze += ((over ? 0.935f : 0.0f) - freeze) * (over ? 0.12f : 0.2f);
     }
     analyse (preWin, preDb);
     analyse (postWin, postDb);
