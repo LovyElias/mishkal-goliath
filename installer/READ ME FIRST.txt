@@ -13,11 +13,23 @@ Installing
 
 Getting started
 - Flip between RESO, TAHOR and CHARACTER with the arrows at the top.
-- TAHOR: double-click the screen to add a band; touch a dot to open its panel; right-click a dot for its menu.
+- TAHOR: click the screen once to add a band; touch a dot to open its panel; right-click a dot for its menu.
 - CHARACTER starts empty: "+ Add EQ" opens the gear (16 vintage-style units).
 - Click the preset name for 69 presets in folders (Vocals, Drums, Instruments, Mastering, Mix Bus, Surgical,
   Reso Clean-up, Character, Effects), or the star for the browser.
 - MATCH and AUTO GAIN keep the level fair while you compare.
+
+New in V15 - V19
+- The instance list: put Tahor on several tracks, click INSTANCES on the Tahor tab and tick the others -
+  their spectrums show behind yours in their own colours, and the spots where they clash light up.
+- Pressure's look: its knobs, the top centre with arrows, a warm analyzer, Reso in copper.
+- Every knob and number works like Pro-Q 4 (click the number to type, double-click, Alt-click resets,
+  Ctrl-drag fine, wheel, right-click menu).
+- 30 bands; one click adds a band (under 30 Hz a low cut, over 15 kHz a high cut); 72 dB, 96 dB and
+  Brickwall slopes; the EQ line fades out past a cut.
+- Spectrum Grab: reach for a peak and the analyzer slows; the grabbed band follows the mouse and plays solo.
+- The CHAIN strip at the bottom: drag RESO, TAHOR and CHARACTER to change the order.
+- Character: the combined line breathes with the music; flipping units keeps your EQ moves; THD bends harder.
 
 Things we'd love you to try
 - A dynamic Tahor band on a harsh vocal - grab its dashed range outline anywhere and drag to set the range.
@@ -25,7 +37,7 @@ Things we'd love you to try
   a value ("2.5k", "A4", "-3", "0.7"), and hit S to solo. It stays open while you hover it.
 - Hover the empty screen: a readout shows the frequency and note under the mouse.
 - CHARACTER: use the arrows on the hardware at the bottom to browse, then double-click it to add it.
-- Spectrum Grab: hover a peak in the analyzer and drag it - it becomes a band.
+- Two or three Tahors with the instance list open, to find where tracks fight.
 - EQ MATCH with a reference track in the sidechain.
 
 Requirements: Windows 10 or 11, 64-bit, a VST3 host.
