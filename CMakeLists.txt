@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Wall VERSION 1.6.0)   # raise with every version so hosts rescan
+project(Wall VERSION 1.7.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -55,6 +55,7 @@ endif()
 #   V4 = every panel more glass (stage panels, loudness strip, GR / Crest meters, the Loudness view) - the Spotify preview unchanged
 #   V5 = the streaming preview banner sits in the middle of the screen; the Punch and Limiter panels 20% smaller
 #   V6 = the Loudness view's glass box and everything in it centred on the screen; the Spotify banner back at the top
+#   V7 = Character's HARMONICS ADDED window and Punch's ONE HIT window are glass
 function(wall_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -86,6 +87,6 @@ function(wall_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(WALL_LATEST_VERSION 6)   # raise this by one for every new version
+set(WALL_LATEST_VERSION 7)   # raise this by one for every new version
 
 wall_plugin(Wall "Mishkal Wall" Wall com.mishkalaudio.wall ${WALL_LATEST_VERSION} "${WALL_FORMATS}")

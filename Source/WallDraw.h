@@ -81,8 +81,22 @@ inline void greenLamp (juce::Graphics& g, float x, float y, float amt)
     radial (g, x, y, 8.0f * 3.2f, c.withAlpha (0.55f), c.withAlpha (0.0f));
     dot (g, x, y, 8.0f, c); dot (g, x - 2.0f, y - 2.0f, 8.0f * 0.38f, juce::Colours::white.withAlpha (0.8f));
 }
-inline void miniGraph (juce::Graphics& g, float x, float y, float w, float h, const juce::String& lab)
+inline void miniGraph (juce::Graphics& g, float x, float y, float w, float h, const juce::String& lab, bool glass = false)
 {
+    if (glass)   // V7: a glass window (see-through, a soft highlight at the top, a brighter edge)
+    {
+        fillR (g, x, y, w, h, 10, hex (0x121016, 0.10f));
+        {
+            juce::Graphics::ScopedSaveState s (g);
+            juce::Path p; p.addRoundedRectangle (x, y, w, h, 10.0f); g.reduceClipRegion (p);
+            g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.07f), 0, y, juce::Colours::white.withAlpha (0.0f), 0, y + 30, false));
+            g.fillRect (x, y, w, 30.0f);
+        }
+        strokeR (g, x, y, w, h, 10, juce::Colours::white.withAlpha (0.16f));
+        g.setColour (juce::Colours::white.withAlpha (0.22f)); g.fillRect (x + 14, y, w - 28, 1.0f);
+        if (lab.isNotEmpty()) text (g, lab, x + 10, y + 11, Face::CondMedium, 8, faint, 'l', 1.8f);
+        return;
+    }
     fillR (g, x, y, w, h, 10, juce::Colours::black.withAlpha (0.28f)); strokeR (g, x, y, w, h, 10, juce::Colours::white.withAlpha (0.07f));
     if (lab.isNotEmpty()) text (g, lab, x + 10, y + 11, Face::CondMedium, 8, faint, 'l', 1.8f);
 }

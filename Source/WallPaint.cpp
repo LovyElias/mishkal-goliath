@@ -849,7 +849,7 @@ void WallCanvas::paintPunchChar (juce::Graphics& g, bool isP)
     panelTitle (g, PX + 20, PY + 20, isP ? "PUNCH" : "CHARACTER", on ? (isP ? juce::String ("TRANSIENTS ") + middot + " UPWARD" : juce::String ("DENSITY ") + middot + " HARMONICS " + middot + " ENHANCE") : juce::String ("OFF ") + middot + " CLICK ITS DOT IN THE CHAIN", isP ? ivory : amber);
     float gx = PX + 20, gy = PY + 38, gw = 270, gh = 138;
     if (! isP) { gw = 243; gh = 124; gx = (PX + (C - 43)) / 2 - gw / 2; gy = PY + PH / 2 - gh / 2 + 8; }
-    miniGraph (g, gx, gy, gw, gh, isP ? "ONE HIT" : "HARMONICS ADDED");
+    miniGraph (g, gx, gy, gw, gh, isP ? "ONE HIT" : "HARMONICS ADDED", true);   // V7: the harmonics and one-hit windows are glass
     if (isP)
     {
         // it breathes: slowly brighter and back (about every 4 s)
