@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Mac architectures")
 
-project(Wall VERSION 1.2.0)   # raise with every version so hosts rescan
+project(Wall VERSION 1.3.0)   # raise with every version so hosts rescan
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -51,6 +51,7 @@ endif()
 #        edge meters Peak 60 / Peak 24 / K-20 / K-14 / K-12, peak labels on the moments of most gain reduction;
 #        loudness standards (Streaming, Apple Music, EBU R128, ATSC A/85, TR-B32, Club) that set target and ceiling,
 #        an 18 / 36 LU loudness view and readings in LU from the target; MIDI Learn on every control
+#   V3 = the Loudness view makes room for the song when it runs louder than the target; its Reset button moved off the graph
 function(wall_plugin target product code bundle version formats)
     juce_add_plugin(${target}
         COMPANY_NAME            "Mishkal Audio"
@@ -82,6 +83,6 @@ function(wall_plugin target product code bundle version formats)
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 endfunction()
 
-set(WALL_LATEST_VERSION 2)   # raise this by one for every new version
+set(WALL_LATEST_VERSION 3)   # raise this by one for every new version
 
 wall_plugin(Wall "Mishkal Wall" Wall com.mishkalaudio.wall ${WALL_LATEST_VERSION} "${WALL_FORMATS}")

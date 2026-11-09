@@ -1220,7 +1220,7 @@ void WallCanvas::paintLoudView (juce::Graphics& g)
     }
     strokeR (g, 236, 126, W - 236 - 250, 372, 14, juce::Colours::white.withAlpha (0.08f));
     const float X0 = 262, X1 = W - 268, Y0 = 140, Y1 = 470;
-    const float tgt = pv ("target"), span18 = (float) (proc.ui ("loudRange") >= 36 ? 36 : 18), hiL = std::ceil ((tgt + span18 * 5 / 18) / 2) * 2, loL = hiL - span18;
+    const float tgt = pv ("target"), span18 = (float) (proc.ui ("loudRange") >= 36 ? 36 : 18), hiL = std::ceil ((std::max (tgt, proc.lufsI.load()) + span18 * 4 / 18) / 2) * 2, loL = hiL - span18;   // (V3: room for the song when it runs above the target)
     auto ly = [&] (float l) { return Y1 - (juce::jlimit (loL, hiL, l) - loL) / (hiL - loL) * (Y1 - Y0); };
     for (float l = loL + 2; l <= hiL; l += (span18 > 20 ? 8.0f : 4.0f)) { g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillRect (X0, ly (l), X1 - X0, 1.0f); text (g, dbs (l, 0), X0 - 8, ly (l) + 0.5f, Face::Regular, 8.5f, faint, 'r'); }
     text (g, "LUFS", X0 - 8, Y0 - 14, Face::CondMedium, 8, faint, 'r', 1.4f);
@@ -1280,8 +1280,8 @@ void WallCanvas::paintLoudView (juce::Graphics& g)
         dashH (g, X0, X1, ly (lv[w]), 6, 5, spot.withAlpha (0.8f), 1.2f);
         tag (ly (lv[w]) + 14, juce::String (plat[w]) + " " + dbs (lv[w], 0), spot);
     }
-    fillR (g, X1 - 60, Y0 - 4, 56, 16, 8, juce::Colours::white.withAlpha (0.08f)); text (g, "RESET", X1 - 32, Y0 + 4.5f, Face::CondMedium, 8.5f, ink, 'c', 1.4f);
-    zone (R (X1 - 60, Y0 - 4, 56, 16), Hit::LoudReset);
+    fillR (g, X1 - 60, Y0 - 26, 56, 16, 8, juce::Colours::white.withAlpha (0.08f)); text (g, "RESET", X1 - 32, Y0 - 17.5f, Face::CondMedium, 8.5f, ink, 'c', 1.4f);
+    zone (R (X1 - 60, Y0 - 26, 56, 16), Hit::LoudReset);
 }
 
 // what the streaming preview is doing right now
